@@ -376,14 +376,17 @@ async function doLogin() {
 function renderMain() {
   const app = document.getElementById('app');
   app.innerHTML = '';
-  app.appendChild($(`<h1>星潮 · 管理面板</h1><p class="sub" id="st"></p>
+  // 注意：$() 只返回 firstElementChild，必须用一个根元素包住全部内容
+  app.appendChild($(`<div>
+    <h1>星潮 · 管理面板</h1><p class="sub" id="st"></p>
     <div class="tabs">
       <button data-t="status" class="on">状态</button>
       <button data-t="stats">统计</button>
       <button data-t="logs">日志</button>
       <button data-t="replies">词库</button>
       <button data-t="groups">白名单</button>
-    </div><div id="view"></div>`));
+    </div><div id="view"></div>
+  </div>`));
   document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
     document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); switchTab(b.dataset.t);
