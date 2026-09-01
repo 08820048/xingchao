@@ -2,16 +2,16 @@
 # 旧服务器执行：打包全部状态（配置/会话/数据），用于迁移到新服务器。
 # 产物：/root/xingchao-migrate.tar.gz
 set -e
-cd "$(dirname "$0")/.."   # 项目根目录
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"   # 项目根目录（/root/xingchao）
 
 OUT="/root/xingchao-migrate-$(date +%F).tar.gz"
 tar czf "$OUT" \
-  --exclude='web/node_modules' \
-  --exclude='web/dist' \
-  --exclude='.git' \
-  --exclude='data/logs' \
-  --exclude='napcat/cache' \
-  xingchao
+  --exclude='xingchao/web/node_modules' \
+  --exclude='xingchao/web/dist' \
+  --exclude='xingchao/.git' \
+  --exclude='xingchao/data/logs' \
+  --exclude='xingchao/napcat/cache' \
+  -C "$(dirname "$ROOT")" "$(basename "$ROOT")"
 
 echo "✅ 打包完成：$OUT"
 echo "包含：.env / data（配置+词库+统计+定时任务）/ napcat（QQ会话+WS配置）"
