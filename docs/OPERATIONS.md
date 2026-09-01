@@ -214,6 +214,7 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 
 ## 9. 相关文档
 
+- `docs/DEPLOYMENT.md` — **换新服务器/迁移部署必读**
 - `docs/REQUIREMENTS.md` — 需求说明书（第一期规格 + 第二期 17.x 各节）
 - `docs/QQ机器人-星潮Bot需求文档.md` — 原始需求文档
 - `napcat/README.md` — NapCat 扫码与 WS 客户端配置步骤
