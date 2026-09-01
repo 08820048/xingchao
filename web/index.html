@@ -1,5 +1,14 @@
 <!doctype html>
-<html lang="zh-CN" class="dark">
+<html lang="zh-CN">
+  <head>
+    <script>
+      // 首屏防闪烁：按 localStorage / 系统偏好提前设置主题
+      (function () {
+        var t = localStorage.getItem("xingchao-theme") || "system";
+        var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

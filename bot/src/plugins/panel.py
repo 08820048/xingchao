@@ -23,7 +23,13 @@ from nonebot import get_driver, get_loaded_plugins
 from nonebot.log import logger
 
 from src.config import get_config
-from src.permission import add_runtime_group, merged_whitelist, remove_runtime_group
+from src.permission import (
+    add_runtime_group,
+    disabled_groups,
+    merged_whitelist,
+    remove_runtime_group,
+    set_group_enabled,
+)
 from src.store import get_store
 
 _STARTED_AT = time.monotonic()
@@ -80,6 +86,7 @@ async def _status_payload() -> dict[str, Any]:
         "uptime_seconds": int(time.monotonic() - _STARTED_AT),
         "plugins": names,
         "whitelist": sorted(merged_whitelist()),
+        "disabled_groups": sorted(disabled_groups()),
         "replies": len(items),
         "reply_enabled": reply_enabled != "false",
         "welcome_enabled": welcome_enabled != "false",
@@ -232,14 +239,43 @@ def _register_routes() -> None:
         logger.info(f"面板保存词库：{count} 条词条")
         return JSONResponse({"ok": True, "data": {"count": count}})
 
+    @app.post("/panel/api/modules")
+    async def panel_modules_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import reply as reply_plugin
+
+        body = await request.json()
+        key = str(body.get("key", ""))
+        enabled = body.get("enabled")
+        if key not in ("reply", "welcome") or not isinstance(enabled, bool):
+            return JSONResponse(
+                {"ok": False, "error": "key 应为 reply/welcome，enabled 应为布尔值"}, status_code=400
+            )
+        try:
+            await get_store().set_kv(f"{key}_enabled", "true" if enabled else "false")
+        except Exception:
+            logger.exception("面板写入模块开关失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        if key == "reply":
+            reply_plugin.set_enabled(enabled)
+        return JSONResponse(
+            {"ok": True, "data": {"message": f"{'关键词模块' if key == 'reply' else '进群欢迎'}已{'开启' if enabled else '关闭'}"}}
+        )
+
     @app.get("/panel/api/groups")
     async def panel_groups_get(request: Request) -> JSONResponse:
         if not _authorized(request):
             return _unauthorized()
         cfg = get_config()
         env_groups = cfg.xingchao_group_whitelist
+        disabled = disabled_groups()
         groups = [
-            {"group_id": g, "source": "env" if g in env_groups else "runtime"}
+            {
+                "group_id": g,
+                "source": "env" if g in env_groups else "runtime",
+                "disabled": g in disabled,
+            }
             for g in sorted(merged_whitelist())
         ]
         return JSONResponse({"ok": True, "data": {"groups": groups}})
@@ -267,7 +303,13 @@ def _register_routes() -> None:
             if not removed:
                 return JSONResponse({"ok": False, "error": f"群 {gid} 不在运行时白名单中"})
             return JSONResponse({"ok": True, "data": {"message": f"已移除群 {gid}"}})
-        return JSONResponse({"ok": False, "error": "action 应为 add 或 del"}, status_code=400)
+        if action in ("on", "off"):
+            changed = await set_group_enabled(gid, action == "on")
+            state = "开启" if action == "on" else "关闭"
+            if not changed:
+                return JSONResponse({"ok": False, "error": f"群 {gid} 已处于{state}状态"})
+            return JSONResponse({"ok": True, "data": {"message": f"已{state}群 {gid} 的业务"}})
+        return JSONResponse({"ok": False, "error": "action 应为 add / del / on / off"}, status_code=400)
 
     # 静态面板：优先使用 React 构建产物（web/dist），不存在则回退到内嵌单页。
     # mount 必须放在所有 /panel/api 路由注册之后，否则 API 会被静态文件接管。
