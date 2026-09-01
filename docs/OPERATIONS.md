@@ -45,7 +45,7 @@ xingchao-bot 容器（NoneBot2 业务端）
 | 凭据 | 位置 |
 |---|---|
 | OneBot 反向 WS 令牌 | 服务器 `/root/xingchao/.env` 的 `ONEBOT_ACCESS_TOKEN` |
-| 超管 QQ 号 | 同上 `XINGCHAO_SUPERUSERS` |
+| 超管 QQ 号 | 同上 `XINGCHAO_SUPERUSERS`（多个用英文逗号分隔，如 `2217021563,1217284058`；修改后需 force-recreate bot） |
 | 群白名单（env 基础） | 同上 `XINGCHAO_GROUP_WHITELIST` |
 | Web 管理面板密码 | 同上 `XINGCHAO_PANEL_PASSWORD` |
 | NapCat WebUI Token | `napcat/config/webui.json` 的 `token` 字段，或 `docker logs xingchao-napcat` 查看 |

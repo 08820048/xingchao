@@ -12,7 +12,7 @@ from nonebot.rule import Rule
 from nonebot.typing import T_State
 
 from src.config import get_config
-from src.permission import BASIC, SUPERUSER
+from src.permission import BASIC, SUPERUSER, merged_whitelist
 
 
 async def _to_me(event: MessageEvent) -> bool:
@@ -101,7 +101,7 @@ async def handle_status(state: T_State, matcher: Matcher) -> None:
         "星潮 Xingchao 运行状态",
         f"在线: 是",
         f"插件: {', '.join(plugin_names) or '无'}",
-        f"白名单群: {len(cfg.xingchao_group_whitelist)} 个",
+        f"白名单群: {len(merged_whitelist())} 个",
         f"关键词词条: {len(items)} 条（启用 {enabled}，模块 {'开' if reply_plugin.is_enabled() else '关'}）",
     ]
     await _send(matcher, "\n".join(lines))
