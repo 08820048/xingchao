@@ -36,8 +36,48 @@ banall_cmd = on_command("banall", rule=SUPERUSER, priority=1, block=True)
 kick_cmd = on_command("kick", rule=SUPERUSER, priority=1, block=True)
 recall_cmd = on_command("recall", rule=SUPERUSER, priority=1, block=True)
 welcome_cmd = on_command("welcome", rule=SUPERUSER, priority=1, block=True)
+notice_cmd = on_command("notice", rule=SUPERUSER, priority=1, block=True)
 
 welcome_notice = on_notice(rule=GROUP_WHITELIST, priority=2, block=False)
+
+
+@notice_cmd.handle()
+async def handle_notice_cmd(bot: Bot, event: MessageEvent, matcher: Matcher,
+                            args: Message = CommandArg()) -> None:
+    group = await _guard_group(event, matcher)
+    if group is None:
+        return
+    text = args.extract_plain_text().strip()
+    if not text:
+        await _send(notice_cmd, "用法：/notice <公告内容>（发布群公告）；/notice list（查看当前公告）")
+        return
+    if text.lower() == "list":
+        try:
+            notices = await bot.call_api("get_group_notice", group_id=group.group_id)
+        except Exception as e:
+            logger.exception("获取群公告失败")
+            await _send(notice_cmd, f"获取失败：{e}")
+            return
+        items = notices if isinstance(notices, list) else notices.get("notices", [])
+        if not items:
+            await _send(notice_cmd, "当前没有群公告。")
+            return
+        lines = ["当前群公告："]
+        for n in items[:5]:
+            lines.append(f"  • {str(n.get('content', ''))[:60]}（{n.get('publish_time', '')}）")
+        await _send(notice_cmd, "\n".join(lines))
+        return
+    try:
+        await bot.call_api("_send_group_notice", group_id=group.group_id, content=text)
+    except Exception:
+        # 部分实现使用不带下划线的 action 名，重试一次
+        try:
+            await bot.call_api("send_group_notice", group_id=group.group_id, content=text)
+        except Exception as e2:
+            logger.exception("发送群公告失败")
+            await _send(notice_cmd, f"发送失败：{e2}（需机器人是群管理员）")
+            return
+    await _send(notice_cmd, "群公告已发布 ✅")
 
 
 async def _send(matcher: Matcher, text: str) -> None:

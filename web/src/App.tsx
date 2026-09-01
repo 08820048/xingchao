@@ -7,6 +7,7 @@ import {
   Monitor,
   Moon,
   Sun,
+  ShieldAlert,
   Sparkles,
   UserCog,
   UserPlus,
@@ -1239,6 +1240,140 @@ function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   );
 }
 
+/* ------------------------------------------------------------------ 敏感词 */
+
+type SensitiveConfig = {
+  groups: number[];
+  override: Record<string, unknown> | null;
+  enabled: boolean;
+  words: string;
+  mute_minutes: number;
+  notify: boolean;
+};
+
+function SensitiveTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [cfg, setCfg] = useState<SensitiveConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [sel, setSel] = useState<string>("global");
+  const load = useCallback((g: string) => {
+    const q = g !== "global" ? `?group_id=${g}` : "";
+    api<{ ok: boolean; data: SensitiveConfig }>(`/panel/api/sensitive${q}`).then((r) => {
+      if (r.ok) setCfg(r.data);
+    });
+  }, []);
+  useEffect(() => load(sel), [sel, load]);
+  if (!cfg) return <Spinner className="m-8" />;
+  const isGroup = sel !== "global";
+
+  const save = async (patch: Record<string, unknown>) => {
+    setSaving(true);
+    const r = await post("/panel/api/sensitive", {
+      ...patch,
+      group_id: isGroup ? parseInt(sel) : undefined,
+    });
+    setSaving(false);
+    if (r.ok) {
+      toast(r.data.message);
+      load(sel);
+    } else toast(r.error || "保存失败", false);
+  };
+
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">配置对象</CardTitle>
+          <CardDescription>未单独设置的群自动继承全局默认</CardDescription>
+        </CardHeader>
+        <CardPanel className="flex flex-wrap items-center gap-2">
+          <select
+            value={sel}
+            onChange={(e) => setSel(e.target.value)}
+            className="border-input bg-background flex h-8 min-w-56 items-center rounded-lg border px-2 text-sm"
+          >
+            <option value="global">🌐 全局默认</option>
+            {cfg.groups.map((g) => (
+              <option key={g} value={g}>群 {g}</option>
+            ))}
+          </select>
+          {isGroup &&
+            (cfg.override ? (
+              <Badge>该群使用独立配置</Badge>
+            ) : (
+              <Badge variant="secondary">继承全局（保存后成为独立配置）</Badge>
+            ))}
+          {isGroup && cfg.override && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                const r = await post("/panel/api/sensitive", {
+                  clear_group: true, group_id: parseInt(sel),
+                });
+                if (r.ok) { toast(r.data.message); load(sel); }
+                else toast(r.error, false);
+              }}
+            >
+              恢复继承全局
+            </Button>
+          )}
+        </CardPanel>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">敏感词监控与撤回</CardTitle>
+          <CardDescription>
+            白名单群消息命中关键词即自动撤回（可追加禁言），防广告与敏感信息；
+            命中后不再触发 AI/关键词回复
+          </CardDescription>
+        </CardHeader>
+        <CardPanel className="grid gap-3">
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">功能开关</p>
+              <p className="text-muted-foreground text-xs">按群独立生效</p>
+            </div>
+            <Switch checked={cfg.enabled} onCheckedChange={(v) => save({ enabled: v })} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="words">敏感词库（逗号分隔，大小写不敏感）</Label>
+            <Textarea
+              id="words"
+              rows={3}
+              value={cfg.words}
+              onChange={(e) => setCfg({ ...cfg, words: e.target.value })}
+              placeholder="例如：加微信,低价代刷,博彩,代开发票"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="mm">命中后禁言（分钟，0 = 不禁言）</Label>
+            <Input
+              id="mm"
+              type="number"
+              className="w-48"
+              value={cfg.mute_minutes}
+              onChange={(e) => setCfg({ ...cfg, mute_minutes: +e.target.value || 0 })}
+            />
+          </div>
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">命中后通知超管</p>
+              <p className="text-muted-foreground text-xs">私聊推送命中详情与处理结果</p>
+            </div>
+            <Switch checked={cfg.notify} onCheckedChange={(v) => save({ notify: v })} />
+          </div>
+          <Button disabled={saving} onClick={() => save({
+            words: cfg.words, mute_minutes: cfg.mute_minutes,
+          })}>
+            {saving && <Spinner />}保存词库与禁言设置（{isGroup ? `群 ${sel}` : "全局默认"}）
+          </Button>
+        </CardPanel>
+      </Card>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ 布局 */
 
 const NAV = [
@@ -1250,6 +1385,7 @@ const NAV = [
   { id: "superusers", label: "超管", icon: UserCog },
   { id: "ai", label: "AI", icon: Sparkles },
   { id: "join", label: "加群审批", icon: UserPlus },
+  { id: "sensitive", label: "敏感词", icon: ShieldAlert },
 ] as const;
 
 export default function App() {
@@ -1345,6 +1481,7 @@ export default function App() {
           {tab === "superusers" && <SuperusersTab toast={toast} />}
           {tab === "ai" && <AiTab toast={toast} />}
           {tab === "join" && <JoinTab toast={toast} />}
+          {tab === "sensitive" && <SensitiveTab toast={toast} />}
         </div>
       </SidebarInset>
       {toastState && <Toast text={toastState.t} ok={toastState.ok} />}
