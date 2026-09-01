@@ -10,7 +10,7 @@ import json
 
 from nonebot import get_driver
 from nonebot.adapters import Event
-from nonebot.adapters.onebot.v11 import MessageEvent, PrivateMessageEvent
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent, PrivateMessageEvent
 from nonebot.log import logger
 from nonebot.rule import Rule
 
@@ -19,8 +19,10 @@ from src.store import get_store
 
 _RUNTIME_WHITELIST_KEY = "group_whitelist_runtime"
 _DISABLED_GROUPS_KEY = "group_disabled_runtime"
+_RUNTIME_SUPERUSERS_KEY = "superusers_runtime"
 _runtime_whitelist: set[int] = set()
 _disabled_groups: set[int] = set()
+_runtime_superusers: set[int] = set()
 
 
 def merged_whitelist() -> set[int]:
@@ -33,9 +35,46 @@ def disabled_groups() -> set[int]:
     return set(_disabled_groups)
 
 
+def runtime_superuser_ids() -> set[int]:
+    """运行时添加的超管（面板 / 指令添加，持久化 kv）。"""
+    return set(_runtime_superusers)
+
+
+def sync_effective_superusers() -> None:
+    """把 env 基础超管 + 运行时超管合并写入 NoneBot 配置。
+
+    基数必须取 env 基础配置（get_config().xingchao_superusers），
+    而不是当前 driver 配置——后者已混入运行时超管，会导致移除永不生效。
+    """
+    merged = {str(u) for u in (get_config().xingchao_superusers | _runtime_superusers)}
+    get_driver().config.superusers = merged
+
+
+async def add_runtime_superuser(user_id: int) -> bool:
+    """运行时新增超管；已存在返回 False。"""
+    if user_id in _runtime_superusers or user_id in superuser_ids():
+        return False
+    _runtime_superusers.add(user_id)
+    await get_store().set_kv(_RUNTIME_SUPERUSERS_KEY, json.dumps(sorted(_runtime_superusers)))
+    sync_effective_superusers()
+    return True
+
+
+async def remove_runtime_superuser(user_id: int) -> bool:
+    """运行时移除超管；不存在返回 False。env 来源的超管不可移除。"""
+    if user_id in get_config().xingchao_superusers:
+        return False
+    if user_id not in _runtime_superusers:
+        return False
+    _runtime_superusers.discard(user_id)
+    await get_store().set_kv(_RUNTIME_SUPERUSERS_KEY, json.dumps(sorted(_runtime_superusers)))
+    sync_effective_superusers()
+    return True
+
+
 async def load_runtime_whitelist() -> None:
-    """启动时从 SQLite 恢复运行时白名单与禁用群。"""
-    global _runtime_whitelist, _disabled_groups
+    """启动时从 SQLite 恢复运行时白名单、禁用群与运行时超管。"""
+    global _runtime_whitelist, _disabled_groups, _runtime_superusers
     raw = await get_store().get_kv(_RUNTIME_WHITELIST_KEY)
     if raw:
         try:
@@ -54,6 +93,15 @@ async def load_runtime_whitelist() -> None:
                 logger.info(f"已恢复运行时禁用群：{sorted(_disabled_groups)}")
         except (ValueError, TypeError, json.JSONDecodeError):
             logger.exception("恢复运行时禁用群失败，忽略 kv 数据")
+    superusers_raw = await get_store().get_kv(_RUNTIME_SUPERUSERS_KEY)
+    if superusers_raw:
+        try:
+            _runtime_superusers = {int(u) for u in json.loads(superusers_raw)}
+            if _runtime_superusers:
+                logger.info(f"已恢复运行时超管：{sorted(_runtime_superusers)}")
+        except (ValueError, TypeError, json.JSONDecodeError):
+            logger.exception("恢复运行时超管失败，忽略 kv 数据")
+    sync_effective_superusers()
 
 
 async def add_runtime_group(group_id: int) -> bool:

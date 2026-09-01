@@ -13,12 +13,23 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src.config import get_config
-from src.permission import SUPERUSER, add_runtime_group, merged_whitelist, remove_runtime_group
+from src.permission import (
+    SUPERUSER,
+    add_runtime_group,
+    add_runtime_superuser,
+    merged_whitelist,
+    remove_runtime_group,
+    remove_runtime_superuser,
+    runtime_superuser_ids,
+    superuser_ids,
+)
 from src.store import get_store
 
 reply_admin = on_command("reply", rule=SUPERUSER, priority=1, block=True)
 group_admin = on_command("group", rule=SUPERUSER, priority=1, block=True)
 plugin_admin = on_command("plugin", rule=SUPERUSER, priority=1, block=True)
+welcome_cmd = on_command("welcome", rule=SUPERUSER, priority=1, block=True)
+superuser_admin = on_command("superuser", rule=SUPERUSER, priority=1, block=True)
 
 
 async def _send(matcher: Matcher, text: str) -> None:
@@ -28,6 +39,39 @@ async def _send(matcher: Matcher, text: str) -> None:
         raise
     except Exception:
         logger.exception("发送消息失败")
+
+
+@superuser_admin.handle()
+async def handle_superuser(args: Message = CommandArg()) -> None:
+    parts = args.extract_plain_text().strip().split()
+    if not parts:
+        await _send(superuser_admin, "用法：/superuser list | /superuser add <QQ> | /superuser del <QQ>")
+        return
+    action = parts[0].strip().lower()
+    if action == "list":
+        env_ids = get_config().xingchao_superusers
+        lines = ["超管列表："]
+        for u in sorted(superuser_ids() | runtime_superuser_ids()):
+            source = "env" if u in env_ids else "运行时"
+            lines.append(f"  {u}（{source}）")
+        await _send(superuser_admin, "\n".join(lines))
+        return
+    if action in ("add", "del") and len(parts) == 2 and parts[1].isdigit():
+        qq = int(parts[1])
+        if action == "add":
+            if await add_runtime_superuser(qq):
+                await _send(superuser_admin, f"已添加超管 {qq}（立即生效，重启后保留）。")
+            else:
+                await _send(superuser_admin, f"QQ {qq} 已是超管。")
+        else:
+            if qq in get_config().xingchao_superusers:
+                await _send(superuser_admin, f"QQ {qq} 来自环境变量，无法移除；请修改 XINGCHAO_SUPERUSERS 后重启。")
+            elif await remove_runtime_superuser(qq):
+                await _send(superuser_admin, f"已移除超管 {qq}（立即生效）。")
+            else:
+                await _send(superuser_admin, f"QQ {qq} 不在运行时超管中。")
+        return
+    await _send(superuser_admin, "用法：/superuser list | /superuser add <QQ> | /superuser del <QQ>")
 
 
 @reply_admin.handle()

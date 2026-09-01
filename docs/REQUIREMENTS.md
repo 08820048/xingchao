@@ -478,3 +478,11 @@ CREATE TABLE IF NOT EXISTS msg_stat (
   `send_group_msg`（notice 事件不依赖 bot.send 的目标推导）
 - 修复：GROUP_WHITELIST 规则函数注解放宽为 `Event`（按 group_id 属性判断），
   使消息与群通知（进群事件）都能过白名单规则
+
+### 17.9 超管管理（面板 + 指令）
+
+- 超管 = env 基础超管（XINGCHAO_SUPERUSERS，不可运行时移除）+ 运行时超管（可增删）
+- 运行时超管持久化 SQLite `kv(superusers_runtime)`，启动恢复；增删立即同步 NoneBot
+  SUPERUSERS 配置（合并基数必须取 env 基础配置，否则移除不生效）
+- 指令：`/superuser list | add <QQ> | del <QQ>`（仅现有超管可用）
+- 面板 API：`GET/POST /panel/api/superusers`；「超管」页展示列表与来源、运行时增删

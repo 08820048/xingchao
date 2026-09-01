@@ -7,6 +7,7 @@ import {
   Monitor,
   Moon,
   Sun,
+  UserCog,
   Users,
 } from "lucide-react";
 
@@ -715,6 +716,91 @@ function GroupsTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   );
 }
 
+/* ------------------------------------------------------------------ 超管 */
+
+function SuperusersTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [superusers, setSuperusers] = useState<
+    { qq: number; source: string }[]
+  >([]);
+  const [qq, setQq] = useState("");
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: { superusers: typeof superusers } }>(
+      "/panel/api/superusers",
+    ).then((r) => {
+      if (r.ok) setSuperusers(r.data.superusers);
+    });
+  }, []);
+  useEffect(() => load(), [load]);
+  const act = async (action: "add" | "del", user_id?: number) => {
+    const id = user_id ?? parseInt(qq);
+    if (!id) return toast("请输入 QQ 号", false);
+    const r = await post("/panel/api/superusers", { action, qq: id });
+    if (r.ok) {
+      toast(r.data.message);
+      setQq("");
+      load();
+    } else toast(r.error, false);
+  };
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">超管列表</CardTitle>
+          <CardDescription>
+            超管可使用全部管理指令（禁言 / 踢人 / 撤回 / 词库 / 白名单 / 群开关等）。
+            环境变量超管需修改 XINGCHAO_SUPERUSERS 后重启；运行时超管立即生效、重启保留
+          </CardDescription>
+        </CardHeader>
+        <CardPanel className="grid gap-3">
+          <div className="flex items-end gap-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="sqq">新超管 QQ</Label>
+              <Input
+                id="sqq"
+                type="number"
+                value={qq}
+                onChange={(e) => setQq(e.target.value)}
+                placeholder="输入 QQ 号"
+              />
+            </div>
+            <Button onClick={() => act("add")}>添加</Button>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>QQ 号</TableHead>
+                <TableHead>来源</TableHead>
+                <TableHead className="w-24"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {superusers.map((u) => (
+                <TableRow key={u.qq}>
+                  <TableCell className="font-mono">{u.qq}</TableCell>
+                  <TableCell>
+                    <Badge variant={u.source === "env" ? "secondary" : "info"}>
+                      {u.source === "env" ? "环境变量" : "运行时"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {u.source === "env" ? (
+                      <span className="text-muted-foreground text-xs">需改 env</span>
+                    ) : (
+                      <Button variant="outline" size="sm" onClick={() => act("del", u.qq)}>
+                        移除
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardPanel>
+      </Card>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ 布局 */
 
 const NAV = [
@@ -723,6 +809,7 @@ const NAV = [
   { id: "logs", label: "日志", icon: MessageSquareText },
   { id: "replies", label: "词库", icon: ClipboardList },
   { id: "groups", label: "白名单", icon: Users },
+  { id: "superusers", label: "超管", icon: UserCog },
 ] as const;
 
 export default function App() {
@@ -815,6 +902,7 @@ export default function App() {
           {tab === "logs" && <LogsTab />}
           {tab === "replies" && <RepliesTab toast={toast} />}
           {tab === "groups" && <GroupsTab toast={toast} />}
+          {tab === "superusers" && <SuperusersTab toast={toast} />}
         </div>
       </SidebarInset>
       {toastState && <Toast text={toastState.t} ok={toastState.ok} />}

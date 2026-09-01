@@ -25,10 +25,14 @@ from nonebot.log import logger
 from src.config import get_config
 from src.permission import (
     add_runtime_group,
+    add_runtime_superuser,
     disabled_groups,
     merged_whitelist,
     remove_runtime_group,
+    remove_runtime_superuser,
+    runtime_superuser_ids,
     set_group_enabled,
+    superuser_ids,
 )
 from src.store import get_store
 
@@ -254,6 +258,42 @@ def _register_routes() -> None:
                 },
             }
         )
+
+    @app.get("/panel/api/superusers")
+    async def panel_superusers_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        env_ids = get_config().xingchao_superusers
+        superusers = [
+            {"qq": u, "source": "env" if u in env_ids else "runtime"}
+            for u in sorted(superuser_ids() | runtime_superuser_ids())
+        ]
+        return JSONResponse({"ok": True, "data": {"superusers": superusers}})
+
+    @app.post("/panel/api/superusers")
+    async def panel_superusers_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        body = await request.json()
+        action = str(body.get("action", ""))
+        qq = body.get("qq")
+        if not isinstance(qq, int):
+            return JSONResponse({"ok": False, "error": "qq 必须是整数"}, status_code=400)
+        if action == "add":
+            added = await add_runtime_superuser(qq)
+            if not added:
+                return JSONResponse({"ok": False, "error": f"QQ {qq} 已是超管"})
+            return JSONResponse({"ok": True, "data": {"message": f"已添加超管 {qq}"}})
+        if action == "del":
+            if qq in get_config().xingchao_superusers:
+                return JSONResponse(
+                    {"ok": False, "error": f"QQ {qq} 来自环境变量，请修改 XINGCHAO_SUPERUSERS 后重启"}
+                )
+            removed = await remove_runtime_superuser(qq)
+            if not removed:
+                return JSONResponse({"ok": False, "error": f"QQ {qq} 不在运行时超管中"})
+            return JSONResponse({"ok": True, "data": {"message": f"已移除超管 {qq}"}})
+        return JSONResponse({"ok": False, "error": "action 应为 add 或 del"}, status_code=400)
 
     @app.post("/panel/api/welcome")
     async def panel_welcome_post(request: Request) -> JSONResponse:
