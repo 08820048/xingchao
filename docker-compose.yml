@@ -1,0 +1,34 @@
+services:
+  xingchao-bot:
+    build: ./bot
+    image: xingchao-bot:latest
+    container_name: xingchao-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    networks:
+      - xingchao
+
+  xingchao-napcat:
+    image: mlikiowa/napcat-docker:latest
+    container_name: xingchao-napcat
+    restart: unless-stopped
+    depends_on:
+      - xingchao-bot
+    environment:
+      - NAPCAT_UID=${NAPCAT_UID:-1000}
+      - NAPCAT_GID=${NAPCAT_GID:-1000}
+    ports:
+      # WebUI 只暴露给本机 / SSH 隧道，禁止 0.0.0.0
+      - "127.0.0.1:6099:6099"
+    volumes:
+      - ./napcat/config:/app/napcat/config
+      - ./napcat/qq:/app/.config/QQ
+    networks:
+      - xingchao
+
+networks:
+  xingchao:
+    driver: bridge

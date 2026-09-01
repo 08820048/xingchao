@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# secrets / local config
+.env
+
+# runtime data (compose mounts)
+data/*
+!data/.gitkeep
+
+# QQ session data & napcat local config
+napcat/qq/
+napcat/config/
+
+# logs & db (belt and braces; normally inside data/)
+*.db
+logs/
+
+# editors / OS
+.DS_Store
+.idea/
+.vscode/
