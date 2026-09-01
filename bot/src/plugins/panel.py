@@ -302,11 +302,14 @@ def _register_routes() -> None:
         from src.plugins import ai as ai_plugin
 
         cfg = await ai_plugin.ai_config()
+        base_url, api_key = await ai_plugin._ai_creds()
         return JSONResponse(
             {
                 "ok": True,
                 "data": {
-                    "configured": ai_plugin.is_configured(),
+                    "configured": await ai_plugin.is_configured(),
+                    "base_url": base_url,
+                    "api_key_masked": ai_plugin.mask_key(api_key),
                     "enabled": await ai_plugin.is_ai_enabled(),
                     "model": cfg["ai_model"],
                     "system_prompt": cfg["ai_system_prompt"],
@@ -327,6 +330,19 @@ def _register_routes() -> None:
         body = await request.json()
         store = get_store()
         updates: dict[str, str] = {}
+        # 连接凭据（可选更新；api_key 留空 = 保持不变）
+        if "base_url" in body:
+            base = str(body["base_url"]).strip()
+            if base and not base.startswith(("http://", "https://")):
+                return JSONResponse({"ok": False, "error": "API 地址应以 http(s):// 开头"}, status_code=400)
+            if base:
+                updates["ai_base_url"] = base
+        if "api_key" in body:
+            key = str(body["api_key"]).strip()
+            if key:
+                if len(key) < 8 or any(c.isspace() for c in key):
+                    return JSONResponse({"ok": False, "error": "API Key 格式不合法"}, status_code=400)
+                updates["ai_api_key"] = key
         if "enabled" in body and not isinstance(body["enabled"], bool):
             return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
         for key in ("model", "system_prompt"):

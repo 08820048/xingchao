@@ -806,6 +806,8 @@ function SuperusersTab({ toast }: { toast: (t: string, ok?: boolean) => void }) 
 
 type AiConfig = {
   configured: boolean;
+  base_url: string;
+  api_key_masked: string;
   enabled: boolean;
   model: string;
   system_prompt: string;
@@ -818,12 +820,17 @@ type AiConfig = {
 function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   const [cfg, setCfg] = useState<AiConfig | null>(null);
   const [saving, setSaving] = useState(false);
+  const [connBase, setConnBase] = useState("");
+  const [connKey, setConnKey] = useState("");
   const load = useCallback(() => {
     api<{ ok: boolean; data: AiConfig }>("/panel/api/ai").then((r) => {
       if (r.ok) setCfg(r.data);
     });
   }, []);
   useEffect(() => load(), [load]);
+  useEffect(() => {
+    if (cfg) setConnBase(cfg.base_url);
+  }, [cfg?.base_url]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!cfg) return <Spinner className="m-8" />;
 
   const save = async (patch: Record<string, unknown>) => {
@@ -843,13 +850,58 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
       {!cfg.configured && (
         <Card>
           <CardPanel className="border-amber-500/40 rounded-lg border bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            ⚠️ AI 未配置：请在服务器 <code>/root/xingchao/.env</code> 填写
-            <code> XINGCHAO_AI_BASE_URL=https://api.b.ai/v1</code> 与
-            <code> XINGCHAO_AI_API_KEY=sk-...</code>（B.AI 平台创建的 API Key），
-            然后 <code>docker compose up -d --force-recreate xingchao-bot</code>。
+            ⚠️ AI 未配置：请在下方「API 连接」填写 API 地址与密钥（B.AI 平台创建的
+            API Key），保存后即可在「功能开关」中开启。
           </CardPanel>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">API 连接</CardTitle>
+          <CardDescription>
+            OpenAI 兼容接口。B.AI 地址：<code>https://api.b.ai/v1</code>；
+            Key 留空表示保持不变。保存后立即生效（无需重启）
+          </CardDescription>
+        </CardHeader>
+        <CardPanel className="grid gap-3">
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="aibase">API 地址</Label>
+              <Input
+                id="aibase"
+                value={connBase}
+                onChange={(e) => setConnBase(e.target.value)}
+                placeholder="https://api.b.ai/v1"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="aikey">API Key</Label>
+              <Input
+                id="aikey"
+                type="password"
+                value={connKey}
+                onChange={(e) => setConnKey(e.target.value)}
+                placeholder={cfg.api_key_masked || "尚未设置"}
+              />
+            </div>
+            <Button
+              className="self-end"
+              disabled={saving}
+              onClick={async () => {
+                const patch: Record<string, unknown> = {};
+                if (connBase !== cfg.base_url) patch.base_url = connBase;
+                if (connKey) patch.api_key = connKey;
+                if (!Object.keys(patch).length) return toast("没有需要保存的修改");
+                await save(patch);
+                setConnKey("");
+              }}
+            >
+              {saving && <Spinner />}保存连接
+            </Button>
+          </div>
+        </CardPanel>
+      </Card>
 
       <Card>
         <CardHeader>

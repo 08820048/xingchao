@@ -497,3 +497,9 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - 护栏：每群 / 每人每日调用上限（持久化到 kv，按天统计），超限静默；回复超长截断
 - 指令：`/ai on|off|status|clear|test <问题>`（超管）
 - 面板：GET/POST `/panel/api/ai`；「AI」页含开关、模型、人设、限额、今日用量
+
+### 17.11 AI 凭据面板化管理
+
+- API 地址与密钥存 SQLite kv（`ai_base_url` / `ai_api_key`），环境变量仅作初始兜底
+- 面板「AI」页新增「API 连接」卡片：地址可编辑、Key 脱敏显示（留空=保持不变），保存即时生效
+- 客户端按凭据签名自动重建，无需重启

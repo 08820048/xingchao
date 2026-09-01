@@ -44,7 +44,7 @@ xingchao-bot 容器（NoneBot2 业务端）
 
 | 凭据 | 位置 |
 |---|---|
-| AI API 地址 / 密钥 | 服务器 `/root/xingchao/.env` 的 `XINGCHAO_AI_BASE_URL`（B.AI: `https://api.b.ai/v1`）与 `XINGCHAO_AI_API_KEY`；其余 AI 参数在面板「AI」页 |
+| AI API 地址 / 密钥 | 优先在面板「AI」页配置（存 SQLite）；环境变量 `XINGCHAO_AI_BASE_URL` / `XINGCHAO_AI_API_KEY` 仅作初始兜底 |
 | OneBot 反向 WS 令牌 | 服务器 `/root/xingchao/.env` 的 `ONEBOT_ACCESS_TOKEN` |
 | 超管 QQ 号 | 同上 `XINGCHAO_SUPERUSERS`（多个用英文逗号分隔，如 `2217021563,1217284058`；修改后需 force-recreate bot） |
 | 群白名单（env 基础） | 同上 `XINGCHAO_GROUP_WHITELIST` |

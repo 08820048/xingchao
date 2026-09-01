@@ -32,19 +32,28 @@ from src.store import get_store
 _KV_KEYS = ("ai_enabled", "ai_model", "ai_system_prompt", "ai_ctx_rounds", "ai_limit_group", "ai_limit_user")
 
 DEFAULTS: dict[str, Any] = {
-    "ai_enabled": "true",
+    "ai_enabled": True,
     "ai_model": "deepseek-v4-flash",
     "ai_system_prompt": (
         "你是「星潮」，一个开源的 QQ 群助手机器人（官网 https://xingchao.dev）。"
         "回答简洁、友好、口语化，避免长篇大论；不懂就说不懂，不要编造。"
     ),
-    "ai_ctx_rounds": "5",
-    "ai_limit_group": "100",
-    "ai_limit_user": "20",
+    "ai_ctx_rounds": 5,
+    "ai_limit_group": 100,
+    "ai_limit_user": 20,
 }
 
 _client: Any = None
-_client_unusable: bool = False
+_client_sig: tuple[str, str] | None = None
+
+
+async def _ai_creds() -> tuple[str, str]:
+    """API 地址与密钥：SQLite kv 优先（面板可改），环境变量兜底。"""
+    store = get_store()
+    base = await store.get_kv("ai_base_url")
+    key = await store.get_kv("ai_api_key")
+    cfg = get_config()
+    return (base or cfg.xingchao_ai_base_url, key or cfg.xingchao_ai_api_key)
 
 
 async def _kv(key: str) -> Any:
@@ -66,32 +75,42 @@ async def ai_config() -> dict[str, Any]:
     return {k: await _kv(k) for k in _KV_KEYS}
 
 
-def is_configured() -> bool:
-    cfg = get_config()
-    return bool(cfg.xingchao_ai_base_url) and bool(cfg.xingchao_ai_api_key)
+async def is_configured() -> bool:
+    base, key = await _ai_creds()
+    return bool(base) and bool(key)
 
 
-def _get_client() -> Any | None:
-    global _client, _client_unusable
-    if not is_configured():
+def mask_key(key: str) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return key[:2] + "****"
+    return f"{key[:5]}****{key[-4:]}"
+
+
+async def get_client() -> Any | None:
+    """按当前凭据返回客户端；凭据变更（面板更新密钥/地址）时自动重建。"""
+    global _client, _client_sig
+    base, key = await _ai_creds()
+    if not base or not key:
         return None
-    if _client is None and not _client_unusable:
+    sig = (base, key)
+    if _client is None or _client_sig != sig:
         try:
             from openai import AsyncOpenAI
 
-            cfg = get_config()
-            _client = AsyncOpenAI(
-                api_key=cfg.xingchao_ai_api_key, base_url=cfg.xingchao_ai_base_url
-            )
+            _client = AsyncOpenAI(api_key=key, base_url=base)
+            _client_sig = sig
+            logger.info(f"AI 客户端已就绪：{base}")
         except Exception:
             logger.exception("初始化 OpenAI 客户端失败，AI 功能禁用")
-            _client_unusable = True
+            _client = None
             return None
     return _client
 
 
 async def is_ai_enabled() -> bool:
-    if not is_configured():
+    if not (await is_configured()):
         return False
     return await _kv("ai_enabled") is True
 
@@ -129,6 +148,7 @@ async def _check_quota(event: MessageEvent, group_limit: int, user_limit: int) -
     uid = str(event.user_id)
     groups: dict[str, int] = usage.get("groups", {})
     users: dict[str, int] = usage.get("users", {})
+    group_limit, user_limit = int(group_limit), int(user_limit)  # 防御性转换
     if groups.get(gid, 0) >= group_limit:
         return False, "本群今日 AI 次数已用完"
     if users.get(uid, 0) >= user_limit:
@@ -160,7 +180,7 @@ MAX_REPLY_CHARS = 1500
 async def chat(event: MessageEvent, text: str) -> str | None:
     """调用 LLM；返回回复文本，失败/被拦截返回 None（调用方静默处理）。"""
     cfg = await ai_config()
-    client = _get_client()
+    client = await get_client()
     if client is None:
         return None
 
@@ -256,8 +276,8 @@ async def handle_ai_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
     raw = args.extract_plain_text().strip()
     action, _, rest = raw.partition(" ")
     if action == "on" or action == "off":
-        if not is_configured():
-            await _send(ai_cmd, "AI 未配置 API 地址或密钥（XINGCHAO_AI_BASE_URL / XINGCHAO_AI_API_KEY），无法开启。")
+        if not (await is_configured()):
+            await _send(ai_cmd, "AI 未配置 API 地址或密钥，请先在 Web 管理面板「AI」页填写。")
             return
         await get_store().set_kv("ai_enabled", "true" if action == "on" else "false")
         await _send(ai_cmd, f"AI 问答已{'开启' if action == 'on' else '关闭'}。")
@@ -267,7 +287,7 @@ async def handle_ai_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
         usage = await _usage_payload()
         lines = [
             f"AI 问答：{'开启' if await is_ai_enabled() else '关闭'}"
-            f"（{'已配置' if is_configured() else '未配置 API'}）",
+            f"（{'已配置' if await is_configured() else '未配置 API'}）",
             f"模型: {cfg['ai_model']}",
             f"上下文: 每群 {cfg['ai_ctx_rounds']} 轮",
             f"今日限额: 每群 {cfg['ai_limit_group']} 次 / 每人 {cfg['ai_limit_user']} 次",
@@ -284,7 +304,7 @@ async def handle_ai_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
         return
     if action == "test" and rest.strip():
         cfg = await ai_config()
-        client = _get_client()
+        client = await get_client()
         if client is None:
             await _send(ai_cmd, "AI 未配置（XINGCHAO_AI_BASE_URL / XINGCHAO_AI_API_KEY）。")
             return
@@ -313,7 +333,7 @@ driver = get_driver()
 
 @driver.on_startup
 async def _startup_hint() -> None:
-    if is_configured():
+    if await is_configured():
         cfg = await ai_config()
         logger.info(f"AI 问答就绪：模型 {cfg['ai_model']}（默认{'开启' if cfg['ai_enabled'] else '关闭'}）")
     else:
