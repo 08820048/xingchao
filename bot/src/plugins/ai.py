@@ -17,7 +17,7 @@ from typing import Any
 
 from nonebot import get_driver, on_command, on_message
 from nonebot.adapters import Message
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent, MessageSegment
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
@@ -37,6 +37,8 @@ DEFAULTS: dict[str, Any] = {
     "ai_system_prompt": (
         "你是「星潮」，一个开源的 QQ 群助手机器人（官网 https://xingchao.dev）。"
         "回答简洁、友好、口语化，避免长篇大论；不懂就说不懂，不要编造。"
+        "你可以调用工具查询群信息、成员列表、活跃统计，以及执行群管理等操作；"
+        "涉及禁言、踢人、改配置等敏感操作时，先向用户确认再执行。"
     ),
     "ai_ctx_rounds": 5,
     "ai_limit_group": 100,
@@ -175,10 +177,188 @@ async def _usage_payload() -> dict[str, Any]:
 # ---------------------------------------------------------------- 核心问答
 
 MAX_REPLY_CHARS = 1500
+MAX_TOOL_ROUNDS = 4
+MAX_BAN_SECONDS = 30 * 24 * 3600  # OneBot v11 上限 30 天
 
 
-async def chat(event: MessageEvent, text: str) -> str | None:
-    """调用 LLM；返回回复文本，失败/被拦截返回 None（调用方静默处理）。"""
+# ---------------------------------------------------------------- 工具注册表
+# 每个工具：schema（OpenAI function 定义）、perm（all=所有人 / superuser=仅超管）、
+# handler(bot, event, args) -> str（给 LLM 的结果摘要，中文）
+
+
+def _tool(name: str, description: str, params: dict, perm: str, handler) -> tuple[dict, Any]:
+    """返回 (OpenAI schema, 执行器)。schema 传给 SDK，执行器本地保存。"""
+    schema = {
+        "type": "function",
+        "function": {"name": name, "description": description, "parameters": params},
+    }
+    return schema, (perm, handler)
+
+
+def _j(v: Any) -> str:
+    return json.dumps(v, ensure_ascii=False)
+
+
+async def _t_group_info(bot, event, args) -> str:
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not group_id:
+        return "错误：未指定群号，且当前不是群聊环境。"
+    info = await bot.call_api("get_group_info", group_id=int(group_id))
+    return _j({"群号": info["group_id"], "群名": info.get("group_name"), "成员数": info.get("member_count"), "上限": info.get("max_member_count")})
+
+
+async def _t_member_list(bot, event, args) -> str:
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not group_id:
+        return "错误：未指定群号。"
+    members = await bot.call_api("get_group_member_list", group_id=int(group_id))
+    brief = [
+        {"QQ": m["user_id"], "昵称": m.get("nickname"), "名片": m.get("card"), "角色": m.get("role")}
+        for m in members[:30]
+    ]
+    return _j({"总数": len(members), "成员（最多30）": brief})
+
+
+async def _t_member_info(bot, event, args) -> str:
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    uid = args.get("user_id")
+    if not group_id or not uid:
+        return "错误：需要群号与用户 QQ。"
+    m = await bot.call_api("get_group_member_info", group_id=int(group_id), user_id=int(uid))
+    return _j({"QQ": m["user_id"], "昵称": m.get("nickname"), "群名片": m.get("card"), "角色": m.get("role"), "入群时间戳": m.get("join_time"), "等级": m.get("level")})
+
+
+async def _t_mute(bot, event, args) -> str:
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    minutes = int(args.get("duration_minutes", 10))
+    await bot.call_api("set_group_ban", group_id=int(group_id), user_id=int(args["user_id"]), duration=max(60, min(minutes * 60, MAX_BAN_SECONDS)))
+    return f"已禁言 {args['user_id']} {minutes} 分钟。"
+
+
+async def _t_unmute(bot, event, args) -> str:
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    await bot.call_api("set_group_ban", group_id=int(group_id), user_id=int(args["user_id"]), duration=0)
+    return f"已解除 {args['user_id']} 的禁言。"
+
+
+async def _t_kick(bot, event, args) -> str:
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    await bot.call_api("set_group_kick", group_id=int(group_id), user_id=int(args["user_id"]))
+    return f"已将 {args['user_id']} 移出群聊。"
+
+
+async def _t_whole_ban(bot, event, args) -> str:
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    enable = bool(args.get("enable", True))
+    await bot.call_api("set_group_whole_ban", group_id=int(group_id), enable=enable)
+    return "已开启全体禁言。" if enable else "已关闭全体禁言。"
+
+
+async def _t_stats(bot, event, args) -> str:
+    from src.plugins.ai import _usage_payload  # noqa: F401  （保持模块一致）
+    store = get_store()
+    day = args.get("day") or datetime.now().astimezone().strftime("%Y-%m-%d")
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if group_id:
+        total, users = await store.get_group_day_stat(int(group_id), day)
+        top = await store.get_top_users(int(group_id), day)
+        return _j({"日期": day, "群号": int(group_id), "消息总数": total, "参与人数": users, "Top5": [{"QQ": u, "条数": c} for u, c in top]})
+    overview = await store.get_day_overview(day)
+    return _j({"日期": day, "各群": [{"群号": g, "消息数": c} for g, c in overview]})
+
+
+async def _t_whitelist_list(bot, event, args) -> str:
+    from src.permission import merged_whitelist
+    env_ids = get_config().xingchao_group_whitelist
+    return _j({"白名单": [{"群号": g, "来源": "环境变量" if g in env_ids else "运行时"} for g in sorted(merged_whitelist())]})
+
+
+async def _t_whitelist_add(bot, event, args) -> str:
+    from src.permission import add_runtime_group
+    ok = await add_runtime_group(int(args["group_id"]))
+    return f"已添加群 {args['group_id']}。" if ok else f"群 {args['group_id']} 已在白名单中。"
+
+
+async def _t_whitelist_del(bot, event, args) -> str:
+    from src.permission import remove_runtime_group
+    gid = int(args["group_id"])
+    if gid in get_config().xingchao_group_whitelist:
+        return f"群 {gid} 来自环境变量，无法移除，请修改 XINGCHAO_GROUP_WHITELIST。"
+    ok = await remove_runtime_group(gid)
+    return f"已移除群 {gid}。" if ok else f"群 {gid} 不在运行时白名单中。"
+
+
+async def _t_group_switch(bot, event, args) -> str:
+    from src.permission import set_group_enabled
+    gid = int(args["group_id"])
+    enable = bool(args.get("enabled", True))
+    changed = await set_group_enabled(gid, enable)
+    state = "开启" if enable else "关闭"
+    return f"已{state}群 {gid} 的业务。" if changed else f"群 {gid} 已处于{state}状态。"
+
+
+async def _t_reply_list(bot, event, args) -> str:
+    from src.plugins import reply as reply_plugin
+    items = reply_plugin.get_items()
+    return _j({"词条数": len(items), "词条": [{"id": it["id"], "触发词": it["pattern"], "匹配": it.get("match", "exact"), "启用": it.get("enabled", True)} for it in items]})
+
+
+async def _t_reply_reload(bot, event, args) -> str:
+    from src.plugins import reply as reply_plugin
+    return f"词库已重载，共 {reply_plugin.reload_replies()} 条词条。"
+
+
+def _build_tools(is_superuser: bool) -> list[dict]:
+    tools = [
+        _tool("get_group_info", "获取群聊信息（群名、成员数）",
+              {"type": "object", "properties": {"group_id": {"type": "integer", "description": "群号，默认当前群"}}, "required": []},
+              "all", _t_group_info),
+        _tool("get_member_list", "获取群成员列表（QQ、昵称、群名片、角色）",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": []},
+              "all", _t_member_list),
+        _tool("get_member_info", "获取指定成员的详细信息",
+              {"type": "object", "properties": {"user_id": {"type": "integer", "description": "成员 QQ"}, "group_id": {"type": "integer"}}, "required": ["user_id"]},
+              "all", _t_member_info),
+        _tool("get_active_stats", "查询群活跃统计（消息量、参与人数、发言Top5）",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}, "day": {"type": "string", "description": "YYYY-MM-DD，默认今天"}}, "required": []},
+              "all", _t_stats),
+        _tool("mute_member", "禁言群成员（分钟）",
+              {"type": "object", "properties": {"user_id": {"type": "integer"}, "duration_minutes": {"type": "integer", "description": "默认10，上限43200"}, "group_id": {"type": "integer"}}, "required": ["user_id"]},
+              "superuser", _t_mute),
+        _tool("unmute_member", "解除成员禁言",
+              {"type": "object", "properties": {"user_id": {"type": "integer"}, "group_id": {"type": "integer"}}, "required": ["user_id"]},
+              "superuser", _t_unmute),
+        _tool("kick_member", "将成员移出群聊",
+              {"type": "object", "properties": {"user_id": {"type": "integer"}, "group_id": {"type": "integer"}}, "required": ["user_id"]},
+              "superuser", _t_kick),
+        _tool("set_whole_ban", "开启/关闭全体禁言",
+              {"type": "object", "properties": {"enable": {"type": "boolean"}, "group_id": {"type": "integer"}}, "required": ["enable"]},
+              "superuser", _t_whole_ban),
+        _tool("list_whitelist", "查看群白名单",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_whitelist_list),
+        _tool("add_whitelist_group", "添加群到白名单",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": ["group_id"]},
+              "superuser", _t_whitelist_add),
+        _tool("remove_whitelist_group", "从白名单移除群（env 来源除外）",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": ["group_id"]},
+              "superuser", _t_whitelist_del),
+        _tool("set_group_business", "开启/关闭某群的业务（临时开关）",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}, "enabled": {"type": "boolean"}}, "required": ["group_id", "enabled"]},
+              "superuser", _t_group_switch),
+        _tool("list_replies", "查看关键词词库",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_reply_list),
+        _tool("reload_replies", "重载关键词词库",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_reply_reload),
+    ]
+    permitted = [pair for pair in tools if pair[1][0] != "superuser" or is_superuser]
+    return permitted
+
+
+async def chat(event: MessageEvent, text: str, bot=None) -> str | None:
+    """调用 LLM（带工具调用循环）；返回回复文本，失败/被拦截返回 None（静默处理）。"""
     cfg = await ai_config()
     client = await get_client()
     if client is None:
@@ -189,16 +369,55 @@ async def chat(event: MessageEvent, text: str) -> str | None:
         logger.info(f"AI 调用被限额拦截：{reason}")
         return None
 
+    is_superuser = event.user_id in {
+        int(u) for u in get_driver().config.superusers
+    }
+    tools = _build_tools(is_superuser)
+
     group_key = getattr(event, "group_id", 0) or -int(event.user_id)
     history = _get_history(group_key)
-    messages = [{"role": "system", "content": cfg["ai_system_prompt"]}, *history,
-                {"role": "user", "content": text}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": cfg["ai_system_prompt"]},
+        *history,
+        {"role": "user", "content": text},
+    ]
 
+    reply: str | None = None
     try:
-        completion = await client.chat.completions.create(
-            model=cfg["ai_model"], messages=messages, temperature=0.7
-        )
-        reply = (completion.choices[0].message.content or "").strip()
+        # 工具调用循环：LLM 可连续调用工具，最多 MAX_TOOL_ROUNDS 轮
+        for _ in range(MAX_TOOL_ROUNDS + 1):
+            completion = await client.chat.completions.create(
+                model=cfg["ai_model"], messages=messages,
+                tools=[pair[0] for pair in tools] or None, temperature=0.7,
+            )
+            msg = completion.choices[0].message
+            tool_calls = getattr(msg, "tool_calls", None)
+            if not tool_calls:
+                reply = (msg.content or "").strip()
+                break
+
+            messages.append(msg.model_dump(exclude_none=True))
+            for call in tool_calls:
+                name = call.function.name
+                try:
+                    args: dict[str, Any] = json.loads(call.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                tool = next((pair for pair in tools if pair[0]["function"]["name"] == name), None)
+                if tool is None:
+                    result = f"错误：工具 {name} 不可用（权限不足或不存在）。"
+                else:
+                    try:
+                        result = await tool[1][1](bot, event, args)
+                    except Exception as e:
+                        logger.exception(f"工具 {name} 执行失败")
+                        result = f"执行失败：{e}（常见原因：机器人不是群管理员、成员不存在等）"
+                logger.info(f"AI 工具调用 {name}({args}) -> {result[:120]}")
+                messages.append(
+                    {"role": "tool", "tool_call_id": call.id, "content": result}
+                )
+        else:
+            reply = None
     except Exception:
         logger.exception("AI 调用失败")
         return None
@@ -223,7 +442,7 @@ def _is_command(text: str) -> bool:
 
 
 @ai_matcher.handle()
-async def handle_ai(event: MessageEvent, matcher: Matcher) -> None:
+async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     if not event.to_me:
         return
     text = event.message.extract_plain_text().strip()
@@ -239,7 +458,7 @@ async def handle_ai(event: MessageEvent, matcher: Matcher) -> None:
     }:
         return
 
-    reply = await chat(event, text)
+    reply = await chat(event, text, bot=bot)
     if reply is None:
         return
     try:

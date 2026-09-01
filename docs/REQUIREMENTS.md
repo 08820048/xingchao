@@ -503,3 +503,16 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - API 地址与密钥存 SQLite kv（`ai_base_url` / `ai_api_key`），环境变量仅作初始兜底
 - 面板「AI」页新增「API 连接」卡片：地址可编辑、Key 脱敏显示（留空=保持不变），保存即时生效
 - 客户端按凭据签名自动重建，无需重启
+
+### 17.12 AI 工具调用（自然语言操控群聊）
+
+- chat() 支持多轮 Function Calling 循环（最多 4 轮），LLM 可连续调用工具后作答
+- 工具注册表：schema（OpenAI function 格式，传 SDK）与执行器（本地闭包）分离
+- 工具清单（14 个，按权限过滤）：
+  - 所有人：get_group_info / get_member_list / get_member_info / get_active_stats
+  - 仅超管：mute_member / unmute_member / kick_member / set_whole_ban /
+    list_whitelist / add_whitelist_group / remove_whitelist_group /
+    set_group_business / list_replies / reload_replies
+- 权限：请求前按事件发起者是否超管过滤工具；越权调用返回错误说明
+- 工具执行异常转述给 LLM（如机器人非群管理员），由 AI 向用户解释
+- 系统提示词告知工具能力；敏感操作（禁言/踢人/改配置）要求 AI 先确认
