@@ -49,7 +49,7 @@ xingchao-bot 容器（NoneBot2 业务端）
 | 超管 QQ 号 | 同上 `XINGCHAO_SUPERUSERS`（多个用英文逗号分隔，如 `2217021563,1217284058`；修改后需 force-recreate bot） |
 | 群白名单（env 基础） | 同上 `XINGCHAO_GROUP_WHITELIST` |
 | Web 管理面板密码 | 同上 `XINGCHAO_PANEL_PASSWORD` |
-| NapCat WebUI Token | `napcat/config/webui.json` 的 `token` 字段，或 `docker logs xingchao-napcat` 查看 |
+| NapCat WebUI Token | `napcat/config/webui.json` 的 `token` 字段，或 `docker logs xingchao-napcat` 查看（已配置 autoLoginAccount，QQ 崩溃后自动快速登录） |
 
 > ⚠️ `.env`、`data/`、`napcat/config/`、`napcat/qq/` 均已 gitignore，**严禁**提交或截图外发。
 
@@ -218,3 +218,13 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 - `docs/QQ机器人-星潮Bot需求文档.md` — 原始需求文档
 - `napcat/README.md` — NapCat 扫码与 WS 客户端配置步骤
 - `README.md` — 项目简介与快速开始
+
+---
+
+## 10. 稳定性说明（小内存服务器）
+
+- 服务器内存 956MB，QQ（Electron）进程较重；已配置 3GB swap（/swapfile + /swapfile2，fstab 持久化）
+- QQ 偶发 `Network service crashed` 属 Electron 已知问题，崩溃后 NapCat 会自动快速登录
+  （webui.json 的 autoLoginAccount 已设为小号 QQ）；会话彻底失效时才需要重新扫码
+- WebUI 会话会过期自动退出：用带 token 参数的完整网址打开即可免输入
+  （`http://127.0.0.1:6099/webui?token=<token>`），建议保存为书签
