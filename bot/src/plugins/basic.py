@@ -48,6 +48,7 @@ HELP_TEXT = (
     "  ◈ /reply reload|list — 关键词词库\n"
     "  ◈ /group list|add|del — 白名单管理\n"
     "  ◈ /plugin reply|welcome on|off — 模块开关\n"
+    "  ◈ 关于星潮 — 机器人与开发者信息\n"
     "\n"
     "✧ ─────────── ✧\n"
     "💌 途中遇到问题？联系超管处理吧～"
