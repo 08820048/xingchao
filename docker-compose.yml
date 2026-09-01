@@ -12,6 +12,7 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+      - ./napcat/cache:/napcat-cache:ro
     ports:
       # Web 管理面板（与反向 WS 共用 8080），仅本机 / SSH 隧道访问
       - "127.0.0.1:8081:8080"
@@ -32,6 +33,7 @@ services:
       - "127.0.0.1:6099:6099"
     volumes:
       - ./napcat/config:/app/napcat/config
+      - ./napcat/cache:/app/napcat/cache
       - ./napcat/qq:/app/.config/QQ
     networks:
       - xingchao

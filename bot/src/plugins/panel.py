@@ -105,6 +105,16 @@ async def _status_payload() -> dict[str, Any]:
 def _register_routes() -> None:
     app = get_driver().server_app
 
+    @app.get("/panel/qq-login-qr")
+    async def panel_qq_login_qr() -> Response:
+        """NapCat 最新登录二维码（文件由 NapCat 挂载共享，始终为最新）。"""
+        from fastapi.responses import FileResponse
+
+        qr = Path("/napcat-cache/qrcode.png")
+        if not qr.is_file():
+            return Response(status_code=404)
+        return FileResponse(qr, media_type="image/png")
+
     @app.post("/panel/api/login")
     async def panel_login(request: Request) -> JSONResponse:
         body = await request.json()
