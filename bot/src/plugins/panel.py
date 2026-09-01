@@ -398,18 +398,37 @@ def _register_routes() -> None:
         return JSONResponse({"ok": True, "data": {"message": "进群欢迎配置已保存并生效"}})
 
     @app.get("/panel/api/join")
-    async def panel_join_get(request: Request) -> JSONResponse:
+    async def panel_join_get(request: Request, group_id: int | None = None) -> JSONResponse:
         if not _authorized(request):
             return _unauthorized()
+        from src.permission import merged_whitelist
         from src.plugins import request as request_plugin
 
-        cfg = await request_plugin.join_config()
+        raw_cfg = await request_plugin.join_config(group_id)
+        cfg = {
+            "mode": raw_cfg["join_mode"],
+            "question": raw_cfg["join_question"],
+            "fallback": raw_cfg["join_fallback"],
+            "keywords": raw_cfg["join_keywords"],
+            "leave_report": raw_cfg["leave_report"],
+        }
+        overrides = await request_plugin._group_overrides()
         pending = [
             {"seq": seq, "group_id": req["group_id"], "user_id": req["user_id"],
              "comment": req["comment"]}
             for seq, req in sorted(request_plugin._PENDING.items())
         ]
-        return JSONResponse({"ok": True, "data": {**cfg, "pending": pending}})
+        return JSONResponse(
+            {
+                "ok": True,
+                "data": {
+                    "groups": sorted(merged_whitelist()),
+                    "override": overrides.get(group_id) if group_id else None,
+                    "pending": pending,
+                    **cfg,
+                },
+            }
+        )
 
     @app.post("/panel/api/join")
     async def panel_join_post(request: Request) -> JSONResponse:
@@ -419,6 +438,14 @@ def _register_routes() -> None:
 
         body = await request.json()
         store = get_store()
+        group_id = body.get("group_id")
+        if group_id is not None and not isinstance(group_id, int):
+            return JSONResponse({"ok": False, "error": "group_id 应为整数"}, status_code=400)
+        # 清除群独立配置，恢复继承全局
+        if body.get("clear_group") and group_id is not None:
+            cleared = await request_plugin.clear_group_override(group_id)
+            msg = f"群 {group_id} 已恢复继承全局配置" if cleared else f"群 {group_id} 本无独立配置"
+            return JSONResponse({"ok": True, "data": {"message": msg}})
         updates: dict[str, str] = {}
         if "mode" in body:
             if body["mode"] not in ("ai", "manual", "auto_approve", "auto_reject"):
@@ -445,12 +472,19 @@ def _register_routes() -> None:
         if not updates:
             return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
         try:
-            for k, v in updates.items():
-                await store.set_kv(k, v)
+            if group_id is not None:
+                # 按群保存：允许部分字段覆盖，未传字段保持全局
+                existing = (await request_plugin._group_overrides()).get(group_id, {})
+                existing.update(updates)
+                await request_plugin.save_group_override(group_id, existing)
+            else:
+                for k, v in updates.items():
+                    await store.set_kv(k, v)
         except Exception:
             logger.exception("面板保存加群审批配置失败")
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
-        return JSONResponse({"ok": True, "data": {"message": "加群审批配置已保存并生效"}})
+        scope = f"群 {group_id}" if group_id is not None else "全局默认"
+        return JSONResponse({"ok": True, "data": {"message": f"加群审批配置已保存并生效（{scope}）"}})
 
     @app.post("/panel/api/join/resolve")
     async def panel_join_resolve(request: Request) -> JSONResponse:

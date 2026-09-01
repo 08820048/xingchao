@@ -1036,6 +1036,8 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
 /* ------------------------------------------------------------------ 加群审批 */
 
 type JoinConfig = {
+  groups: number[];
+  override: Record<string, unknown> | null;
   mode: string;
   question: string;
   fallback: string;
@@ -1054,33 +1056,81 @@ const MODE_LABEL: Record<string, string> = {
 function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   const [cfg, setCfg] = useState<JoinConfig | null>(null);
   const [saving, setSaving] = useState(false);
-  const load = useCallback(() => {
-    api<{ ok: boolean; data: JoinConfig }>("/panel/api/join").then((r) => {
+  const [sel, setSel] = useState<string>("global"); // "global" 或群号
+  const load = useCallback((g: string) => {
+    const q = g !== "global" ? `?group_id=${g}` : "";
+    api<{ ok: boolean; data: JoinConfig }>(`/panel/api/join${q}`).then((r) => {
       if (r.ok) setCfg(r.data);
     });
   }, []);
-  useEffect(() => load(), [load]);
+  useEffect(() => load(sel), [sel, load]);
   if (!cfg) return <Spinner className="m-8" />;
+  const isGroup = sel !== "global";
 
   const save = async (patch: Record<string, unknown>) => {
     setSaving(true);
-    const r = await post("/panel/api/join", patch);
+    const r = await post("/panel/api/join", {
+      ...patch,
+      group_id: isGroup ? parseInt(sel) : undefined,
+    });
     setSaving(false);
     if (r.ok) {
       toast(r.data.message);
-      load();
+      load(sel);
     } else toast(r.error || "保存失败", false);
   };
   const resolve = async (seq: number, approve: boolean) => {
     const r = await post("/panel/api/join/resolve", { seq, approve });
     if (r.ok) {
       toast(r.data.message);
-      load();
+      load(sel);
     } else toast(r.error, false);
   };
 
   return (
     <div className="grid gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">配置对象</CardTitle>
+          <CardDescription>
+            先选群再改配置；未单独设置的群自动继承全局默认
+          </CardDescription>
+        </CardHeader>
+        <CardPanel className="flex flex-wrap items-center gap-2">
+          <select
+            value={sel}
+            onChange={(e) => setSel(e.target.value)}
+            className="border-input bg-background flex h-8 min-w-56 items-center rounded-lg border px-2 text-sm"
+          >
+            <option value="global">🌐 全局默认</option>
+            {cfg.groups.map((g) => (
+              <option key={g} value={g}>群 {g}</option>
+            ))}
+          </select>
+          {isGroup &&
+            (cfg.override ? (
+              <Badge>该群使用独立配置</Badge>
+            ) : (
+              <Badge variant="secondary">继承全局（保存后成为独立配置）</Badge>
+            ))}
+          {isGroup && cfg.override && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                const r = await post("/panel/api/join", {
+                  clear_group: true, group_id: parseInt(sel),
+                });
+                if (r.ok) { toast(r.data.message); load(sel); }
+                else toast(r.error, false);
+              }}
+            >
+              恢复继承全局
+            </Button>
+          )}
+        </CardPanel>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">待审批申请</CardTitle>
@@ -1181,7 +1231,7 @@ function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
             mode: cfg.mode, fallback: cfg.fallback,
             question: cfg.question, keywords: cfg.keywords,
           })}>
-            {saving && <Spinner />}保存策略
+            {saving && <Spinner />}保存策略（{isGroup ? `群 ${sel}` : "全局默认"}）
           </Button>
         </CardPanel>
       </Card>

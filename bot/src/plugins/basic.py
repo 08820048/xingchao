@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from nonebot import on_command, on_fullmatch
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
+from nonebot.adapters.onebot.v11 import (
+    Bot,
+    GroupMessageEvent,
+    Message,
+    MessageEvent,
+    MessageSegment,
+)
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
@@ -69,6 +75,27 @@ status_cmd = on_command("status", rule=SUPERUSER, priority=5, block=True)
 @help_alias.handle()
 async def handle_help(matcher: Matcher) -> None:
     await _send(matcher, HELP_TEXT)
+
+
+about_cmd = on_command("关于星潮", rule=BASIC, priority=5, block=True)
+about_alias = on_fullmatch({"关于星潮"}, rule=BASIC & Rule(_to_me), priority=5, block=True)
+
+
+@about_cmd.handle()
+@about_alias.handle()
+async def handle_about(bot: Bot, matcher: Matcher) -> None:
+    dev_id = get_config().xingchao_developer_id
+    message = Message(
+        "✨ 关于星潮\n"
+        "\n"
+        "开发者：XuYi（"
+    ) + MessageSegment.at(dev_id) + Message(
+        f"，QQ {dev_id}）\n"
+        f"开发者博客：{get_config().xingchao_developer_blog}\n"
+        "机器人官网：https://xingchao.dev\n"
+        "项目开源地址：https://github.com/08820048/xingchao"
+    )
+    await _send(matcher, message)
 
 
 @ping_cmd.handle()

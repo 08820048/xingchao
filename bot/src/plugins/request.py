@@ -62,8 +62,43 @@ async def _kv(key: str) -> Any:
     return raw
 
 
-async def join_config() -> dict[str, Any]:
-    return {k: await _kv(k) for k in DEFAULTS}
+async def _group_overrides() -> dict[int, dict[str, Any]]:
+    raw = await get_store().get_kv("join_group_config")
+    if not raw:
+        return {}
+    try:
+        return {int(g): v for g, v in json.loads(raw).items()}
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return {}
+
+
+async def save_group_override(group_id: int, fields: dict[str, Any]) -> None:
+    overrides = await _group_overrides()
+    overrides[group_id] = fields
+    await get_store().set_kv("join_group_config", json.dumps(overrides, ensure_ascii=False))
+
+
+async def clear_group_override(group_id: int) -> bool:
+    overrides = await _group_overrides()
+    if group_id not in overrides:
+        return False
+    overrides.pop(group_id)
+    await get_store().set_kv("join_group_config", json.dumps(overrides, ensure_ascii=False))
+    return True
+
+
+async def join_config(group_id: int | None = None) -> dict[str, Any]:
+    """生效配置 = 全局默认 + 该群覆盖（group_id 为 None 时返回全局）。"""
+    global_cfg = {k: await _kv(k) for k in DEFAULTS}
+    if group_id is None:
+        return global_cfg
+    overrides = await _group_overrides()
+    override = overrides.get(group_id, {})
+    merged = {**global_cfg, **{k: v for k, v in override.items() if k in DEFAULTS}}
+    # 布尔字段收敛（覆盖值可能是 "true"/"false" 字符串）
+    lr = merged["leave_report"]
+    merged["leave_report"] = lr is True or (isinstance(lr, str) and lr != "false")
+    return merged
 
 
 # ---------------------------------------------------------------- 工具函数
@@ -133,7 +168,7 @@ async def _ai_verdict(bot: Bot, question: str, comment: str) -> str | None:
 
 
 async def _handle_request(bot: Bot, event: GroupRequestEvent) -> None:
-    cfg = await join_config()
+    cfg = await join_config(event.group_id)
     comment = (event.comment or "").strip()
     mode = cfg["join_mode"]
 
@@ -153,7 +188,7 @@ async def _handle_request(bot: Bot, event: GroupRequestEvent) -> None:
             data = json.loads(verdict)
             decision, reason = data["decision"], data["reason"]
         if decision is None:
-            decision = _rule_verdict(comment, cfg["join_keywords"])
+            decision = _rule_verdict(comment, str(cfg["join_keywords"]))
             if decision == "approve":
                 reason = "规则兜底：回答含关键词"
         if decision == "manual":
@@ -221,7 +256,8 @@ leave_notice = on_notice(rule=GROUP_WHITELIST, priority=3, block=False)
 
 @leave_notice.handle()
 async def handle_leave(bot: Bot, event: GroupDecreaseNoticeEvent) -> None:
-    if not (await _kv("leave_report")):
+    cfg = await join_config(event.group_id)
+    if not cfg["leave_report"]:
         return
     if event.sub_type == "kick_me":
         await _notify_superusers(
