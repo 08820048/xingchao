@@ -94,10 +94,6 @@ async def _status_payload() -> dict[str, Any]:
 def _register_routes() -> None:
     app = get_driver().server_app
 
-    @app.get("/panel", response_class=HTMLResponse)
-    async def panel_page() -> str:
-        return _PAGE
-
     @app.post("/panel/api/login")
     async def panel_login(request: Request) -> JSONResponse:
         body = await request.json()
@@ -273,7 +269,20 @@ def _register_routes() -> None:
             return JSONResponse({"ok": True, "data": {"message": f"已移除群 {gid}"}})
         return JSONResponse({"ok": False, "error": "action 应为 add 或 del"}, status_code=400)
 
-    logger.info("Web 管理面板已挂载：/panel")
+    # 静态面板：优先使用 React 构建产物（web/dist），不存在则回退到内嵌单页。
+    # mount 必须放在所有 /panel/api 路由注册之后，否则 API 会被静态文件接管。
+    dist_dir = Path(__file__).resolve().parents[2] / "web" / "dist"
+    if dist_dir.is_dir():
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount("/panel", StaticFiles(directory=str(dist_dir), html=True), name="panel")
+        logger.info(f"Web 管理面板（React 构建）已挂载：/panel（{dist_dir}）")
+    else:
+        @app.get("/panel", response_class=HTMLResponse)
+        async def panel_page_fallback() -> str:
+            return _PAGE
+
+        logger.info("Web 管理面板（内嵌单页）已挂载：/panel（未找到 web/dist）")
 
 
 def _setup() -> None:

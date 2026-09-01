@@ -447,3 +447,14 @@ CREATE TABLE IF NOT EXISTS msg_stat (
   - `GET/POST /panel/api/replies` 词库读取 / 校验保存并热重载（校验 id 重复、match 枚举、必填项）
   - `GET/POST /panel/api/groups` 白名单查看 / 运行时 add|del
 - 面板仅经 SSH 隧道访问，不暴露公网
+
+### 17.6 面板前端升级（coss ui）
+
+- 前端工程 `web/`：Vite + React + TypeScript + Tailwind CSS v4，
+  组件采用 [coss ui](https://coss.com/ui/)（shadcn CLI 接入 `@coss/style` 预设，Base UI 基座）
+- `vite.config.ts` 设置 `base: "/panel/"`，构建产物由 bot 的 FastAPI 以
+  StaticFiles(html=True) 托管在 `/panel`（mount 在 API 路由之后注册，互不冲突）
+- Dockerfile 改为多阶段：node:22-alpine 编译 `web/` → python:3.12-slim 拷贝 `web/dist`
+- 构建上下文改为仓库根目录（`build.context: .`），根目录 `.dockerignore` 排除
+  `web/node_modules`、`.git`、运行数据等
+- 内嵌单页保留为 `web/dist` 缺失时的回退方案

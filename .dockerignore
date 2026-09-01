@@ -1,0 +1,15 @@
+# 版本控制与运行数据
+.git
+data
+napcat/qq
+napcat/config
+
+# 依赖与构建产物
+web/node_modules
+**/__pycache__
+**/*.py[cod]
+.venv
+venv
+
+# 本地密钥
+.env

@@ -1,6 +1,8 @@
 services:
   xingchao-bot:
-    build: ./bot
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
     image: xingchao-bot:latest
     container_name: xingchao-bot
     restart: unless-stopped
