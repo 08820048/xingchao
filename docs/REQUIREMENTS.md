@@ -528,3 +528,12 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - 退群：群内播报（可开关）；机器人被踢（kick_me）通知超管
 - 面板：GET/POST `/panel/api/join`、POST `/panel/api/join/resolve`；「加群审批」页
   （待审批列表 + 通过/拒绝按钮 + 策略配置 + 退群播报开关）
+
+### 17.14 AI 场景身份注入与开发者信息
+
+- @机器人提问时自动注入场景上下文：提问者 QQ、群昵称、入群日期、身份
+  （群主/管理员/普通成员）、所在群名称与人数 —— AI 天然回答"我是谁"类问题
+- 开发者信息（xingchao_developer_id/blog/site，env 可配）注入系统上下文：
+  用户问开发者/作者时，AI 介绍 QQ 2217021563、博客 https://xuyi.dev、
+  官网 https://xingchao.dev，并回复中包含 {dev_at} 占位符（程序替换为真实@开发者）
+- 场景获取失败不影响回答（best-effort）

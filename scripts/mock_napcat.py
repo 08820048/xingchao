@@ -81,6 +81,28 @@ def group_increase_event(user_id: int, group_id: int = GROUP_ID) -> dict:
     }
 
 
+def fake_api_data(action: str, params: dict) -> dict:
+    """为常见 API 返回仿真数据，便于联调工具调用。"""
+    now = int(time.time())
+    if action == "get_group_info":
+        return {"group_id": params.get("group_id", GROUP_ID), "group_name": "星潮测试群",
+                "member_count": 42, "max_member_count": 200}
+    if action == "get_group_member_info":
+        uid = params.get("user_id", USER_ID)
+        return {"user_id": uid, "nickname": "tester", "card": "群名片tester",
+                "role": "admin" if uid == SUPERUSER_ID else "member",
+                "join_time": now - 86400 * 30, "level": "5"}
+    if action == "get_group_member_list":
+        return [
+            {"user_id": 111, "nickname": "群主", "card": "", "role": "owner"},
+            {"user_id": SUPERUSER_ID, "nickname": "管理员", "card": "管理A", "role": "admin"},
+            {"user_id": USER_ID, "nickname": "tester", "card": "群名片tester", "role": "member"},
+        ]
+    if action == "get_stranger_info":
+        return {"user_id": params.get("user_id", USER_ID), "nickname": "tester"}
+    return {"message_id": 1}
+
+
 async def send_event_and_collect(ws, event: dict, timeout: float = 5.0) -> list[dict]:
     """发送一个事件，收集 bot 下发的动作请求（并模拟 NapCat 应答成功）。"""
     responses: list[dict] = []
@@ -94,7 +116,10 @@ async def send_event_and_collect(ws, event: dict, timeout: float = 5.0) -> list[
         if "action" in data:  # bot -> NapCat 的 API 调用
             print(f"  [bot 动作] {data['action']} -> {data['params']}")
             responses.append(data)
-            await ws.send(json.dumps({"status": "ok", "retcode": 0, "data": {"message_id": 1}, "echo": data.get("echo")}))
+            await ws.send(json.dumps(
+                {"status": "ok", "retcode": 0,
+                 "data": fake_api_data(data["action"], data.get("params", {})),
+                 "echo": data.get("echo")}))
         else:
             print(f"  [bot ->] {data}")
     return responses

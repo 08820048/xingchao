@@ -180,6 +180,46 @@ MAX_REPLY_CHARS = 1500
 MAX_TOOL_ROUNDS = 4
 MAX_BAN_SECONDS = 30 * 24 * 3600  # OneBot v11 上限 30 天
 
+ROLE_NAME = {"owner": "群主", "admin": "管理员", "member": "普通成员"}
+
+
+async def _build_scene(bot, event: MessageEvent) -> str:
+    """构建提问者与群信息上下文，让 AI 天然知道“我是谁、在哪个群、有什么身份”。"""
+    from datetime import datetime
+
+    cfg = get_config()
+    lines = [f"提问者 QQ：{event.user_id}"]
+    if isinstance(event, GroupMessageEvent):
+        try:
+            m = await bot.call_api(
+                "get_group_member_info",
+                group_id=event.group_id, user_id=event.user_id, no_cache=True,
+            )
+            role = ROLE_NAME.get(m.get("role", ""), m.get("role", "未知"))
+            lines.append(f"提问者身份：{role}")
+            card = m.get("card") or m.get("nickname")
+            if card:
+                lines.append(f"群昵称：{card}")
+            jt = m.get("join_time")
+            if jt:
+                lines.append(f"入群时间：{datetime.fromtimestamp(int(jt)).strftime('%Y-%m-%d')}")
+        except Exception:
+            logger.debug("获取提问者群信息失败", exc_info=True)
+        try:
+            info = await bot.call_api("get_group_info", group_id=event.group_id)
+            if info.get("group_name"):
+                lines.append(f"所在群：{info['group_name']}（{event.group_id}，{info.get('member_count')} 人）")
+        except Exception:
+            pass
+    lines.append(
+        f"开发者信息：QQ {cfg.xingchao_developer_id}，博客 {cfg.xingchao_developer_blog}，"
+        f"项目官网 {cfg.xingchao_developer_site}。"
+        "当用户询问你是谁做的/开发者/作者/是谁开发的时候：必须在回复中介绍以上开发者信息"
+        "（QQ 号、博客、官网都要提到），"
+        f"并且必须在回复中包含占位符 {{dev_at}} 来@开发者（程序会替换为真实的@消息）。"
+    )
+    return "\n".join(lines)
+
 
 # ---------------------------------------------------------------- 工具注册表
 # 每个工具：schema（OpenAI function 定义）、perm（all=所有人 / superuser=仅超管）、
@@ -376,8 +416,10 @@ async def chat(event: MessageEvent, text: str, bot=None) -> str | None:
 
     group_key = getattr(event, "group_id", 0) or -int(event.user_id)
     history = _get_history(group_key)
+    scene = await _build_scene(bot, event)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": cfg["ai_system_prompt"]},
+        {"role": "system", "content": scene},
         *history,
         {"role": "user", "content": text},
     ]
@@ -461,13 +503,19 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     reply = await chat(event, text, bot=bot)
     if reply is None:
         return
+    dev_id = get_config().xingchao_developer_id
     try:
         if isinstance(event, GroupMessageEvent):
-            await matcher.send(
-                MessageSegment.at(event.user_id) + " " + reply
-            )
+            message = MessageSegment.at(event.user_id) + " "
         else:
-            await matcher.send(reply)
+            message = MessageSegment.at(event.user_id) + " "
+        # {dev_at} 占位符 → 真实 @ 开发者
+        for i, part in enumerate(reply.split("{dev_at}")):
+            if i:
+                message += MessageSegment.at(dev_id)
+            if part:
+                message += part
+        await matcher.send(message)
     except MatcherException:
         raise
     except Exception:
