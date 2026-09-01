@@ -88,6 +88,7 @@ xingchao/
 ├── docker-compose.yml      # xingchao-bot + xingchao-napcat，内部网络
 ├── .env.example            # 根环境变量模板（真实 .env 不入库）
 ├── docs/REQUIREMENTS.md    # 需求说明书
+├── docs/OPERATIONS.md      # 运维与操作手册（凭据位置 / 日常操作 / 故障排查）
 ├── napcat/README.md        # 扫码与 WS 客户端配置步骤
 ├── bot/                    # NoneBot2 应用（python:3.12-slim 自建镜像）
 │   ├── bot.py              # 仅 init / 注册适配器 / 加载插件
