@@ -35,6 +35,8 @@ class Config(BaseModel):
     xingchao_reply_cooldown: int = 8
     xingchao_site: str = "https://xingchao.dev"
     xingchao_panel_password: str = ""  # Web 管理面板密码；留空则启动时随机生成并打印在日志
+    xingchao_ai_base_url: str = ""  # OpenAI 兼容 API 地址（B.AI: https://api.b.ai/v1）
+    xingchao_ai_api_key: str = ""  # 对应 API Key；两者任一为空则 AI 功能自动禁用
 
     @field_validator(
         "xingchao_superusers",

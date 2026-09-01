@@ -486,3 +486,14 @@ CREATE TABLE IF NOT EXISTS msg_stat (
   SUPERUSERS 配置（合并基数必须取 env 基础配置，否则移除不生效）
 - 指令：`/superuser list | add <QQ> | del <QQ>`（仅现有超管可用）
 - 面板 API：`GET/POST /panel/api/superusers`；「超管」页展示列表与来源、运行时增删
+
+### 17.10 AI 问答 `ai.py`
+
+- LLM 接入：通用 OpenAI Chat Completions 兼容协议（当前对接 B.AI，base_url `https://api.b.ai/v1`）
+- 触发：to_me 且非指令的群消息（@机器人 / 昵称唤起）；AI 未开启时由 mention 回固定问候语
+- 配置分层：`XINGCHAO_AI_BASE_URL` / `XINGCHAO_AI_API_KEY` 走环境变量（缺失则功能自动禁用）；
+  开关 / 模型 / 系统提示词 / 会话轮数 / 每日限额存 SQLite kv（面板可改，即时生效）
+- 上下文：每群保留最近 N 轮会话（内存），`/ai clear` 清空
+- 护栏：每群 / 每人每日调用上限（持久化到 kv，按天统计），超限静默；回复超长截断
+- 指令：`/ai on|off|status|clear|test <问题>`（超管）
+- 面板：GET/POST `/panel/api/ai`；「AI」页含开关、模型、人设、限额、今日用量

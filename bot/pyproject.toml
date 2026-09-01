@@ -10,6 +10,7 @@ dependencies = [
     "aiosqlite>=0.19",
     "websockets>=12.0",
     "httpx>=0.27",
+    "openai>=1.40",
 ]
 
 [build-system]

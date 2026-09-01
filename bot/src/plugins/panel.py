@@ -295,6 +295,67 @@ def _register_routes() -> None:
             return JSONResponse({"ok": True, "data": {"message": f"已移除超管 {qq}"}})
         return JSONResponse({"ok": False, "error": "action 应为 add 或 del"}, status_code=400)
 
+    @app.get("/panel/api/ai")
+    async def panel_ai_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import ai as ai_plugin
+
+        cfg = await ai_plugin.ai_config()
+        return JSONResponse(
+            {
+                "ok": True,
+                "data": {
+                    "configured": ai_plugin.is_configured(),
+                    "enabled": await ai_plugin.is_ai_enabled(),
+                    "model": cfg["ai_model"],
+                    "system_prompt": cfg["ai_system_prompt"],
+                    "ctx_rounds": cfg["ai_ctx_rounds"],
+                    "limit_group": cfg["ai_limit_group"],
+                    "limit_user": cfg["ai_limit_user"],
+                    "usage": await ai_plugin._usage_payload(),
+                },
+            }
+        )
+
+    @app.post("/panel/api/ai")
+    async def panel_ai_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import ai as ai_plugin
+
+        body = await request.json()
+        store = get_store()
+        updates: dict[str, str] = {}
+        if "enabled" in body and not isinstance(body["enabled"], bool):
+            return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
+        for key in ("model", "system_prompt"):
+            if key in body:
+                val = str(body[key]).strip()
+                if not val:
+                    return JSONResponse({"ok": False, "error": f"{key} 不能为空"}, status_code=400)
+                if key == "model" and (len(val) > 100 or any(c.isspace() for c in val)):
+                    return JSONResponse({"ok": False, "error": "model 不合法"}, status_code=400)
+                updates[f"ai_{key}"] = val
+        for key in ("ctx_rounds", "limit_group", "limit_user"):
+            if key in body:
+                try:
+                    val = int(body[key])
+                except (TypeError, ValueError):
+                    return JSONResponse({"ok": False, "error": f"{key} 应为整数"}, status_code=400)
+                if not (1 <= val <= 10000):
+                    return JSONResponse({"ok": False, "error": f"{key} 应在 1-10000 之间"}, status_code=400)
+                updates[f"ai_{key}"] = str(val)
+        try:
+            for k, v in updates.items():
+                await store.set_kv(k, v)
+            if "enabled" in body:
+                await store.set_kv("ai_enabled", "true" if body["enabled"] else "false")
+        except Exception:
+            logger.exception("面板保存 AI 配置失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        return JSONResponse({"ok": True, "data": {"message": "AI 配置已保存并生效"}})
+
     @app.post("/panel/api/welcome")
     async def panel_welcome_post(request: Request) -> JSONResponse:
         if not _authorized(request):

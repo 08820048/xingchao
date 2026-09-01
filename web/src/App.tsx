@@ -7,6 +7,7 @@ import {
   Monitor,
   Moon,
   Sun,
+  Sparkles,
   UserCog,
   Users,
 } from "lucide-react";
@@ -801,6 +802,184 @@ function SuperusersTab({ toast }: { toast: (t: string, ok?: boolean) => void }) 
   );
 }
 
+/* ------------------------------------------------------------------ AI */
+
+type AiConfig = {
+  configured: boolean;
+  enabled: boolean;
+  model: string;
+  system_prompt: string;
+  ctx_rounds: number;
+  limit_group: number;
+  limit_user: number;
+  usage: { day: string; groups: Record<string, number>; users: Record<string, number> };
+};
+
+function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [cfg, setCfg] = useState<AiConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: AiConfig }>("/panel/api/ai").then((r) => {
+      if (r.ok) setCfg(r.data);
+    });
+  }, []);
+  useEffect(() => load(), [load]);
+  if (!cfg) return <Spinner className="m-8" />;
+
+  const save = async (patch: Record<string, unknown>) => {
+    setSaving(true);
+    const r = await post("/panel/api/ai", patch);
+    setSaving(false);
+    if (r.ok) {
+      toast(r.data.message);
+      load();
+    } else toast(r.error || "保存失败", false);
+  };
+
+  const totalToday = Object.values(cfg.usage.groups).reduce((a, b) => a + b, 0);
+
+  return (
+    <div className="grid gap-4">
+      {!cfg.configured && (
+        <Card>
+          <CardPanel className="border-amber-500/40 rounded-lg border bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            ⚠️ AI 未配置：请在服务器 <code>/root/xingchao/.env</code> 填写
+            <code> XINGCHAO_AI_BASE_URL=https://api.b.ai/v1</code> 与
+            <code> XINGCHAO_AI_API_KEY=sk-...</code>（B.AI 平台创建的 API Key），
+            然后 <code>docker compose up -d --force-recreate xingchao-bot</code>。
+          </CardPanel>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">AI 问答</CardTitle>
+          <CardDescription>
+            群内 @机器人（或昵称唤起）即由 AI 回答；带多轮会话记忆与每日限额护栏
+          </CardDescription>
+        </CardHeader>
+        <CardPanel className="grid gap-3">
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">功能开关</p>
+              <p className="text-muted-foreground text-xs">
+                关闭后 @ 机器人回复固定问候语
+              </p>
+            </div>
+            <Switch checked={cfg.enabled} onCheckedChange={(v) => save({ enabled: v })} />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="model">模型名称</Label>
+              <Input
+                id="model"
+                value={cfg.model}
+                onChange={(e) => setCfg({ ...cfg, model: e.target.value })}
+              />
+            </div>
+            <Button
+              className="self-end"
+              disabled={saving}
+              onClick={() => save({ model: cfg.model })}
+            >
+              {saving && <Spinner />}保存模型
+            </Button>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="prompt">系统提示词（人设）</Label>
+            <Textarea
+              rows={4}
+              value={cfg.system_prompt}
+              onChange={(e) => setCfg({ ...cfg, system_prompt: e.target.value })}
+            />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="rounds">会话记忆（轮）</Label>
+              <Input
+                id="rounds"
+                type="number"
+                value={cfg.ctx_rounds}
+                onChange={(e) => setCfg({ ...cfg, ctx_rounds: +e.target.value || 5 })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="lg">每群日限（次）</Label>
+              <Input
+                id="lg"
+                type="number"
+                value={cfg.limit_group}
+                onChange={(e) => setCfg({ ...cfg, limit_group: +e.target.value || 100 })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="lu">每人日限（次）</Label>
+              <Input
+                id="lu"
+                type="number"
+                value={cfg.limit_user}
+                onChange={(e) => setCfg({ ...cfg, limit_user: +e.target.value || 20 })}
+              />
+            </div>
+            <Button
+              className="self-end"
+              disabled={saving}
+              onClick={() =>
+                save({
+                  system_prompt: cfg.system_prompt,
+                  ctx_rounds: cfg.ctx_rounds,
+                  limit_group: cfg.limit_group,
+                  limit_user: cfg.limit_user,
+                })
+              }
+            >
+              {saving && <Spinner />}保存
+            </Button>
+          </div>
+        </CardPanel>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">今日用量</CardTitle>
+          <CardDescription>{cfg.usage.day} · 共 {totalToday} 次</CardDescription>
+        </CardHeader>
+        <CardPanel>
+          {totalToday === 0 ? (
+            <p className="text-muted-foreground text-sm">今日还没有 AI 调用</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>维度</TableHead>
+                  <TableHead>标识</TableHead>
+                  <TableHead>次数</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {Object.entries(cfg.usage.groups).map(([gid, n]) => (
+                  <TableRow key={"g" + gid}>
+                    <TableCell>群</TableCell>
+                    <TableCell className="font-mono">{gid}</TableCell>
+                    <TableCell>{n}</TableCell>
+                  </TableRow>
+                ))}
+                {Object.entries(cfg.usage.users).map(([uid, n]) => (
+                  <TableRow key={"u" + uid}>
+                    <TableCell>用户</TableCell>
+                    <TableCell className="font-mono">{uid}</TableCell>
+                    <TableCell>{n}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardPanel>
+      </Card>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ 布局 */
 
 const NAV = [
@@ -810,6 +989,7 @@ const NAV = [
   { id: "replies", label: "词库", icon: ClipboardList },
   { id: "groups", label: "白名单", icon: Users },
   { id: "superusers", label: "超管", icon: UserCog },
+  { id: "ai", label: "AI", icon: Sparkles },
 ] as const;
 
 export default function App() {
@@ -903,6 +1083,7 @@ export default function App() {
           {tab === "replies" && <RepliesTab toast={toast} />}
           {tab === "groups" && <GroupsTab toast={toast} />}
           {tab === "superusers" && <SuperusersTab toast={toast} />}
+          {tab === "ai" && <AiTab toast={toast} />}
         </div>
       </SidebarInset>
       {toastState && <Toast text={toastState.t} ok={toastState.ok} />}

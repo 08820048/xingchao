@@ -52,6 +52,20 @@ async def handle_mention(event: GroupMessageEvent, matcher: Matcher) -> None:
     if _is_command(text):
         return  # 指令交给指令 matcher
 
+    # 内容含「帮助 / help」优先回帮助菜单（无论 AI 是否开启）
+    lowered = text.lower()
+    if text and ("帮助" in text or "help" in lowered):
+        from src.plugins import basic as basic_plugin
+
+        await _send(matcher, basic_plugin.HELP_TEXT)
+        return
+
+    # AI 已启用时由 ai 插件接管对话（priority 11）
+    from src.plugins import ai as ai_plugin
+
+    if await ai_plugin.is_ai_enabled():
+        return
+
     # 冷却：同群默认 8 秒内不重复回应
     now = time.monotonic()
     last = _last_hit.get(event.group_id)
@@ -59,12 +73,5 @@ async def handle_mention(event: GroupMessageEvent, matcher: Matcher) -> None:
         logger.debug(f"@响应在群 {event.group_id} 冷却期内，跳过")
         return
     _last_hit[event.group_id] = now
-
-    lowered = text.lower()
-    if text and ("帮助" in text or "help" in lowered):
-        from src.plugins import basic as basic_plugin
-
-        await _send(matcher, basic_plugin.HELP_TEXT)
-        return
 
     await _send(matcher, MessageSegment.at(event.user_id) + " " + GREETING)
