@@ -402,3 +402,33 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 ---  
   
 把上面整份存成 `docs/REQUIREMENTS.md` 丢给 Agent 即可开工。人工只剩：填 QQ 号 / token、扫码、把小号拉进群。
+---
+
+## 17. 第二期规格（已实现部分）
+
+### 17.1 活跃统计 `stats.py`
+
+- 指令 `/stats [yesterday|昨日|昨天]`，默认当天
+- 群内：当前群消息总数、参与人数、发言 Top5（user_id + 条数）
+- 超管私聊：当日所有群总览（group_id + 消息数）
+- 数据源：`msg_stat`（群级）、`msg_stat_user`（群+天+用户级），由 logger 插件落库；只计数不存内容
+
+### 17.2 白名单运行时管理 `admin.py` + `permission.py`
+
+- `/group add <群号>`：加入运行时白名单，立即生效，写 SQLite `kv(group_whitelist_runtime)`，重启保留
+- `/group del <群号>`：移出运行时白名单；env 来源的群不允许运行时移除（提示改 env）
+- `/group list`：显示合并白名单，标注来源（env / 运行时）
+- 生效白名单 = `XINGCHAO_GROUP_WHITELIST` ∪ 运行时白名单；启动时从 kv 恢复
+
+### 17.3 群管 `groupadmin.py`
+
+- 全部仅超管（SUPERUSER），仅群聊可用
+- `/mute @某人 [分钟]`（默认 10，上限 30 天）、`/unmute @某人`、`/banall on|off`、
+  `/kick @某人`、`/recall`（回复目标消息或 `/recall <message_id>`）
+- API 失败（权限不足等）时回复友好提示，不抛崩
+- 新人进群欢迎：白名单群 GroupIncrease 事件，默认开启，`/plugin welcome on|off` 开关
+  （写 kv `welcome_enabled`，重启保留）；机器人自己进群不触发
+
+### 17.4 mock 脚本增强
+
+- `scripts/mock_napcat.py` 支持把 `@QQ号` 文本解析为 at 消息段，可联调群管指令

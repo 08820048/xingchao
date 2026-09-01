@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import time
 import websockets
 
@@ -30,13 +31,28 @@ def meta_connect() -> dict:
     }
 
 
+def parse_segments(text: str) -> list[dict]:
+    """把 '@123456' 文本转成 at 段，其余为 text 段（模拟真实消息段）。"""
+    segs: list[dict] = []
+    for part in re.split(r"(@\d+)", text):
+        if not part:
+            continue
+        if re.fullmatch(r"@\d+", part):
+            segs.append({"type": "at", "data": {"qq": part[1:]}})
+        else:
+            segs.append({"type": "text", "data": {"text": part}})
+    return segs
+
+
 def group_msg(text: str, user_id: int = USER_ID, group_id: int = GROUP_ID) -> dict:
+    segments = parse_segments(text)
+    plain = "".join(seg["data"]["text"] for seg in segments if seg["type"] == "text")
     return {
         "time": int(time.time()), "self_id": SELF_ID, "post_type": "message",
         "message_type": "group", "sub_type": "normal", "message_id": int(time.time()),
         "user_id": user_id, "group_id": group_id,
-        "message": [{"type": "text", "data": {"text": text}}],
-        "raw_message": text, "font": 0,
+        "message": segments,
+        "raw_message": plain, "font": 0,
         "sender": {"user_id": user_id, "nickname": "tester", "card": "tester"},
     }
 

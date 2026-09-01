@@ -10,12 +10,12 @@ from nonebot import on_message
 from nonebot.adapters.onebot.v11 import GroupMessageEvent
 from nonebot.log import logger
 
-from src.config import get_config
+from src.permission import merged_whitelist
 
 ignore_logger = on_message(priority=2, block=False)
 
 
 @ignore_logger.handle()
 async def handle_ignore(event: GroupMessageEvent) -> None:
-    if event.group_id not in get_config().xingchao_group_whitelist:
+    if event.group_id not in merged_whitelist():
         logger.debug(f"忽略非白名单群消息：group={event.group_id} user={event.user_id}")

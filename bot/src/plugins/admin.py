@@ -13,7 +13,7 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src.config import get_config
-from src.permission import SUPERUSER
+from src.permission import SUPERUSER, add_runtime_group, merged_whitelist, remove_runtime_group
 from src.store import get_store
 
 reply_admin = on_command("reply", rule=SUPERUSER, priority=1, block=True)
@@ -54,15 +54,46 @@ async def handle_reply(args: Message = CommandArg()) -> None:
 
 @group_admin.handle()
 async def handle_group(args: Message = CommandArg()) -> None:
-    action = args.extract_plain_text().strip().lower()
-    if action != "list":
-        await _send(group_admin, "用法：/group list")
+    parts = args.extract_plain_text().strip().split()
+    if not parts:
+        await _send(group_admin, "用法：/group list | /group add <群号> | /group del <群号>")
         return
-    whitelist = get_config().xingchao_group_whitelist
-    if not whitelist:
-        await _send(group_admin, "白名单为空（不处理任何群）。请修改 XINGCHAO_GROUP_WHITELIST 后重启。")
+    action = parts[0].strip().lower()
+
+    if action == "list":
+        whitelist = merged_whitelist()
+        if not whitelist:
+            await _send(group_admin, "白名单为空（不处理任何群）。")
+            return
+        env_groups = get_config().xingchao_group_whitelist
+        lines = [f"白名单 {len(whitelist)} 个群："]
+        for g in sorted(whitelist):
+            source = "env" if g in env_groups else "运行时"
+            lines.append(f"  {g}（{source}）")
+        await _send(group_admin, "\n".join(lines))
         return
-    await _send(group_admin, f"白名单 {len(whitelist)} 个群：\n" + "\n".join(str(g) for g in sorted(whitelist)))
+
+    if action in ("add", "del") and len(parts) == 2 and parts[1].isdigit():
+        group_id = int(parts[1])
+        env_groups = get_config().xingchao_group_whitelist
+        if action == "add":
+            if await add_runtime_group(group_id):
+                await _send(group_admin, f"已将群 {group_id} 加入白名单（立即生效，重启后保留）。")
+            else:
+                await _send(group_admin, f"群 {group_id} 已在白名单中。")
+        else:
+            if group_id in env_groups:
+                await _send(
+                    group_admin,
+                    f"群 {group_id} 来自环境变量，无法运行时移除；请修改 XINGCHAO_GROUP_WHITELIST 后重启。",
+                )
+            elif await remove_runtime_group(group_id):
+                await _send(group_admin, f"已将群 {group_id} 移出白名单（立即生效）。")
+            else:
+                await _send(group_admin, f"群 {group_id} 不在运行时白名单中。")
+        return
+
+    await _send(group_admin, "用法：/group list | /group add <群号> | /group del <群号>")
 
 
 @plugin_admin.handle()

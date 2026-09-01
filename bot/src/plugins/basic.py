@@ -30,10 +30,14 @@ HELP_TEXT = (
     "\n"
     "/ping - 连通测试\n"
     "/id - 查看群号 / 用户 / 机器人 ID\n"
+    "/stats - 群活跃统计（/stats yesterday 看昨日）\n"
     "/status - 运行状态（仅超管）\n"
+    "/mute|unmute|kick @某人 - 群管（仅超管，需机器人管理员）\n"
+    "/banall on|off - 全体禁言（仅超管）\n"
+    "/recall - 撤回消息（回复目标消息，仅超管）\n"
     "/reply reload|list - 关键词词库管理（仅超管）\n"
-    "/group list - 查看群白名单（仅超管）\n"
-    "/plugin reply on|off - 关键词模块开关（仅超管）"
+    "/group list|add|del - 白名单管理（仅超管）\n"
+    "/plugin reply on|off / welcome on|off - 模块开关（仅超管）"
 )
 
 

@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS msg_stat (
     count INTEGER,
     PRIMARY KEY (group_id, day)
 );
+CREATE TABLE IF NOT EXISTS msg_stat_user (
+    group_id INTEGER,
+    day TEXT,
+    user_id INTEGER,
+    count INTEGER,
+    PRIMARY KEY (group_id, day, user_id)
+);
 """
 
 
@@ -68,6 +75,48 @@ class Store:
             (group_id, day),
         )
         await conn.commit()
+
+    async def incr_user_msg_stat(self, group_id: int, day: str, user_id: int) -> None:
+        conn = await self._ensure()
+        await conn.execute(
+            "INSERT INTO msg_stat_user (group_id, day, user_id, count) VALUES (?, ?, ?, 1) "
+            "ON CONFLICT(group_id, day, user_id) DO UPDATE SET count = count + 1",
+            (group_id, day, user_id),
+        )
+        await conn.commit()
+
+    async def get_group_day_stat(self, group_id: int, day: str) -> tuple[int, int]:
+        """返回 (总消息数, 参与人数)。"""
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT COALESCE(SUM(count), 0), COUNT(*) FROM msg_stat_user "
+            "WHERE group_id = ? AND day = ?",
+            (group_id, day),
+        ) as cur:
+            row = await cur.fetchone()
+        return (int(row[0]), int(row[1])) if row else (0, 0)
+
+    async def get_top_users(
+        self, group_id: int, day: str, limit: int = 5
+    ) -> list[tuple[int, int]]:
+        """返回 [(user_id, count)]，按发言数降序。"""
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT user_id, count FROM msg_stat_user "
+            "WHERE group_id = ? AND day = ? ORDER BY count DESC, user_id LIMIT ?",
+            (group_id, day, limit),
+        ) as cur:
+            return [(int(r[0]), int(r[1])) for r in await cur.fetchall()]
+
+    async def get_day_overview(self, day: str) -> list[tuple[int, int]]:
+        """返回当日所有群 [(group_id, 总消息数)]，按消息数降序。"""
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT group_id, COALESCE(SUM(count), 0) FROM msg_stat "
+            "WHERE day = ? GROUP BY group_id ORDER BY SUM(count) DESC",
+            (day,),
+        ) as cur:
+            return [(int(r[0]), int(r[1])) for r in await cur.fetchall()]
 
     async def close(self) -> None:
         if self._conn is not None:

@@ -20,13 +20,25 @@ xingchao-bot      (NoneBot2 + OneBot V11)
 data/xingchao.db + data/replies.json + data/logs/
 ```
 
-## 功能（第一期）
+## 功能
+
+### 第一期
 
 - 仅白名单群进入业务；空白名单 = 不处理任何群（安全默认）
-- 白名单群全量文本日志（`data/logs/group-{群号}-日期.jsonl`）
-- 指令：`/help` `/ping` `/id` `/status`（status 仅超管）
+- 白名单群全量文本日志（`data/logs/group-{群号}-日期.jsonl`，含指令与关键词命中消息）
+- 指令：`/help` `/ping` `/id` `/stats` `/status`（status 仅超管）
 - 关键词回复（精确 / 包含），同群同词条默认 8 秒冷却
-- 超管指令：`/reply reload|list`、`/group list`、`/plugin reply on|off`
+- 超管指令：`/reply reload|list`、`/group list|add|del`、`/plugin reply on|off`
+
+### 第二期
+
+- 群活跃统计：`/stats` 查看消息总量、参与人数、发言 Top5；`/stats yesterday` 看昨日；
+  超管私聊为全群总览
+- 白名单运行时管理：`/group add|del <群号>` 热更新，持久化到 SQLite 重启保留；
+  env 基础白名单仍需改环境变量重启
+- 群管（仅超管，需机器人为群管理员）：`/mute @某人 [分钟]`、`/unmute @某人`、
+  `/banall on|off`、`/kick @某人`、`/recall`（回复目标消息或带 message_id）
+- 新人进群欢迎（白名单群，`/plugin welcome on|off` 开关，持久化 kv）
 
 ## 快速开始
 
@@ -74,14 +86,16 @@ xingchao/
 │   ├── .env / .env.prod    # dev / prod 配置
 │   └── src/
 │       ├── config.py       # pydantic 配置
-│       ├── permission.py   # 白名单 / 超管规则
-│       ├── store.py        # SQLite (kv, msg_stat)
+│       ├── permission.py   # 白名单（env + 运行时）/ 超管规则
+│       ├── store.py        # SQLite (kv, msg_stat, msg_stat_user)
 │       └── plugins/
 │           ├── whitelist.py  # 非白名单群忽略日志
 │           ├── logger.py     # 白名单群 jsonl 日志
-│           ├── basic.py      # /help /ping /id /status
+│           ├── basic.py      # /help /ping /id /stats /status
 │           ├── reply.py      # 关键词回复（冷却）
-│           └── admin.py      # 超管指令
+│           ├── admin.py      # 超管指令（词库 / 白名单 / 插件开关）
+│           ├── stats.py      # /stats 活跃统计
+│           └── groupadmin.py # 群管 + 进群欢迎
 └── data/                   # 运行数据（compose 挂载，不入库）
 ```
 
