@@ -44,6 +44,9 @@ data/xingchao.db + data/replies.json + data/logs/
   未设置则随机生成并打印在 bot 日志），含状态 / 统计 / 日志 / 词库编辑 / 白名单管理
   前端为 Vite + React + [coss ui](https://coss.com/ui/)（Base UI + Tailwind v4），
   多阶段 Docker 构建自动编译；`web/dist` 缺失时回退内嵌单页
+  支持浅色 / 深色 / 跟随系统三种主题
+- 群内 @机器人（或昵称唤起）自动回应，带冷却防刷屏
+- 每个群可独立开关业务（面板操作，持久化 SQLite）
 
 ## 快速开始
 

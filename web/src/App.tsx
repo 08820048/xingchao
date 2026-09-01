@@ -221,9 +221,7 @@ function Dashboard({
           return (
             <Card key={k as string}>
               <CardPanel className="flex items-center gap-3">
-                <div className="bg-muted flex size-10 items-center justify-center rounded-lg">
-                  <I className="text-muted-foreground size-5" />
-                </div>
+                <I className="text-muted-foreground size-5 shrink-0" />
                 <div>
                   <p className="text-muted-foreground text-xs">{k as string}</p>
                   <p className="font-semibold">{v as string}</p>

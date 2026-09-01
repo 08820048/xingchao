@@ -458,3 +458,11 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - 构建上下文改为仓库根目录（`build.context: .`），根目录 `.dockerignore` 排除
   `web/node_modules`、`.git`、运行数据等
 - 内嵌单页保留为 `web/dist` 缺失时的回退方案
+
+### 17.7 @机器人 响应 `mention.py`
+
+- 判定依据为 `event.to_me`（适配器会把指向自身的 at 段剥离并置 to_me），
+  覆盖成员 @ 机器人、昵称（星潮/xingchao）前缀唤起两种方式
+- 非指令内容：@发起者 + 简短回应；内容含「帮助 / help」→ 回复帮助菜单（basic 别名优先）
+- 同群冷却默认取 XINGCHAO_REPLY_COOLDOWN（8 秒），避免刷屏
+- 仅白名单群生效；指令消息不受影响
