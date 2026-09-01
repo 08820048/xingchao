@@ -545,3 +545,11 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - scheduler 插件：SQLite scheduled_tasks 表；后台协程每 30 秒扫描，
   重复规则 daily/weekdays/weekend/weekly(指定星期)/once(指定日期)；北京时间触发；
   支持 @全体成员；面板「定时任务」页增删改；/task list 指令查看
+
+### 17.16 AI 接管入群审批（工具）
+
+- AI 工具新增 3 个（仅超管）：get_pending_join_requests（查看待审批）、
+  approve_join_request / reject_join_request（通过/拒绝，直接调用 set_group_add_request）
+- 修复：join_request 匹配器补上白名单规则（此前非白名单群的申请也会被处理）；
+  转人工条目超 1 小时自动清理（QQ 侧凭证此时已过期）
+- AI 可按自然语言批量审批（"回答正经的通过，敷衍的拒绝"）

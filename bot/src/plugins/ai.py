@@ -360,6 +360,47 @@ async def _t_gh_trending(bot, event, args) -> str:
         return f"获取趋势失败：{e}"
 
 
+async def _t_pending_requests(bot, event, args) -> str:
+    from src.plugins import request as req
+    if not req._PENDING:
+        return "当前没有待审批的入群申请。注意：只有机器人运行期间转人工的申请才会进入此列表；QQ 客户端里直接收到的申请需要在 QQ 群管理设置中处理。"
+    return _j({"待审批": [
+        {"序号": seq, "群号": r["group_id"], "QQ": r["user_id"], "回答": r["comment"] or "（无）"}
+        for seq, r in sorted(req._PENDING.items())
+    ]})
+
+
+async def _t_approve_request(bot, event, args) -> str:
+    from src.plugins import request as req
+    try:
+        seq = int(args["seq"])
+    except (KeyError, TypeError, ValueError):
+        return "错误：需要 seq（申请序号，可先用查看工具获取）。"
+    r = req._PENDING.get(seq)
+    if not r:
+        return f"没有找到申请 #{seq}（可能已处理、过期或重启丢失）。"
+    await bot.call_api("set_group_add_request", flag=r["flag"],
+                       sub_type=r["sub_type"], approve=True, reason="")
+    req._PENDING.pop(seq)
+    return f"已通过申请 #{seq}（QQ {r['user_id']}）。"
+
+
+async def _t_reject_request(bot, event, args) -> str:
+    from src.plugins import request as req
+    try:
+        seq = int(args["seq"])
+    except (KeyError, TypeError, ValueError):
+        return "错误：需要 seq（申请序号）。"
+    reason = str(args.get("reason", "不符合入群要求"))
+    r = req._PENDING.get(seq)
+    if not r:
+        return f"没有找到申请 #{seq}（可能已处理、过期或重启丢失）。"
+    await bot.call_api("set_group_add_request", flag=r["flag"],
+                       sub_type=r["sub_type"], approve=False, reason=reason)
+    req._PENDING.pop(seq)
+    return f"已拒绝申请 #{seq}（QQ {r['user_id']}），理由：{reason}"
+
+
 async def _t_now(bot, event, args) -> str:
     now = datetime.now().astimezone()
     week = "一二三四五六日"[now.weekday()]
@@ -461,6 +502,15 @@ def _build_tools(is_superuser: bool) -> list[dict]:
         _tool("calculate", "进行精确的算术计算（加减乘除、取余、幂运算）",
               {"type": "object", "properties": {"expression": {"type": "string", "description": "算术表达式，如 (3+4)*2 或 2**10"}}, "required": ["expression"]},
               "all", _t_calc),
+        _tool("get_pending_join_requests", "查看待审批的入群申请列表（序号、QQ、回答）",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_pending_requests),
+        _tool("approve_join_request", "通过入群申请",
+              {"type": "object", "properties": {"seq": {"type": "integer", "description": "申请序号"}}, "required": ["seq"]},
+              "superuser", _t_approve_request),
+        _tool("reject_join_request", "拒绝入群申请",
+              {"type": "object", "properties": {"seq": {"type": "integer"}, "reason": {"type": "string"}}, "required": ["seq"]},
+              "superuser", _t_reject_request),
         _tool("list_replies", "查看关键词词库",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_reply_list),

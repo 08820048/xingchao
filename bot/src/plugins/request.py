@@ -168,6 +168,10 @@ async def _ai_verdict(bot: Bot, question: str, comment: str) -> str | None:
 
 
 async def _handle_request(bot: Bot, event: GroupRequestEvent) -> None:
+    # 清理超过 1 小时的过期转人工条目（QQ 侧凭证此时已失效）
+    now_ts = time.time()
+    for seq in [q for q, r in _PENDING.items() if now_ts - r["time"] > 3600]:
+        _PENDING.pop(seq, None)
     cfg = await join_config(event.group_id)
     comment = (event.comment or "").strip()
     mode = cfg["join_mode"]
@@ -241,7 +245,7 @@ async def _handle_request(bot: Bot, event: GroupRequestEvent) -> None:
 
 # ---------------------------------------------------------------- 事件处理
 
-join_request = on_request(priority=1, block=False)
+join_request = on_request(rule=GROUP_WHITELIST, priority=1, block=False)
 
 
 @join_request.handle()
