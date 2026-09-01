@@ -2,6 +2,9 @@
 
 每行：time, group_id, user_id, message_id, raw_plain。
 纯图片 / 无文本时 raw_plain 为空字符串，仍记一行。不回消息。
+
+priority=0：必须在所有 block=True 的 matcher（admin/basic/reply）之前运行，
+否则指令消息和命中关键词的消息会被 stop_propagation 拦截，无法做到「全量」日志。
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ from src.config import get_config
 from src.permission import GROUP_WHITELIST
 from src.store import get_store
 
-message_logger = on_message(rule=GROUP_WHITELIST, priority=100, block=False)
+message_logger = on_message(rule=GROUP_WHITELIST, priority=0, block=False)
 
 
 @message_logger.handle()

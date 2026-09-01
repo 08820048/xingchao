@@ -327,12 +327,12 @@ CREATE TABLE IF NOT EXISTS msg_stat (
   
 ## 11. 插件优先级  
   
-| 插件 | priority | block |  
-|------|----------|-------|  
-| admin 指令 | 1 | True |  
-| basic 指令 | 5 | True |  
-| reply | 20 | True（命中才 block） |  
-| logger | 100 | False |  
+| 插件 | priority | block |
+|------|----------|-------|
+| logger | 0 | False（必须在所有 block matcher 之前，保证全量日志） |
+| admin 指令 | 1 | True |
+| basic 指令 | 5 | True |
+| reply | 20 | True（命中才 block） |
   
 指令 matcher 用 `on_commandCOMMAND_START` 为 `["/", "星潮"]`，因此 `星潮帮助` 若不好实现，则 `/help` 与 `星潮 help` 即可。    
 「星潮帮助」作为 `on_fullmatch({"星潮帮助", "星潮 help"})` 额外加一条。  
