@@ -25,19 +25,26 @@ async def _to_me(event: MessageEvent) -> bool:
 
 
 HELP_TEXT = (
-    "星潮 Xingchao\n"
-    "https://xingchao.dev\n"
+    "✨ 我是星潮，一个开源QQbot!\n"
     "\n"
-    "/ping - 连通测试\n"
-    "/id - 查看群号 / 用户 / 机器人 ID\n"
-    "/stats - 群活跃统计（/stats yesterday 看昨日）\n"
-    "/status - 运行状态（仅超管）\n"
-    "/mute|unmute|kick @某人 - 群管（仅超管，需机器人管理员）\n"
-    "/banall on|off - 全体禁言（仅超管）\n"
-    "/recall - 撤回消息（回复目标消息，仅超管）\n"
-    "/reply reload|list - 关键词词库管理（仅超管）\n"
-    "/group list|add|del - 白名单管理（仅超管）\n"
-    "/plugin reply on|off / welcome on|off - 模块开关（仅超管）"
+    "「📖 基础指令」\n"
+    "  ◈ /ping — 连通测试\n"
+    "  ◈ /id — 查看群号 / 用户 / 机器人 ID\n"
+    "  ◈ /stats — 群活跃统计（/stats yesterday 看昨日）\n"
+    "\n"
+    "「🔑 管理指令 · 仅超管」\n"
+    "  ◈ /status — 运行状态\n"
+    "  ◈ /mute @某人 [分钟] — 禁言\n"
+    "  ◈ /unmute @某人 — 解除禁言\n"
+    "  ◈ /banall on|off — 全体禁言\n"
+    "  ◈ /kick @某人 — 移出本群\n"
+    "  ◈ /recall — 撤回（回复目标消息）\n"
+    "  ◈ /reply reload|list — 关键词词库\n"
+    "  ◈ /group list|add|del — 白名单管理\n"
+    "  ◈ /plugin reply|welcome on|off — 模块开关\n"
+    "\n"
+    "✧ ─────────── ✧\n"
+    "💌 途中遇到问题？联系超管处理吧～"
 )
 
 
