@@ -228,6 +228,30 @@
     --sidebar-ring: var(--color-neutral-400);
 }
 
+/* 官网固定为浅色视觉，避免管理面板的深色偏好污染 Coss 组件。 */
+.landing {
+    color-scheme: light;
+    --accent: --alpha(var(--color-black) / 4%);
+    --accent-foreground: var(--color-neutral-800);
+    --background: var(--color-white);
+    --border: --alpha(var(--color-black) / 8%);
+    --card: var(--color-white);
+    --card-foreground: var(--color-neutral-800);
+    --foreground: var(--color-neutral-800);
+    --input: --alpha(var(--color-black) / 10%);
+    --muted: --alpha(var(--color-black) / 4%);
+    --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
+    --popover: var(--color-white);
+    --popover-foreground: var(--color-neutral-800);
+    --primary: #312749;
+    --primary-foreground: var(--color-white);
+    --ring: var(--color-violet-400);
+    --secondary: --alpha(var(--color-black) / 4%);
+    --secondary-foreground: var(--color-neutral-800);
+    --success: var(--color-emerald-500);
+    --success-foreground: var(--color-emerald-700);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -239,6 +263,16 @@
     font-family: var(--font-mono);
     }
   html {
-    @apply font-sans font-mono;
+    @apply scroll-smooth font-sans;
     }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .landing *, .landing *::before, .landing *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

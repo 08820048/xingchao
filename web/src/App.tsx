@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import LandingPage from "@/LandingPage";
 
 /* ------------------------------------------------------------------ API */
 
@@ -1388,7 +1389,7 @@ const NAV = [
   { id: "sensitive", label: "敏感词", icon: ShieldAlert },
 ] as const;
 
-export default function App() {
+function PanelApp() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [tab, setTab] = useState<(typeof NAV)[number]["id"]>("dashboard");
   const [status, setStatus] = useState<Status | null>(null);
@@ -1487,4 +1488,14 @@ export default function App() {
       {toastState && <Toast text={toastState.t} ok={toastState.ok} />}
     </SidebarProvider>
   );
+}
+
+export default function App() {
+  const panel = window.location.pathname.startsWith("/panel");
+
+  useEffect(() => {
+    document.title = panel ? "星潮 · 管理面板" : "星潮 Xingchao · 懂分寸的 QQ 群助手";
+  }, [panel]);
+
+  return panel ? <PanelApp /> : <LandingPage />;
 }

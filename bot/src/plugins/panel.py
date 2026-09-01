@@ -1,6 +1,6 @@
-"""Web 管理面板：挂载在 NoneBot 的 FastAPI 应用上（与反向 WS 共用 8080 端口）。
+"""官网与 Web 管理面板：挂载在 NoneBot 的 FastAPI 应用上（与反向 WS 共用 8080 端口）。
 
-- 页面：/panel（单页应用，内嵌 HTML/CSS/JS）
+- 页面：/（官网）、/panel（管理面板）
 - 认证：XINGCHAO_PANEL_PASSWORD，留空则启动时随机生成并打印到日志；
   登录成功后种 HttpOnly Cookie（sha256(password)）
 - 功能：运行状态 / 活跃统计 / 群日志查看 / 关键词词库编辑 / 白名单管理
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from nonebot import get_driver, get_loaded_plugins
 from nonebot.log import logger
 
@@ -678,14 +678,18 @@ def _register_routes() -> None:
             return JSONResponse({"ok": True, "data": {"message": f"已{state}群 {gid} 的业务"}})
         return JSONResponse({"ok": False, "error": "action 应为 add / del / on / off"}, status_code=400)
 
-    # 静态面板：优先使用 React 构建产物（web/dist），不存在则回退到内嵌单页。
-    # mount 必须放在所有 /panel/api 路由注册之后，否则 API 会被静态文件接管。
+    # 官网与面板共用 React 构建产物。根 mount 必须放在所有 API 路由之后。
     dist_dir = Path(__file__).resolve().parents[2] / "web" / "dist"
     if dist_dir.is_dir():
         from fastapi.staticfiles import StaticFiles
 
-        app.mount("/panel", StaticFiles(directory=str(dist_dir), html=True), name="panel")
-        logger.info(f"Web 管理面板（React 构建）已挂载：/panel（{dist_dir}）")
+        @app.get("/panel", response_class=FileResponse)
+        @app.get("/panel/", response_class=FileResponse)
+        async def panel_page() -> FileResponse:
+            return FileResponse(dist_dir / "index.html")
+
+        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="web")
+        logger.info(f"官网与 Web 管理面板（React 构建）已挂载：/、/panel（{dist_dir}）")
     else:
         @app.get("/panel", response_class=HTMLResponse)
         async def panel_page_fallback() -> str:
