@@ -6,6 +6,8 @@ services:
     image: xingchao-bot:latest
     container_name: xingchao-bot
     restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
     env_file:
       - .env
     volumes:
