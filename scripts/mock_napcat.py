@@ -57,6 +57,22 @@ def group_msg(text: str, user_id: int = USER_ID, group_id: int = GROUP_ID) -> di
     }
 
 
+def group_request_event(user_id: int, comment: str, group_id: int = GROUP_ID) -> dict:
+    return {
+        "time": int(time.time()), "self_id": SELF_ID, "post_type": "request",
+        "request_type": "group", "sub_type": "add", "group_id": group_id,
+        "user_id": user_id, "comment": comment, "flag": f"flag_{user_id}_{int(time.time())}",
+    }
+
+
+def group_decrease_event(user_id: int, sub_type: str = "leave", group_id: int = GROUP_ID) -> dict:
+    return {
+        "time": int(time.time()), "self_id": SELF_ID, "post_type": "notice",
+        "notice_type": "group_decrease", "sub_type": sub_type,
+        "group_id": group_id, "user_id": user_id, "operator_id": 0,
+    }
+
+
 def group_increase_event(user_id: int, group_id: int = GROUP_ID) -> dict:
     return {
         "time": int(time.time()), "self_id": SELF_ID, "post_type": "notice",
@@ -108,6 +124,21 @@ async def run(interactive: bool) -> None:
                     uid = int(text.split()[1])
                     await send_event_and_collect(ws, group_increase_event(uid))
                     continue
+                if text.startswith("request "):
+                    comment = text[8:]
+                    await send_event_and_collect(
+                        ws, group_request_event(13572468, comment)
+                    )
+                    continue
+                if text.startswith("leave "):
+                    uid = int(text.split()[1])
+                    await send_event_and_collect(ws, group_decrease_event(uid))
+                    continue
+                if text == "kickme":
+                    await send_event_and_collect(
+                        ws, group_decrease_event(SELF_ID, sub_type="kick_me")
+                    )
+                    continue
                 user_id = SUPERUSER_ID if text.startswith("!") else USER_ID
                 await send_event_and_collect(ws, group_msg(text.lstrip("!"), user_id=user_id))
             return
@@ -120,6 +151,7 @@ async def run(interactive: bool) -> None:
             ("关键词「你好星潮」", group_msg("你好星潮")),
             ("冷却期内重复（应无第二次回复）", group_msg("你好星潮")),
             ("成员进群（应触发欢迎）", group_increase_event(24681012)),
+            ("成员退群（应群内播报）", group_decrease_event(24681012)),
         ]
         for name, event in scenarios:
             print(f"\n== {name}")

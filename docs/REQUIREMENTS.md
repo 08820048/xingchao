@@ -516,3 +516,15 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - 权限：请求前按事件发起者是否超管过滤工具；越权调用返回错误说明
 - 工具执行异常转述给 LLM（如机器人非群管理员），由 AI 向用户解释
 - 系统提示词告知工具能力；敏感操作（禁言/踢人/改配置）要求 AI 先确认
+
+### 17.13 入群申请智能审批 + 退群播报 `request.py`
+
+- 入群申请处理链：AI 智能判断（首选）→ 程序规则兜底（关键词命中=通过；空/敷衍=转人工）
+  → 转人工（通知超管私聊，携带序号）
+- 审批执行：`set_group_add_request`；转人工凭证存内存（重启失效）
+- 指令：`/approve <序号>`、`/reject <序号> [理由]`、`/pending`（仅超管）
+- 模式：ai / manual / auto_approve / auto_reject；AI 失败兜底：manual / approve / reject
+- 配置（面板可改，持久化 kv）：模式、验证问题、兜底策略、规则关键词、退群播报开关
+- 退群：群内播报（可开关）；机器人被踢（kick_me）通知超管
+- 面板：GET/POST `/panel/api/join`、POST `/panel/api/join/resolve`；「加群审批」页
+  （待审批列表 + 通过/拒绝按钮 + 策略配置 + 退群播报开关）

@@ -397,6 +397,90 @@ def _register_routes() -> None:
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         return JSONResponse({"ok": True, "data": {"message": "进群欢迎配置已保存并生效"}})
 
+    @app.get("/panel/api/join")
+    async def panel_join_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import request as request_plugin
+
+        cfg = await request_plugin.join_config()
+        pending = [
+            {"seq": seq, "group_id": req["group_id"], "user_id": req["user_id"],
+             "comment": req["comment"]}
+            for seq, req in sorted(request_plugin._PENDING.items())
+        ]
+        return JSONResponse({"ok": True, "data": {**cfg, "pending": pending}})
+
+    @app.post("/panel/api/join")
+    async def panel_join_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import request as request_plugin
+
+        body = await request.json()
+        store = get_store()
+        updates: dict[str, str] = {}
+        if "mode" in body:
+            if body["mode"] not in ("ai", "manual", "auto_approve", "auto_reject"):
+                return JSONResponse({"ok": False, "error": "mode 不合法"}, status_code=400)
+            updates["join_mode"] = body["mode"]
+        if "fallback" in body:
+            if body["fallback"] not in ("manual", "approve", "reject"):
+                return JSONResponse({"ok": False, "error": "fallback 不合法"}, status_code=400)
+            updates["join_fallback"] = body["fallback"]
+        if "question" in body:
+            q = str(body["question"]).strip()
+            if not q or len(q) > 200:
+                return JSONResponse({"ok": False, "error": "验证问题需 1-200 字"}, status_code=400)
+            updates["join_question"] = q
+        if "keywords" in body:
+            kws = str(body["keywords"]).strip()
+            if len(kws) > 500:
+                return JSONResponse({"ok": False, "error": "关键词过长"}, status_code=400)
+            updates["join_keywords"] = kws
+        if "leave_report" in body:
+            if not isinstance(body["leave_report"], bool):
+                return JSONResponse({"ok": False, "error": "leave_report 应为布尔值"}, status_code=400)
+            updates["leave_report"] = "true" if body["leave_report"] else "false"
+        if not updates:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        try:
+            for k, v in updates.items():
+                await store.set_kv(k, v)
+        except Exception:
+            logger.exception("面板保存加群审批配置失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        return JSONResponse({"ok": True, "data": {"message": "加群审批配置已保存并生效"}})
+
+    @app.post("/panel/api/join/resolve")
+    async def panel_join_resolve(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import request as request_plugin
+
+        body = await request.json()
+        seq, approve = body.get("seq"), body.get("approve")
+        if not isinstance(seq, int) or not isinstance(approve, bool):
+            return JSONResponse({"ok": False, "error": "seq 应为整数，approve 应为布尔值"}, status_code=400)
+        req = request_plugin._PENDING.get(seq)
+        if req is None:
+            return JSONResponse({"ok": False, "error": f"没有找到申请 #{seq}"}, status_code=404)
+        try:
+            # resolve 在面板请求上下文中执行，需要 bot 实例
+            from nonebot import get_bot
+            bot = get_bot()
+            await bot.call_api(
+                "set_group_add_request",
+                flag=req["flag"], sub_type=req["sub_type"], approve=approve,
+                reason="不符合入群要求" if not approve else "",
+            )
+        except Exception as e:
+            logger.exception("面板审批入群申请失败")
+            return JSONResponse({"ok": False, "error": f"审批失败：{e}"}, status_code=500)
+        request_plugin._PENDING.pop(seq, None)
+        verb = "通过" if approve else "拒绝"
+        return JSONResponse({"ok": True, "data": {"message": f"已{verb}申请 #{seq}（QQ {req['user_id']}）"}})
+
     @app.post("/panel/api/modules")
     async def panel_modules_post(request: Request) -> JSONResponse:
         if not _authorized(request):

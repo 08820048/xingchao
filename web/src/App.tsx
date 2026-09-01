@@ -9,6 +9,7 @@ import {
   Sun,
   Sparkles,
   UserCog,
+  UserPlus,
   Users,
 } from "lucide-react";
 
@@ -1032,6 +1033,162 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   );
 }
 
+/* ------------------------------------------------------------------ 加群审批 */
+
+type JoinConfig = {
+  mode: string;
+  question: string;
+  fallback: string;
+  keywords: string;
+  leave_report: boolean;
+  pending: { seq: number; group_id: number; user_id: number; comment: string }[];
+};
+
+const MODE_LABEL: Record<string, string> = {
+  ai: "AI 智能审批",
+  manual: "全部转人工",
+  auto_approve: "全部自动通过",
+  auto_reject: "全部自动拒绝",
+};
+
+function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [cfg, setCfg] = useState<JoinConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: JoinConfig }>("/panel/api/join").then((r) => {
+      if (r.ok) setCfg(r.data);
+    });
+  }, []);
+  useEffect(() => load(), [load]);
+  if (!cfg) return <Spinner className="m-8" />;
+
+  const save = async (patch: Record<string, unknown>) => {
+    setSaving(true);
+    const r = await post("/panel/api/join", patch);
+    setSaving(false);
+    if (r.ok) {
+      toast(r.data.message);
+      load();
+    } else toast(r.error || "保存失败", false);
+  };
+  const resolve = async (seq: number, approve: boolean) => {
+    const r = await post("/panel/api/join/resolve", { seq, approve });
+    if (r.ok) {
+      toast(r.data.message);
+      load();
+    } else toast(r.error, false);
+  };
+
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">待审批申请</CardTitle>
+          <CardDescription>
+            转人工的申请会通知超管私聊（/approve 序号、/reject 序号 [理由]），也可在此操作
+          </CardDescription>
+        </CardHeader>
+        <CardPanel>
+          {cfg.pending.length === 0 ? (
+            <p className="text-muted-foreground text-sm">当前没有待审批的入群申请</p>
+          ) : (
+            <div className="grid gap-2">
+              {cfg.pending.map((p) => (
+                <div
+                  key={p.seq}
+                  className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"
+                >
+                  <div className="text-sm">
+                    <b>#{p.seq}</b> 群 {p.group_id} · QQ {p.user_id}
+                    <p className="text-muted-foreground text-xs">
+                      回答：{p.comment || "（无）"}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => resolve(p.seq, true)}>通过</Button>
+                    <Button size="sm" variant="outline" onClick={() => resolve(p.seq, false)}>拒绝</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardPanel>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">审批策略</CardTitle>
+          <CardDescription>
+            AI 模式：AI 判断回答是否合理，失败时按下方兜底规则处理；转人工会通知超管
+          </CardDescription>
+        </CardHeader>
+        <CardPanel className="grid gap-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label>审批模式</Label>
+              <select
+                value={cfg.mode}
+                onChange={(e) => setCfg({ ...cfg, mode: e.target.value })}
+                className="border-input bg-background flex h-8 items-center rounded-lg border px-2 text-sm"
+              >
+                {Object.entries(MODE_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>AI 不可用兜底</Label>
+              <select
+                value={cfg.fallback}
+                onChange={(e) => setCfg({ ...cfg, fallback: e.target.value })}
+                className="border-input bg-background flex h-8 items-center rounded-lg border px-2 text-sm"
+              >
+                <option value="manual">转人工审批</option>
+                <option value="approve">自动通过</option>
+                <option value="reject">自动拒绝</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="q">加群验证问题</Label>
+            <Input
+              id="q"
+              value={cfg.question}
+              onChange={(e) => setCfg({ ...cfg, question: e.target.value })}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="kw">规则兜底关键词（逗号分隔，回答命中即通过）</Label>
+            <Input
+              id="kw"
+              value={cfg.keywords}
+              onChange={(e) => setCfg({ ...cfg, keywords: e.target.value })}
+            />
+          </div>
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">退群群内播报</p>
+              <p className="text-muted-foreground text-xs">
+                成员退群/被移出时在群里播报；机器人被踢会通知超管
+              </p>
+            </div>
+            <Switch
+              checked={cfg.leave_report}
+              onCheckedChange={(v) => save({ leave_report: v })}
+            />
+          </div>
+          <Button disabled={saving} onClick={() => save({
+            mode: cfg.mode, fallback: cfg.fallback,
+            question: cfg.question, keywords: cfg.keywords,
+          })}>
+            {saving && <Spinner />}保存策略
+          </Button>
+        </CardPanel>
+      </Card>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ 布局 */
 
 const NAV = [
@@ -1042,6 +1199,7 @@ const NAV = [
   { id: "groups", label: "白名单", icon: Users },
   { id: "superusers", label: "超管", icon: UserCog },
   { id: "ai", label: "AI", icon: Sparkles },
+  { id: "join", label: "加群审批", icon: UserPlus },
 ] as const;
 
 export default function App() {
@@ -1136,6 +1294,7 @@ export default function App() {
           {tab === "groups" && <GroupsTab toast={toast} />}
           {tab === "superusers" && <SuperusersTab toast={toast} />}
           {tab === "ai" && <AiTab toast={toast} />}
+          {tab === "join" && <JoinTab toast={toast} />}
         </div>
       </SidebarInset>
       {toastState && <Toast text={toastState.t} ok={toastState.ok} />}
