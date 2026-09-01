@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import time
 from datetime import datetime
@@ -487,6 +488,66 @@ def _register_routes() -> None:
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         scope = f"群 {group_id}" if group_id is not None else "全局默认"
         return JSONResponse({"ok": True, "data": {"message": f"敏感词配置已保存并生效（{scope}）"}})
+
+    @app.get("/panel/api/tasks")
+    async def panel_tasks_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.permission import merged_whitelist
+
+        tasks = await get_store().list_tasks()
+        return JSONResponse({"ok": True, "data": {"tasks": tasks, "groups": sorted(merged_whitelist())}})
+
+    @app.post("/panel/api/tasks")
+    async def panel_tasks_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.permission import merged_whitelist
+
+        body = await request.json()
+        action = str(body.get("action", "create"))
+
+        if action == "delete":
+            tid = body.get("id")
+            if not isinstance(tid, int):
+                return JSONResponse({"ok": False, "error": "id 应为整数"}, status_code=400)
+            ok = await get_store().delete_task(tid)
+            return JSONResponse({"ok": True, "data": {"message": "已删除" if ok else "任务不存在"}})
+
+        if action == "update":
+            tid = body.get("id")
+            if not isinstance(tid, int):
+                return JSONResponse({"ok": False, "error": "id 应为整数"}, status_code=400)
+            fields = body.get("fields", {})
+            await get_store().update_task(tid, **fields)
+            return JSONResponse({"ok": True, "data": {"message": f"任务 #{tid} 已更新"}})
+
+        # create
+        group_id = body.get("group_id")
+        time_ = str(body.get("time", ""))
+        message = str(body.get("message", "")).strip()
+        at_all = bool(body.get("at_all", False))
+        repeat = str(body.get("repeat", "daily"))
+        weekday = body.get("weekday")
+        date_ = body.get("date")
+        if group_id not in merged_whitelist():
+            return JSONResponse({"ok": False, "error": "目标群必须在白名单内"}, status_code=400)
+        if not (isinstance(time_, str) and re.fullmatch(r"\d{2}:\d{2}", time_) and time_ < "24:00"):
+            return JSONResponse({"ok": False, "error": "时间格式应为 HH:MM"}, status_code=400)
+        if not message:
+            return JSONResponse({"ok": False, "error": "消息内容不能为空"}, status_code=400)
+        if len(message) > 2000:
+            return JSONResponse({"ok": False, "error": "消息过长（上限 2000 字）"}, status_code=400)
+        if repeat not in ("daily", "weekdays", "weekend", "weekly", "once"):
+            return JSONResponse({"ok": False, "error": "repeat 不合法"}, status_code=400)
+        if repeat == "weekly" and (not isinstance(weekday, int) or not 0 <= weekday <= 6):
+            return JSONResponse({"ok": False, "error": "weekly 需要有效 weekday（0=周一）"}, status_code=400)
+        if repeat == "once" and (not isinstance(date_, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_ or "")):
+            return JSONResponse({"ok": False, "error": "once 需要日期 YYYY-MM-DD"}, status_code=400)
+        tid = await get_store().add_task(group_id, time_, message, at_all, repeat,
+                                          weekday if repeat == "weekly" else None,
+                                          date_ if repeat == "once" else None)
+        return JSONResponse({"ok": True, "data": {"message": f"定时任务 #{tid} 已创建", "id": tid}})
 
     @app.get("/panel/api/join")
     async def panel_join_get(request: Request, group_id: int | None = None) -> JSONResponse:

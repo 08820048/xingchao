@@ -37,6 +37,7 @@ COMMON_TEXT = (
     "  ◈ /ping — 连通测试\n"
     "  ◈ /id — 查看群号 / 用户 / 机器人 ID\n"
     "  ◈ /stats — 群活跃统计（/stats yesterday 看昨日）\n"
+    "  ◈ /trending [daily|weekly] [语言] — GitHub 趋势榜\n"
     "  ◈ 关于星潮 — 机器人与开发者信息\n"
 )
 
@@ -48,7 +49,6 @@ ADMIN_TEXT = (
     "  ◈ /banall on|off — 全体禁言\n"
     "  ◈ /kick @某人 — 移出本群\n"
     "  ◈ /recall — 撤回（回复目标消息）\n"
-    "  ◈ /notice <内容> — 发布群公告\n"
     "  ◈ /reply reload|list — 关键词词库\n"
     "  ◈ /group list|add|del — 白名单管理\n"
     "  ◈ /superuser list|add|del — 超管管理\n"
@@ -56,6 +56,8 @@ ADMIN_TEXT = (
     "  ◈ /通过|拒绝 <序号> — 入群申请审批\n"
     "  ◈ /pending — 待审批列表\n"
     "  ◈ /welcome on|off|set — 欢迎语配置\n"
+    "  ◈ /task list — 定时任务列表\n"
+    "  ◈ /notice <内容> — 发布群公告\n"
     "  ◈ /plugin reply|welcome on|off — 模块开关\n"
 )
 

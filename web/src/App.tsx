@@ -8,6 +8,7 @@ import {
   Moon,
   Sun,
   ShieldAlert,
+  Clock3,
   Sparkles,
   UserCog,
   UserPlus,
@@ -1375,6 +1376,165 @@ function SensitiveTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   );
 }
 
+/* ------------------------------------------------------------------ 定时任务 */
+
+type Task = {
+  id: number; group_id: number; time: string; message: string;
+  at_all: boolean; repeat: string; weekday: number | null; date: string | null; enabled: boolean;
+};
+
+function TasksTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [groups, setGroups] = useState<number[]>([]);
+  const [form, setForm] = useState({
+    group_id: 0, time: "09:00", message: "", at_all: false,
+    repeat: "daily", weekday: 1, date: new Date().toISOString().slice(0, 10),
+  });
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: { tasks: Task[]; groups: number[] } }>("/panel/api/tasks").then((r) => {
+      if (r.ok) {
+        setTasks(r.data.tasks);
+        setGroups(r.data.groups);
+        setForm((f) => ({ ...f, group_id: f.group_id || r.data.groups[0] || 0 }));
+      }
+    });
+  }, []);
+  useEffect(() => load(), [load]);
+  if (!cfgGuard(tasks)) return null;
+  function cfgGuard(t: Task[]): t is Task[] { return Array.isArray(t); }
+
+  const create = async () => {
+    if (!form.message.trim()) return toast("消息内容不能为空", false);
+    setSaving(true);
+    const r = await post("/panel/api/tasks", { action: "create", ...form });
+    setSaving(false);
+    if (r.ok) { toast(r.data.message); setForm({ ...form, message: "" }); load(); }
+    else toast(r.error || "创建失败", false);
+  };
+  const toggle = async (t: Task) => {
+    const r = await post("/panel/api/tasks", { action: "update", id: t.id, fields: { enabled: !t.enabled } });
+    if (r.ok) load(); else toast(r.error, false);
+  };
+  const del = async (id: number) => {
+    const r = await post("/panel/api/tasks", { action: "delete", id });
+    if (r.ok) { toast("已删除"); load(); } else toast(r.error, false);
+  };
+
+  const repeatLabel: Record<string, string> = {
+    daily: "每天", weekdays: "工作日", weekend: "周末",
+    weekly: "每周" + WEEKDAY_NAME[form.weekday], once: "仅 " + form.date,
+  };
+
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">新建定时任务</CardTitle>
+          <CardDescription>
+            按北京时间（Asia/Shanghai）触发；目标群须在白名单内；@全体需要机器人是群管理员
+          </CardDescription>
+        </CardHeader>
+        <CardPanel className="grid gap-3">
+          <div className="grid gap-2 sm:grid-cols-[1fr_120px_1fr]">
+            <div className="flex flex-col gap-1.5">
+              <Label>目标群</Label>
+              <select
+                value={form.group_id}
+                onChange={(e) => setForm({ ...form, group_id: +e.target.value })}
+                className="border-input bg-background flex h-8 items-center rounded-lg border px-2 text-sm"
+              >
+                {groups.map((g) => <option key={g} value={g}>群 {g}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="t">时间</Label>
+              <Input id="t" type="time" value={form.time}
+                onChange={(e) => setForm({ ...form, time: e.target.value })} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="r">重复规则</Label>
+              <select id="r" value={form.repeat}
+                onChange={(e) => setForm({ ...form, repeat: e.target.value })}
+                className="border-input bg-background flex h-8 items-center rounded-lg border px-2 text-sm">
+                <option value="daily">每天</option>
+                <option value="weekdays">工作日</option>
+                <option value="weekend">周末</option>
+                <option value="weekly">每周指定日</option>
+                <option value="once">仅一次</option>
+              </select>
+            </div>
+          </div>
+          {form.repeat === "weekly" && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="wd">星期</Label>
+              <select id="wd" value={form.weekday}
+                onChange={(e) => setForm({ ...form, weekday: +e.target.value })}
+                className="border-input bg-background flex h-8 w-40 items-center rounded-lg border px-2 text-sm">
+                {WEEKDAY_NAME.map((n, i) => <option key={i} value={i}>{n}</option>)}
+              </select>
+            </div>
+          )}
+          {form.repeat === "once" && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="d">日期</Label>
+              <Input id="d" type="date" className="w-48" value={form.date}
+                onChange={(e) => setForm({ ...form, date: e.target.value })} />
+            </div>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="msg">消息内容</Label>
+            <Textarea id="msg" rows={3} value={form.message}
+              onChange={(e) => setForm({ ...form, message: e.target.value })}
+              placeholder="定时发送的消息文本" />
+          </div>
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">@全体成员</p>
+              <p className="text-muted-foreground text-xs">需要机器人是群管理员</p>
+            </div>
+            <Switch checked={form.at_all} onCheckedChange={(v) => setForm({ ...form, at_all: v })} />
+          </div>
+          <Button disabled={saving} onClick={create}>
+            {saving && <Spinner />}创建任务
+          </Button>
+        </CardPanel>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">任务列表（{tasks.length}）</CardTitle>
+        </CardHeader>
+        <CardPanel>
+          {tasks.length === 0 ? (
+            <p className="text-muted-foreground text-sm">还没有定时任务，先在上方创建一个</p>
+          ) : (
+            <div className="grid gap-2">
+              {tasks.map((t) => (
+                <div key={t.id}
+                  className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+                  <div className="text-sm">
+                    <b>#{t.id}</b> [{t.time}] {repeatLabel[t.repeat] ?? t.repeat} → 群 {t.group_id}
+                    {t.at_all && <Badge className="ml-1">@全体</Badge>}
+                    {!t.enabled && <Badge variant="destructive" className="ml-1">已停用</Badge>}
+                    <p className="text-muted-foreground text-xs">{t.message.slice(0, 60)}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch checked={t.enabled} onCheckedChange={() => toggle(t)} aria-label="启用" />
+                    <Button size="sm" variant="outline" onClick={() => del(t.id)}>删除</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardPanel>
+      </Card>
+    </div>
+  );
+}
+
+const WEEKDAY_NAME = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+
 /* ------------------------------------------------------------------ 布局 */
 
 const NAV = [
@@ -1387,6 +1547,7 @@ const NAV = [
   { id: "ai", label: "AI", icon: Sparkles },
   { id: "join", label: "加群审批", icon: UserPlus },
   { id: "sensitive", label: "敏感词", icon: ShieldAlert },
+  { id: "tasks", label: "定时任务", icon: Clock3 },
 ] as const;
 
 function PanelApp() {
@@ -1483,6 +1644,7 @@ function PanelApp() {
           {tab === "ai" && <AiTab toast={toast} />}
           {tab === "join" && <JoinTab toast={toast} />}
           {tab === "sensitive" && <SensitiveTab toast={toast} />}
+          {tab === "tasks" && <TasksTab toast={toast} />}
         </div>
       </SidebarInset>
       {toastState && <Toast text={toastState.t} ok={toastState.ok} />}

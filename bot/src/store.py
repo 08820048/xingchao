@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +23,18 @@ CREATE TABLE IF NOT EXISTS msg_stat (
     day TEXT,
     count INTEGER,
     PRIMARY KEY (group_id, day)
+);
+CREATE TABLE IF NOT EXISTS scheduled_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    time TEXT NOT NULL,
+    message TEXT NOT NULL,
+    at_all INTEGER DEFAULT 0,
+    repeat TEXT DEFAULT 'daily',
+    weekday INTEGER,
+    date TEXT,
+    enabled INTEGER DEFAULT 1,
+    created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS msg_stat_user (
     group_id INTEGER,
@@ -107,6 +120,52 @@ class Store:
             (group_id, day, limit),
         ) as cur:
             return [(int(r[0]), int(r[1])) for r in await cur.fetchall()]
+
+    async def add_task(self, group_id: int, time_: str, message: str, at_all: bool,
+                       repeat: str, weekday: int | None, date_: str | None) -> int:
+        conn = await self._ensure()
+        cur = await conn.execute(
+            "INSERT INTO scheduled_tasks (group_id, time, message, at_all, repeat, weekday, date, enabled, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)",
+            (group_id, time_, message, int(at_all), repeat, weekday, date_,
+             datetime.now().astimezone().isoformat(timespec="seconds")),
+        )
+        await conn.commit()
+        return int(cur.lastrowid)
+
+    async def list_tasks(self, enabled_only: bool = False) -> list[dict]:
+        conn = await self._ensure()
+        sql = "SELECT id, group_id, time, message, at_all, repeat, weekday, date, enabled FROM scheduled_tasks"
+        if enabled_only:
+            sql += " WHERE enabled = 1"
+        async with conn.execute(sql) as cur:
+            rows = await cur.fetchall()
+        return [
+            {"id": r[0], "group_id": r[1], "time": r[2], "message": r[3],
+             "at_all": bool(r[4]), "repeat": r[5], "weekday": r[6], "date": r[7],
+             "enabled": bool(r[8])}
+            for r in rows
+        ]
+
+    async def update_task(self, task_id: int, **fields) -> None:
+        allowed = {"group_id", "time", "message", "at_all", "repeat", "weekday", "date", "enabled"}
+        sets, vals = [], []
+        for k, v in fields.items():
+            if k in allowed:
+                sets.append(f"{k} = ?")
+                vals.append(int(v) if isinstance(v, bool) else v)
+        if not sets:
+            return
+        vals.append(task_id)
+        conn = await self._ensure()
+        await conn.execute(f"UPDATE scheduled_tasks SET {', '.join(sets)} WHERE id = ?", vals)
+        await conn.commit()
+
+    async def delete_task(self, task_id: int) -> bool:
+        conn = await self._ensure()
+        cur = await conn.execute("DELETE FROM scheduled_tasks WHERE id = ?", (task_id,))
+        await conn.commit()
+        return cur.rowcount > 0
 
     async def get_day_overview(self, day: str) -> list[tuple[int, int]]:
         """返回当日所有群 [(group_id, 总消息数)]，按消息数降序。"""

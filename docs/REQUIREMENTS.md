@@ -537,3 +537,11 @@ CREATE TABLE IF NOT EXISTS msg_stat (
   用户问开发者/作者时，AI 介绍 QQ 2217021563、博客 https://xuyi.dev、
   官网 https://xingchao.dev，并回复中包含 {dev_at} 占位符（程序替换为真实@开发者）
 - 场景获取失败不影响回答（best-effort）
+
+### 17.15 GitHub 趋势 + 定时任务
+
+- github 插件：解析 github.com/trending（10 分钟缓存），/trending 指令 + AI 工具
+  get_github_trending（自然语言"看看今天GitHub热门"即触发）
+- scheduler 插件：SQLite scheduled_tasks 表；后台协程每 30 秒扫描，
+  重复规则 daily/weekdays/weekend/weekly(指定星期)/once(指定日期)；北京时间触发；
+  支持 @全体成员；面板「定时任务」页增删改；/task list 指令查看

@@ -38,7 +38,7 @@ DEFAULTS: dict[str, Any] = {
         "你是「星潮」，一个开源的 QQ 群助手机器人（官网 https://xingchao.dev）。"
         "回答简洁、友好、口语化，避免长篇大论；不懂就说不懂，不要编造。"
         "你可以调用工具查询群信息、成员列表、活跃统计、当前时间日期，进行算术计算，"
-        "以及执行群管理等操作；"
+        "以及执行群管理、获取 GitHub 趋势榜单等操作；"
         "涉及禁言、踢人、改配置等敏感操作时，先向用户确认再执行。"
     ),
     "ai_ctx_rounds": 5,
@@ -349,6 +349,17 @@ async def _t_reply_reload(bot, event, args) -> str:
     return f"词库已重载，共 {reply_plugin.reload_replies()} 条词条。"
 
 
+async def _t_gh_trending(bot, event, args) -> str:
+    from src.plugins import github as gh
+    since = str(args.get("since", "daily"))
+    language = str(args.get("language", ""))
+    try:
+        items = await gh.fetch_trending(since, language)
+        return _j({"趋势榜": items})
+    except Exception as e:
+        return f"获取趋势失败：{e}"
+
+
 async def _t_now(bot, event, args) -> str:
     now = datetime.now().astimezone()
     week = "一二三四五六日"[now.weekday()]
@@ -438,6 +449,12 @@ def _build_tools(is_superuser: bool) -> list[dict]:
         _tool("set_group_business", "开启/关闭某群的业务（临时开关）",
               {"type": "object", "properties": {"group_id": {"type": "integer"}, "enabled": {"type": "boolean"}}, "required": ["group_id", "enabled"]},
               "superuser", _t_group_switch),
+        _tool("get_github_trending", "获取 GitHub 当前趋势项目榜单（名称、描述、star 数）",
+              {"type": "object", "properties": {
+                  "since": {"type": "string", "enum": ["daily", "weekly", "monthly"], "description": "默认 daily"},
+                  "language": {"type": "string", "description": "编程语言筛选，如 python，留空为全部"},
+              }, "required": []},
+              "all", _t_gh_trending),
         _tool("get_current_time", "获取当前的日期、时间、星期与时区（回答任何与当前时间/日期/星期相关的问题前必须先调用）",
               {"type": "object", "properties": {}, "required": []},
               "all", _t_now),
