@@ -466,3 +466,15 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - 非指令内容：@发起者 + 简短回应；内容含「帮助 / help」→ 回复帮助菜单（basic 别名优先）
 - 同群冷却默认取 XINGCHAO_REPLY_COOLDOWN（8 秒），避免刷屏
 - 仅白名单群生效；指令消息不受影响
+
+### 17.8 进群欢迎可配置化
+
+- 欢迎语支持占位符：`{at}` = @新人、`{qq}` = 新人 QQ、`{group}` = 群号
+- 配置持久化 SQLite `kv`：`welcome_enabled`（开关，默认开）、`welcome_text`（文案，缺省为内置默认语）
+- 指令扩展：`/welcome view` 查看当前文案、`/welcome set <文案>` 更新（上限 1000 字）
+- 面板 API：`GET/POST /panel/api/welcome`（enabled + text，POST 校验非空与长度）
+- 面板「仪表盘」页新增欢迎配置卡片（开关 + 文案编辑 + 保存）
+- 触发：GroupIncreaseNoticeEvent，机器人自己进群不触发；发送用显式
+  `send_group_msg`（notice 事件不依赖 bot.send 的目标推导）
+- 修复：GROUP_WHITELIST 规则函数注解放宽为 `Event`（按 group_id 属性判断），
+  使消息与群通知（进群事件）都能过白名单规则

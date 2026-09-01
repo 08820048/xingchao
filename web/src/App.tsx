@@ -265,6 +265,8 @@ function Dashboard({
         </CardPanel>
       </Card>
 
+      <WelcomeCard toast={toast} />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">插件</CardTitle>
@@ -278,6 +280,56 @@ function Dashboard({
         </CardPanel>
       </Card>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ 欢迎配置 */
+
+function WelcomeCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [enabled, setEnabled] = useState(false);
+  const [text, setText] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    api<{ ok: boolean; data: { enabled: boolean; text: string } }>(
+      "/panel/api/welcome",
+    ).then((r) => {
+      if (r.ok) {
+        setEnabled(r.data.enabled);
+        setText(r.data.text);
+        setLoaded(true);
+      }
+    });
+  }, []);
+  const save = async () => {
+    const r = await post("/panel/api/welcome", { enabled, text });
+    if (r.ok) toast(r.data.message);
+    else toast(r.error || "保存失败", false);
+  };
+  if (!loaded) return <Spinner className="m-8" />;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">进群欢迎</CardTitle>
+        <CardDescription>
+          新成员加入白名单群时自动发送。占位符：<code>{"{at}"}</code> = @新人、
+          <code>{"{qq}"}</code> = 新人 QQ、<code>{"{group}"}</code> = 群号；保存立即生效
+        </CardDescription>
+      </CardHeader>
+      <CardPanel className="grid gap-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={enabled}
+              onCheckedChange={(v) => setEnabled(v)}
+              aria-label="欢迎开关"
+            />
+            <span className="text-sm">{enabled ? "已开启" : "已关闭"}</span>
+          </div>
+          <Button onClick={save}>保存配置</Button>
+        </div>
+        <Textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} />
+      </CardPanel>
+    </Card>
   );
 }
 

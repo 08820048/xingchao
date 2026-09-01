@@ -57,6 +57,14 @@ def group_msg(text: str, user_id: int = USER_ID, group_id: int = GROUP_ID) -> di
     }
 
 
+def group_increase_event(user_id: int, group_id: int = GROUP_ID) -> dict:
+    return {
+        "time": int(time.time()), "self_id": SELF_ID, "post_type": "notice",
+        "notice_type": "group_increase", "sub_type": "approve",
+        "group_id": group_id, "user_id": user_id, "operator_id": 0,
+    }
+
+
 async def send_event_and_collect(ws, event: dict, timeout: float = 5.0) -> list[dict]:
     """发送一个事件，收集 bot 下发的动作请求（并模拟 NapCat 应答成功）。"""
     responses: list[dict] = []
@@ -96,6 +104,10 @@ async def run(interactive: bool) -> None:
                 text = await loop.run_in_executor(None, input, "群消息> ")
                 if not text.strip():
                     continue
+                if text.startswith("join "):
+                    uid = int(text.split()[1])
+                    await send_event_and_collect(ws, group_increase_event(uid))
+                    continue
                 user_id = SUPERUSER_ID if text.startswith("!") else USER_ID
                 await send_event_and_collect(ws, group_msg(text.lstrip("!"), user_id=user_id))
             return
@@ -107,6 +119,7 @@ async def run(interactive: bool) -> None:
             ("白名单群 /help", group_msg("/help")),
             ("关键词「你好星潮」", group_msg("你好星潮")),
             ("冷却期内重复（应无第二次回复）", group_msg("你好星潮")),
+            ("成员进群（应触发欢迎）", group_increase_event(24681012)),
         ]
         for name, event in scenarios:
             print(f"\n== {name}")

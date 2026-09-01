@@ -16,6 +16,7 @@ from nonebot.adapters.onebot.v11 import (
     Bot,
     GroupIncreaseNoticeEvent,
     GroupMessageEvent,
+    Message,
     MessageEvent,
     MessageSegment,
 )
@@ -175,21 +176,56 @@ async def handle_recall(bot: Bot, event: MessageEvent, matcher: Matcher, args: M
 
 @welcome_cmd.handle()
 async def handle_welcome(matcher: Matcher, args: Message = CommandArg()) -> None:
-    action = args.extract_plain_text().strip().lower()
-    if action not in ("on", "off"):
-        await _send(welcome_cmd, "用法：/welcome on 或 /welcome off")
-        return
-    enable = action == "on"
-    try:
-        await get_store().set_kv("welcome_enabled", "true" if enable else "false")
-    except Exception:
-        logger.exception("写入 welcome_enabled 开关失败")
-    await _send(welcome_cmd, f"新人进群欢迎已{'开启' if enable else '关闭'}。")
+    raw = args.extract_plain_text().strip()
+    action, _, rest = raw.partition(" ")
+    if action == "on" or action == "off":
+        try:
+            await get_store().set_kv("welcome_enabled", "true" if action == "on" else "false")
+        except Exception:
+            logger.exception("写入 welcome_enabled 开关失败")
+        await _send(welcome_cmd, f"新人进群欢迎已{'开启' if action == 'on' else '关闭'}。")
+    elif action == "view":
+        await _send(welcome_cmd, f"当前欢迎语：\n{await get_welcome_text()}")
+    elif action == "set" and rest.strip():
+        text = rest.strip()
+        if len(text) > 1000:
+            await _send(welcome_cmd, "欢迎语过长（上限 1000 字）。")
+            return
+        try:
+            await get_store().set_kv("welcome_text", text)
+        except Exception:
+            logger.exception("写入 welcome_text 失败")
+            return
+        await _send(welcome_cmd, f"欢迎语已更新：\n{text}")
+    else:
+        await _send(
+            welcome_cmd,
+            "用法：/welcome on|off、/welcome view、/welcome set <欢迎语>\n"
+            "占位符：{at}=@新人，{qq}=新人QQ，{group}=群号",
+        )
+
+
+DEFAULT_WELCOME_TEXT = "欢迎进群～发送 /help 查看我能做什么。"
 
 
 async def is_welcome_enabled() -> bool:
     value = await get_store().get_kv("welcome_enabled")
     return value != "false"  # 默认开启
+
+
+async def get_welcome_text() -> str:
+    value = await get_store().get_kv("welcome_text")
+    return value if value else DEFAULT_WELCOME_TEXT
+
+
+def render_welcome(text: str, user_id: int, group_id: int) -> Message:
+    """渲染欢迎语：{at} = @新人，{qq} = 新人 QQ，{group} = 群号。"""
+    msg = Message()
+    for i, part in enumerate(text.split("{at}")):
+        if i:
+            msg += MessageSegment.at(user_id)
+        msg += part.replace("{qq}", str(user_id)).replace("{group}", str(group_id))
+    return msg
 
 
 @welcome_notice.handle()
@@ -198,11 +234,9 @@ async def handle_welcome_notice(bot: Bot, event: GroupIncreaseNoticeEvent) -> No
         return  # 机器人自己进群不欢迎
     if not await is_welcome_enabled():
         return
+    message = render_welcome(await get_welcome_text(), event.user_id, event.group_id)
     try:
-        await bot.send(
-            event,
-            MessageSegment.at(event.user_id) + " 欢迎进群～发送 /help 查看我能做什么。",
-        )
+        await bot.call_api("send_group_msg", group_id=event.group_id, message=message)
     except MatcherException:
         raise
     except Exception:

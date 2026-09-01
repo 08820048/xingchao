@@ -239,6 +239,47 @@ def _register_routes() -> None:
         logger.info(f"面板保存词库：{count} 条词条")
         return JSONResponse({"ok": True, "data": {"count": count}})
 
+    @app.get("/panel/api/welcome")
+    async def panel_welcome_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import groupadmin as groupadmin_plugin
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "data": {
+                    "enabled": await groupadmin_plugin.is_welcome_enabled(),
+                    "text": await groupadmin_plugin.get_welcome_text(),
+                },
+            }
+        )
+
+    @app.post("/panel/api/welcome")
+    async def panel_welcome_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        body = await request.json()
+        enabled = body.get("enabled")
+        text = body.get("text")
+        if not isinstance(enabled, bool) or not isinstance(text, str):
+            return JSONResponse(
+                {"ok": False, "error": "enabled 应为布尔值，text 应为字符串"}, status_code=400
+            )
+        text = text.strip()
+        if not text:
+            return JSONResponse({"ok": False, "error": "欢迎语不能为空"}, status_code=400)
+        if len(text) > 1000:
+            return JSONResponse({"ok": False, "error": "欢迎语过长（上限 1000 字）"}, status_code=400)
+        store = get_store()
+        try:
+            await store.set_kv("welcome_enabled", "true" if enabled else "false")
+            await store.set_kv("welcome_text", text)
+        except Exception:
+            logger.exception("面板保存欢迎配置失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        return JSONResponse({"ok": True, "data": {"message": "进群欢迎配置已保存并生效"}})
+
     @app.post("/panel/api/modules")
     async def panel_modules_post(request: Request) -> JSONResponse:
         if not _authorized(request):

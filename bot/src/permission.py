@@ -9,7 +9,8 @@ from __future__ import annotations
 import json
 
 from nonebot import get_driver
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent, PrivateMessageEvent
+from nonebot.adapters import Event
+from nonebot.adapters.onebot.v11 import MessageEvent, PrivateMessageEvent
 from nonebot.log import logger
 from nonebot.rule import Rule
 
@@ -89,8 +90,10 @@ async def set_group_enabled(group_id: int, enabled: bool) -> bool:
     return changed
 
 
-async def _is_group_whitelisted(event: GroupMessageEvent) -> bool:
-    return event.group_id in merged_whitelist() and event.group_id not in _disabled_groups
+async def _is_group_whitelisted(event: Event) -> bool:
+    """白名单 + 未被禁用。注解用 Event 以同时支持消息与群通知（如进群欢迎）。"""
+    gid = getattr(event, "group_id", None)
+    return isinstance(gid, int) and gid in merged_whitelist() and gid not in _disabled_groups
 
 
 async def _is_superuser(event: MessageEvent) -> bool:
