@@ -178,7 +178,7 @@ async def _handle_request(bot: Bot, event: GroupRequestEvent) -> None:
             f"群号: {event.group_id}\n"
             f"QQ: {event.user_id}\n"
             f"回答: {comment or '（无）'}{ai_note}\n"
-            f"通过: /approve {seq}　拒绝: /reject {seq} [理由]",
+            f"通过: /通过 {seq}　拒绝: /拒绝 {seq} [理由]",
         )
         return
 
@@ -250,8 +250,10 @@ async def handle_leave(bot: Bot, event: GroupDecreaseNoticeEvent) -> None:
 
 # ---------------------------------------------------------------- /approve /reject
 
-approve_cmd = on_command("approve", rule=SUPERUSER, priority=1, block=True)
-reject_cmd = on_command("reject", rule=SUPERUSER, priority=1, block=True)
+approve_cmd = on_command("通过", rule=SUPERUSER, priority=1, block=True)
+approve_cmd_en = on_command("approve", rule=SUPERUSER, priority=1, block=True)
+reject_cmd = on_command("拒绝", rule=SUPERUSER, priority=1, block=True)
+reject_cmd_en = on_command("reject", rule=SUPERUSER, priority=1, block=True)
 
 
 async def _resolve(bot: Bot, matcher: Matcher, event: MessageEvent,
@@ -283,26 +285,30 @@ async def _resolve(bot: Bot, matcher: Matcher, event: MessageEvent,
     )
 
 
-@approve_cmd.handle()
-async def handle_approve(bot: Bot, event: MessageEvent, matcher: Matcher,
-                         args: Message = CommandArg()) -> None:
+async def _approve_handler(bot: Bot, event: MessageEvent, matcher: Matcher,
+                           args: Message = CommandArg()) -> None:
     parts = args.extract_plain_text().strip().split(maxsplit=1)
     if not parts or not parts[0].isdigit():
-        await matcher.send("用法：/approve <序号>")
+        await matcher.send("用法：/通过 <序号>（或 /approve <序号>）")
         return
     await _resolve(bot, matcher, event, int(parts[0]), True,
                    parts[1].strip() if len(parts) > 1 else "")
 
 
-@reject_cmd.handle()
-async def handle_reject(bot: Bot, event: MessageEvent, matcher: Matcher,
-                        args: Message = CommandArg()) -> None:
+async def _reject_handler(bot: Bot, event: MessageEvent, matcher: Matcher,
+                          args: Message = CommandArg()) -> None:
     parts = args.extract_plain_text().strip().split(maxsplit=1)
     if not parts or not parts[0].isdigit():
-        await matcher.send("用法：/reject <序号> [理由]")
+        await matcher.send("用法：/拒绝 <序号> [理由]（或 /reject <序号> [理由]）")
         return
     await _resolve(bot, matcher, event, int(parts[0]), False,
                    parts[1].strip() if len(parts) > 1 else "不符合入群要求")
+
+
+approve_cmd.append_handler(_approve_handler)
+approve_cmd_en.append_handler(_approve_handler)
+reject_cmd.append_handler(_reject_handler)
+reject_cmd_en.append_handler(_reject_handler)
 
 
 # ---------------------------------------------------------------- /pending

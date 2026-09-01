@@ -1085,7 +1085,7 @@ function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
         <CardHeader>
           <CardTitle className="text-base">待审批申请</CardTitle>
           <CardDescription>
-            转人工的申请会通知超管私聊（/approve 序号、/reject 序号 [理由]），也可在此操作
+            转人工的申请会通知超管私聊（/通过 序号、/拒绝 序号 [理由]），也可在此操作
           </CardDescription>
         </CardHeader>
         <CardPanel>

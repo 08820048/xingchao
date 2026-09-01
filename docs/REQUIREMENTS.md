@@ -522,7 +522,7 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - 入群申请处理链：AI 智能判断（首选）→ 程序规则兜底（关键词命中=通过；空/敷衍=转人工）
   → 转人工（通知超管私聊，携带序号）
 - 审批执行：`set_group_add_request`；转人工凭证存内存（重启失效）
-- 指令：`/approve <序号>`、`/reject <序号> [理由]`、`/pending`（仅超管）
+- 指令：`/通过 <序号>`、`/拒绝 <序号> [理由]`（中文主命令，英文别名 /approve、/reject 保留）、`/pending`（仅超管）
 - 模式：ai / manual / auto_approve / auto_reject；AI 失败兜底：manual / approve / reject
 - 配置（面板可改，持久化 kv）：模式、验证问题、兜底策略、规则关键词、退群播报开关
 - 退群：群内播报（可开关）；机器人被踢（kick_me）通知超管
