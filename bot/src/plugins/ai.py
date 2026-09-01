@@ -37,7 +37,8 @@ DEFAULTS: dict[str, Any] = {
     "ai_system_prompt": (
         "你是「星潮」，一个开源的 QQ 群助手机器人（官网 https://xingchao.dev）。"
         "回答简洁、友好、口语化，避免长篇大论；不懂就说不懂，不要编造。"
-        "你可以调用工具查询群信息、成员列表、活跃统计，以及执行群管理等操作；"
+        "你可以调用工具查询群信息、成员列表、活跃统计、当前时间日期，进行算术计算，"
+        "以及执行群管理等操作；"
         "涉及禁言、踢人、改配置等敏感操作时，先向用户确认再执行。"
     ),
     "ai_ctx_rounds": 5,
@@ -348,6 +349,57 @@ async def _t_reply_reload(bot, event, args) -> str:
     return f"词库已重载，共 {reply_plugin.reload_replies()} 条词条。"
 
 
+async def _t_now(bot, event, args) -> str:
+    now = datetime.now().astimezone()
+    week = "一二三四五六日"[now.weekday()]
+    return _j({
+        "日期": now.strftime("%Y-%m-%d"),
+        "时间": now.strftime("%H:%M:%S"),
+        "星期": f"星期{week}",
+        "时区": now.tzname() or str(now.utcoffset()),
+        "ISO": now.isoformat(timespec="seconds"),
+        "Unix时间戳": int(now.timestamp()),
+    })
+
+
+def _safe_calc(expr: str) -> Any:
+    """白名单 AST 求值：仅数字与四则运算/幂/取余，杜绝任意代码执行。"""
+    import ast as _ast
+    import operator as _op
+
+    bin_ops = {_ast.Add: _op.add, _ast.Sub: _op.sub, _ast.Mult: _op.mul,
+               _ast.Div: _op.truediv, _ast.FloorDiv: _op.floordiv,
+               _ast.Mod: _op.mod, _ast.Pow: _op.pow}
+    unary_ops = {_ast.UAdd: _op.pos, _ast.USub: _op.neg}
+
+    def ev(node):
+        if isinstance(node, _ast.Expression):
+            return ev(node.body)
+        if isinstance(node, _ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, _ast.BinOp) and type(node.op) in bin_ops:
+            return bin_ops[type(node.op)](ev(node.left), ev(node.right))
+        if isinstance(node, _ast.UnaryOp) and type(node.op) in unary_ops:
+            return unary_ops[type(node.op)](ev(node.operand))
+        raise ValueError("仅支持数字与 + - * / // % ** 运算")
+
+    return ev(_ast.parse(expr, mode="eval"))
+
+
+async def _t_calc(bot, event, args) -> str:
+    expr = str(args.get("expression", ""))[:200]
+    if not expr:
+        return "错误：缺少 expression。"
+    try:
+        result = _safe_calc(expr)
+        r = int(result) if isinstance(result, float) and result.is_integer() else result
+        return _j({"表达式": expr, "结果": r})
+    except ZeroDivisionError:
+        return "错误：除数为零。"
+    except Exception as e:
+        return f"错误：{e}"
+
+
 def _build_tools(is_superuser: bool) -> list[dict]:
     tools = [
         _tool("get_group_info", "获取群聊信息（群名、成员数）",
@@ -386,6 +438,12 @@ def _build_tools(is_superuser: bool) -> list[dict]:
         _tool("set_group_business", "开启/关闭某群的业务（临时开关）",
               {"type": "object", "properties": {"group_id": {"type": "integer"}, "enabled": {"type": "boolean"}}, "required": ["group_id", "enabled"]},
               "superuser", _t_group_switch),
+        _tool("get_current_time", "获取当前的日期、时间、星期与时区（回答任何与当前时间/日期/星期相关的问题前必须先调用）",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_now),
+        _tool("calculate", "进行精确的算术计算（加减乘除、取余、幂运算）",
+              {"type": "object", "properties": {"expression": {"type": "string", "description": "算术表达式，如 (3+4)*2 或 2**10"}}, "required": ["expression"]},
+              "all", _t_calc),
         _tool("list_replies", "查看关键词词库",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_reply_list),
