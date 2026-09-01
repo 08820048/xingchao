@@ -8,6 +8,9 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+    ports:
+      # Web 管理面板（与反向 WS 共用 8080），仅本机 / SSH 隧道访问
+      - "127.0.0.1:8081:8080"
     networks:
       - xingchao
 

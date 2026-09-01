@@ -39,6 +39,9 @@ data/xingchao.db + data/replies.json + data/logs/
 - 群管（仅超管，需机器人为群管理员）：`/mute @某人 [分钟]`、`/unmute @某人`、
   `/banall on|off`、`/kick @某人`、`/recall`（回复目标消息或带 message_id）
 - 新人进群欢迎（白名单群，`/plugin welcome on|off` 开关，持久化 kv）
+- Web 管理面板：`http://127.0.0.1:8081/panel`（compose 映射 `127.0.0.1:8081:8080`，
+  远程用 SSH 隧道 `ssh -L 8081:127.0.0.1:8081 ...`；密码见 `XINGCHAO_PANEL_PASSWORD`，
+  未设置则随机生成并打印在 bot 日志），含状态 / 统计 / 日志 / 词库编辑 / 白名单管理
 
 ## 快速开始
 
@@ -95,7 +98,8 @@ xingchao/
 │           ├── reply.py      # 关键词回复（冷却）
 │           ├── admin.py      # 超管指令（词库 / 白名单 / 插件开关）
 │           ├── stats.py      # /stats 活跃统计
-│           └── groupadmin.py # 群管 + 进群欢迎
+│           ├── groupadmin.py # 群管 + 进群欢迎
+│           └── panel.py      # Web 管理面板（/panel）
 └── data/                   # 运行数据（compose 挂载，不入库）
 ```
 

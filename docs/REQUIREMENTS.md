@@ -432,3 +432,18 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 ### 17.4 mock 脚本增强
 
 - `scripts/mock_napcat.py` 支持把 `@QQ号` 文本解析为 at 消息段，可联调群管指令
+
+### 17.5 Web 管理面板 `panel.py`
+
+- 挂载在 NoneBot 的 FastAPI 应用（与反向 WS 共用 8080），compose 映射 `127.0.0.1:8081:8080`
+- 页面 `/panel`（内嵌单页应用：状态 / 统计 / 日志 / 词库 / 白名单 五个标签页）
+- 认证：`XINGCHAO_PANEL_PASSWORD`（键需在 bot/.env.prod 登记以便 NoneBot 识别，
+  实际值由根 .env 注入覆盖）；留空则启动时随机生成并打印日志；Cookie 存 sha256(password)
+- API（均校验 Cookie）：
+  - `GET /panel/api/status` 运行状态（uptime、插件、白名单、词条数、模块开关）
+  - `GET /panel/api/stats?day=` 各群消息量 / 参与人数 / Top5
+  - `GET /panel/api/logfiles` + `GET /panel/api/logs?name=&tail=`（仅允许 group-*.jsonl
+    纯文件名，防目录穿越）
+  - `GET/POST /panel/api/replies` 词库读取 / 校验保存并热重载（校验 id 重复、match 枚举、必填项）
+  - `GET/POST /panel/api/groups` 白名单查看 / 运行时 add|del
+- 面板仅经 SSH 隧道访问，不暴露公网

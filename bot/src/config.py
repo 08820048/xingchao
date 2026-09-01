@@ -34,6 +34,7 @@ class Config(BaseModel):
     xingchao_replies_path: Path = Path("./data/replies.json")
     xingchao_reply_cooldown: int = 8
     xingchao_site: str = "https://xingchao.dev"
+    xingchao_panel_password: str = ""  # Web 管理面板密码；留空则启动时随机生成并打印在日志
 
     @field_validator(
         "xingchao_superusers",
