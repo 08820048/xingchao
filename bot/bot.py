@@ -26,6 +26,9 @@ elif len(_access_token) < 16 or _access_token == "change-me-long-random":
 
 nonebot.load_plugins("src/plugins")
 
+# 第三方插件（nb 商店）：系统状态查看（/sysstatus，避免与内置 /status 冲突）
+nonebot.load_plugin("nonebot_plugin_status")
+
 logger.info("星潮 Xingchao bot 启动完成，等待 NapCat 反向 WS 连接 /onebot/v11/ws")
 
 if __name__ == "__main__":

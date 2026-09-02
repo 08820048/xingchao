@@ -1,4 +1,4 @@
-"""基础指令：/help /ping /id /status（白名单群或超管私聊）。"""
+"""基础指令：/help /ping /id /status /状态（白名单群或超管私聊）。"""
 
 from __future__ import annotations
 
@@ -43,7 +43,8 @@ COMMON_TEXT = (
 
 ADMIN_TEXT = (
     "\n「🔑 管理指令 · 仅超管」\n"
-    "  ◈ /status — 运行状态\n"
+    "  ◈ /status — 运行状态（插件/白名单/词库）\n"
+    "  ◈ /状态 — 服务器资源（CPU/内存/磁盘，第三方插件）\n"
     "  ◈ /mute @某人 [分钟] — 禁言\n"
     "  ◈ /unmute @某人 — 解除禁言\n"
     "  ◈ /banall on|off — 全体禁言\n"
