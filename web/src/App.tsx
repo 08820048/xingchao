@@ -826,6 +826,8 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   const [saving, setSaving] = useState(false);
   const [connBase, setConnBase] = useState("");
   const [connKey, setConnKey] = useState("");
+  const [models, setModels] = useState<string[] | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
   const load = useCallback(() => {
     api<{ ok: boolean; data: AiConfig }>("/panel/api/ai").then((r) => {
       if (r.ok) setCfg(r.data);
@@ -854,8 +856,7 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
       {!cfg.configured && (
         <Card>
           <CardPanel className="border-amber-500/40 rounded-lg border bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            ⚠️ AI 未配置：请在下方「API 连接」填写 API 地址与密钥（B.AI 平台创建的
-            API Key），保存后即可在「功能开关」中开启。
+            ⚠️ AI 未配置：请在下方「API 连接」填写 API 地址与密钥，保存后即可在「功能开关」中开启。
           </CardPanel>
         </Card>
       )}
@@ -864,7 +865,7 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
         <CardHeader>
           <CardTitle className="text-base">API 连接</CardTitle>
           <CardDescription>
-            OpenAI 兼容接口。B.AI 地址：<code>https://api.b.ai/v1</code>；
+            OpenAI 兼容接口（智谱 GLM 地址：<code>https://open.bigmodel.cn/api/paas/v4</code>）。
             Key 留空表示保持不变。保存后立即生效（无需重启）
           </CardDescription>
         </CardHeader>
@@ -904,6 +905,51 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
               {saving && <Spinner />}保存连接
             </Button>
           </div>
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loadingModels}
+              onClick={async () => {
+                setModels(null);
+                setLoadingModels(true);
+                const r = await post("/panel/api/ai/models", {
+                  base_url: connBase,
+                  ...(connKey ? { api_key: connKey } : {}),
+                });
+                setLoadingModels(false);
+                if (r.ok) {
+                  setModels(r.data.models);
+                  toast(`获取到 ${r.data.models.length} 个模型`);
+                } else toast(r.error || "获取模型列表失败", false);
+              }}
+            >
+              {loadingModels && <Spinner />}获取模型列表
+            </Button>
+          </div>
+          {models && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="modelpick">从列表选择模型</Label>
+              <select
+                id="modelpick"
+                className="border-input bg-background rounded-lg border px-3 py-2 text-sm"
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) save({ model: e.target.value });
+                  setModels(null);
+                }}
+              >
+                <option value="">
+                  {models.length ? `共 ${models.length} 个模型，点击选择并保存` : "服务商未返回任何模型"}
+                </option>
+                {models.map((m) => (
+                  <option key={m} value={m} className="font-mono text-xs">
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </CardPanel>
       </Card>
 

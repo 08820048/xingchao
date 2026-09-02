@@ -383,6 +383,61 @@ def _register_routes() -> None:
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         return JSONResponse({"ok": True, "data": {"message": "AI 配置已保存并生效"}})
 
+    @app.post("/panel/api/ai/models")
+    async def panel_ai_models(request: Request) -> JSONResponse:
+        """拉取 OpenAI 兼容服务商支持的模型列表（GET {base}/models）。
+
+        请求体可选 base_url / api_key：用于验证尚未保存的凭据；
+        缺省时使用已保存的凭据。
+        """
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import ai as ai_plugin
+
+        body: dict = {}
+        try:
+            if await request.body():
+                body = await request.json()
+        except Exception:
+            body = {}
+        base, key = await ai_plugin._ai_creds()
+        base = str(body.get("base_url") or base or "").strip().rstrip("/")
+        key = str(body.get("api_key") or key or "").strip()
+        if not (base and key):
+            return JSONResponse(
+                {"ok": False, "error": "请先填写 API 地址与密钥（或先保存连接）"}, status_code=400
+            )
+        if not base.startswith(("http://", "https://")):
+            return JSONResponse({"ok": False, "error": "API 地址应以 http(s):// 开头"}, status_code=400)
+        import httpx
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"})
+        except Exception as e:
+            logger.warning(f"面板获取 AI 模型列表失败：{type(e).__name__}")
+            return JSONResponse({"ok": False, "error": f"连接服务商失败：{type(e).__name__}"}, status_code=502)
+        if resp.status_code != 200:
+            return JSONResponse(
+                {"ok": False, "error": f"服务商返回 HTTP {resp.status_code}，请检查地址与密钥"},
+                status_code=502,
+            )
+        try:
+            data = resp.json()
+        except Exception:
+            return JSONResponse({"ok": False, "error": "响应不是合法 JSON"}, status_code=502)
+        items = data.get("data") if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            return JSONResponse({"ok": False, "error": "响应格式不符合 OpenAI /models 规范"}, status_code=502)
+        models = sorted(
+            {
+                str(m.get("id") or m.get("model") or "")
+                for m in items
+                if isinstance(m, dict) and (m.get("id") or m.get("model"))
+            }
+        )
+        return JSONResponse({"ok": True, "data": {"models": models}})
+
     @app.post("/panel/api/welcome")
     async def panel_welcome_post(request: Request) -> JSONResponse:
         if not _authorized(request):
