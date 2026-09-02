@@ -53,7 +53,6 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import LandingPage from "@/LandingPage";
 
 /* ------------------------------------------------------------------ API */
 
@@ -1699,11 +1698,9 @@ function PanelApp() {
 }
 
 export default function App() {
-  const panel = window.location.pathname.startsWith("/panel");
-
   useEffect(() => {
-    document.title = panel ? "星潮 · 管理面板" : "星潮 Xingchao · 懂分寸的 QQ 群助手";
-  }, [panel]);
+    document.title = "星潮 · 管理面板";
+  }, []);
 
-  return panel ? <PanelApp /> : <LandingPage />;
+  return <PanelApp />;
 }

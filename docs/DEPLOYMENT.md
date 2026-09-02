@@ -240,7 +240,8 @@ Cloudflare Dashboard → DNS → 添加两条 CNAME（均开启橙色云代理�
 | CNAME | `@` | `<tunnel_id>.cfargotunnel.com` |
 | CNAME | `panel` | `<tunnel_id>.cfargotunnel.com` |
 
-> 另有纯静态镜像方案：`wrangler pages deploy web/dist --project-name=xingchao`
+> 另有纯静态镜像方案：先克隆官网仓库（github.com/08820048/xingchao_site）并 `npm run build`，
+> 再 `wrangler pages deploy dist --project-name=xingchao`
 > 部署到 `<project>.pages.dev`（仅官网展示，面板 API 不在 Pages 上）。
 
 ### 3.5 安全建议

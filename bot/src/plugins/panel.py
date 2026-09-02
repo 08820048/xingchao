@@ -794,24 +794,34 @@ def _register_routes() -> None:
             return JSONResponse({"ok": True, "data": {"message": f"已{state}群 {gid} 的业务"}})
         return JSONResponse({"ok": False, "error": "action 应为 add / del / on / off"}, status_code=400)
 
-    # 官网与面板共用 React 构建产物。根 mount 必须放在所有 API 路由之后。
-    dist_dir = Path(__file__).resolve().parents[2] / "web" / "dist"
-    if dist_dir.is_dir():
-        from fastapi.staticfiles import StaticFiles
+    # 官网（xingchao_site 构建）挂载在 /，管理面板（web 构建，base=/panel/）挂载在 /panel。
+    # mount 必须放在所有 API 路由之后，且 / 在最后。
+    from fastapi.staticfiles import StaticFiles
 
-        @app.get("/panel", response_class=FileResponse)
-        @app.get("/panel/", response_class=FileResponse)
-        async def panel_page() -> FileResponse:
+    base_dir = Path(__file__).resolve().parents[2]
+    dist_dir = base_dir / "web" / "dist"
+    site_dir = base_dir / "site" / "dist"
+
+    @app.get("/panel", response_model=None)
+    @app.get("/panel/", response_model=None)
+    async def panel_page() -> FileResponse | HTMLResponse:
+        if dist_dir.is_dir():
             return FileResponse(dist_dir / "index.html")
+        return HTMLResponse(_PAGE)
 
-        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="web")
-        logger.info(f"官网与 Web 管理面板（React 构建）已挂载：/、/panel（{dist_dir}）")
+    if dist_dir.is_dir():
+        app.mount("/panel", StaticFiles(directory=str(dist_dir), html=True), name="panel")
+        logger.info(f"Web 管理面板（React 构建）已挂载：/panel（{dist_dir}）")
     else:
-        @app.get("/panel", response_class=HTMLResponse)
-        async def panel_page_fallback() -> str:
-            return _PAGE
-
         logger.info("Web 管理面板（内嵌单页）已挂载：/panel（未找到 web/dist）")
+
+    if site_dir.is_dir():
+        app.mount("/", StaticFiles(directory=str(site_dir), html=True), name="site")
+        logger.info(f"官网（xingchao_site 构建）已挂载：/（{site_dir}）")
+    elif dist_dir.is_dir():
+        # 兜底：未打包官网时，把面板构建产物挂在 /（官网不可用，但面板可访问）
+        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="web")
+        logger.info("未找到 site/dist，官网回退为面板构建产物：/")
 
 
 def _setup() -> None:
