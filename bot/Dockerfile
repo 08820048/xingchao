@@ -41,6 +41,12 @@ RUN pip install --no-cache-dir --no-deps \
         nonebot_plugin_dog \
         pokepoke_miss
 
+# 俄罗斯轮盘（revolver）补丁：原版 enabled_ban_groups 白名单为空时一律不执行禁言，
+# 中枪只会提示「当前群聊不支持禁言功能」。改为：白名单为空 = 所有群允许禁言
+# （disabled_groups 黑名单仍可单独排除某些群；如只想部分群禁言，在 .env 配 ENABLED_BAN_GROUPS=[群号,...]）
+RUN sed -i 's/if event.group_id in ENABLED_BAN_GROUPS:/if (not ENABLED_BAN_GROUPS) or (event.group_id in ENABLED_BAN_GROUPS):/' \
+        /usr/local/lib/python3.12/site-packages/nonebot_plugin_revolver/__init__.py
+
 COPY bot/bot.py ./
 COPY bot/.env.prod ./
 RUN cp .env.prod .env
