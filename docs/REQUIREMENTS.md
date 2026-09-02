@@ -489,7 +489,7 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 
 ### 17.10 AI 问答 `ai.py`
 
-- LLM 接入：通用 OpenAI Chat Completions 兼容协议（当前对接 B.AI，base_url `https://api.b.ai/v1`）
+- LLM 接入：通用 OpenAI Chat Completions 兼容协议（任意兼容服务商均可，如智谱 GLM `https://open.bigmodel.cn/api/paas/v4`；面板「AI」页可改并支持拉取模型列表）
 - 触发：to_me 且非指令的群消息（@机器人 / 昵称唤起）；AI 未开启时由 mention 回固定问候语
 - 配置分层：`XINGCHAO_AI_BASE_URL` / `XINGCHAO_AI_API_KEY` 走环境变量（缺失则功能自动禁用）；
   开关 / 模型 / 系统提示词 / 会话轮数 / 每日限额存 SQLite kv（面板可改，即时生效）
