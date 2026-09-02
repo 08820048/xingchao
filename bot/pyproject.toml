@@ -23,6 +23,16 @@ dependencies = [
     "nonebot-plugin-uninfo>=0.4,<1",          # handle 运行时依赖（handle 用 --no-deps 安装）
     "pypinyin>=0.40,<1",                       # handle 运行时依赖
     "pyjwt[crypto]>=2.10,<3",                  # /天气 QWeather JWT 鉴权
+    "nonebot-plugin-batch-withdrawal>=0.0.6,<1",   # /delete 批量撤回
+    "nonebot-plugin-botmailnotice>=0.0.3,<1",      # Bot 上下线邮件通知（需 SMTP 配置）
+    "nonebot-plugin-emojilike>=0.2.4,<1",          # 被动：消息贴表情回应
+    "nonebot-plugin-internet-outage>=0.1.4,<1",    # 服务器断网监控
+    "nonebot-plugin-qrrender>=0.0.6,<1",           # /QR 二维码生成
+    "nonebot-plugin-qqdetail>=2.0.0,<3",           # QQ 资料查询卡片
+    "nonebot-plugin-revolver>=1.1.2,<2",           # /轮盘 /开枪 俄罗斯轮盘
+    "nonebot-plugin-water-geoup-stats>=0.1.1,<1",  # /发言统计（纯文本，补 dialectlist 坑）
+    # pokepoke_miss 用 --no-deps 装入 Dockerfile（其声明的 pil_utils==0.1.10 钉死 Pillow<11，
+    # 但源码实际未 import pil_utils，属过时声明）
 ]
 
 [build-system]

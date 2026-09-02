@@ -147,12 +147,13 @@ MIAO_COUNT=1
 
 ## 五、Dockerfile 特殊处理说明
 
-`bot/Dockerfile` 中有三个插件用 `--no-deps` 安装：
+`bot/Dockerfile` 中有四个插件用 `--no-deps` 安装：
 
 | 插件 | 跳过原因 | 手动保证的运行时依赖 |
 |---|---|---|
 | nonebot_plugin_crazy_thursday | 钉死 httpx<0.24 | httpx≥0.27（主安装已有） |
-| nonebot_plugin_handle | 钉死 Pillow<11 | Pillow≥11.3（remake 带入）、alconna（githubcard 带入）、uninfo、pypinyin（pyproject 已加） |
+| nonebot_plugin_handle | 钉死 Pillow<11 | Pillow≥11.3（主安装已有）、alconna、uninfo、pypinyin（pyproject 已加） |
 | nonebot_plugin_dog | 错误地把 poetry 列为运行时依赖 | httpx / nonebot2 / adapter（主安装已有） |
+| pokepoke_miss | 声明 pil_utils==0.1.10（钉死 Pillow<11），但源码实际未 import pil_utils，属过时声明 | 仅 nonebot2 / adapter（主安装已有） |
 
-升级这三个插件时注意检查其代码是否用到了被跳过的新依赖。
+升级这些插件时注意检查其代码是否用到了被跳过的新依赖。

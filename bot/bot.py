@@ -38,6 +38,15 @@ THIRD_PARTY_PLUGINS = (
     "nonebot_plugin_miao",           # 口僻（发言随机加「喵」，概率见 .env）
     "nonebot_plugin_remake",         # 人生重开模拟器（/人生重开）
     "nonebot_plugin_status",         # 服务器资源状态（/状态）
+    "nonebot_plugin_batch_withdrawal",   # /delete @某人 <条数> 批量撤回（群管/超管）
+    "nonebot_plugin_BotMailNotice",      # Bot 上下线邮件通知（SMTP 配置见文档）
+    "nonebot_plugin_emojilike",          # 被动：消息含表情时自动贴同款回应
+    "nonebot_plugin_internet_outage",    # 服务器断网监控
+    "nonebot_plugin_QRrender",           # /QR 生成二维码
+    "nonebot_plugin_qqdetail",           # QQ 资料查询卡片
+    "nonebot_plugin_revolver",           # /轮盘 /开枪 俄罗斯轮盘
+    "nonebot_plugin_water_geoup_stats",  # /发言统计 /月发言统计
+    "pokepoke_miss",                     # 戳一戳错过提醒
 )
 for _plugin in THIRD_PARTY_PLUGINS:
     nonebot.load_plugin(_plugin)
