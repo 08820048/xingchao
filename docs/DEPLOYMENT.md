@@ -189,9 +189,10 @@ docker compose up -d --build
 
 ---
 
-## 3. Cloudflare 公网部署（可选：官网 + 管理面板上公网）
+## 3. Cloudflare 公网部署（官网 Pages + 管理面板 Tunnel）
 
-前提：域名 DNS 托管在 Cloudflare。
+前提：域名 DNS 托管在 Cloudflare。官网（xingchao.dev）部署在 Cloudflare Pages；
+管理面板（panel.xingchao.dev）经 Tunnel 回源到服务器 bot。
 
 ### 3.1 授权与 Tunnel 创建
 
@@ -226,23 +227,25 @@ systemctl enable --now cloudflared
 curl -X PUT "https://api.cloudflare.com/client/v4/accounts/$AID/cfd_tunnel/<tunnel_id>/configurations" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"config":{"ingress":[
-        {"hostname":"xingchao.dev","service":"http://localhost:8080"},
         {"hostname":"panel.xingchao.dev","service":"http://localhost:8080"},
         {"service":"http_status:404"}]}}'
 ```
 
-### 3.4 DNS 记录（wrangler OAuth 无 DNS 写权限，需手动添加）
+> 官网不经过 Tunnel：xingchao.dev 由 Cloudflare Pages 直接托管。
+```
 
-Cloudflare Dashboard → DNS → 添加两条 CNAME（均开启橙色云代理）：
+### 3.4 DNS 记录
+
+**官网（Pages）**：Cloudflare Dashboard → Workers & Pages → 本项目 → Custom domains →
+绑定 `xingchao.dev`（Pages 仓库源码：`xingchao_site`，构建命令 `npm run build`，输出 `dist`；
+首次创建 Pages 项目时可看仓库 README「部署」章节）。DNS 记录由 Pages 自动创建。
+
+**面板（Tunnel，wrangler OAuth 无 DNS 写权限，需手动添加）**：
+Cloudflare Dashboard → DNS → 添加一条 CNAME（开启橙色云代理）：
 
 | Type | Name | Target |
 |---|---|---|
-| CNAME | `@` | `<tunnel_id>.cfargotunnel.com` |
 | CNAME | `panel` | `<tunnel_id>.cfargotunnel.com` |
-
-> 另有纯静态镜像方案：先克隆官网仓库（github.com/08820048/xingchao_site）并 `npm run build`，
-> 再 `wrangler pages deploy dist --project-name=xingchao`
-> 部署到 `<project>.pages.dev`（仅官网展示，面板 API 不在 Pages 上）。
 
 ### 3.5 安全建议
 

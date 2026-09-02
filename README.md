@@ -39,15 +39,16 @@ data/xingchao.db + data/replies.json + data/logs/
 - 群管（仅超管，需机器人为群管理员）：`/mute @某人 [分钟]`、`/unmute @某人`、
   `/banall on|off`、`/kick @某人`、`/recall`（回复目标消息或带 message_id）
 - 新人进群欢迎（白名单群，`/plugin welcome on|off` 开关，持久化 kv）
-- 官网首页：`http://127.0.0.1:8081/`；Web 管理面板：`http://127.0.0.1:8081/panel`
+- Web 管理面板：`http://127.0.0.1:8081/panel`（公网为 `panel.xingchao.dev`）
   （compose 映射 `127.0.0.1:8081:8080`，
   远程用 SSH 隧道 `ssh -L 8081:127.0.0.1:8081 ...`；密码见 `XINGCHAO_PANEL_PASSWORD`，
   未设置则随机生成并打印在 bot 日志），含状态 / 统计 / 日志 / 词库编辑 / 白名单管理
   管理面板前端为 Vite + React + [coss ui](https://coss.com/ui/)（Base UI + Tailwind v4），
   多阶段 Docker 构建自动编译；`web/dist` 缺失时回退内嵌单页
-  官网源码已拆分至独立仓库 [xingchao_site](https://github.com/08820048/xingchao_site)，
-  构建 bot 镜像时自动克隆并编译（可用 `--build-arg SITE_REPO_URL=` 覆盖地址）
+  bot 根路径 `/` 重定向到官网 <https://xingchao.dev>
   支持浅色 / 深色 / 跟随系统三种主题
+- 官网 xingchao.dev 部署在 Cloudflare Pages，源码在独立仓库
+  [xingchao_site](https://github.com/08820048/xingchao_site)，与 bot 相互独立
 - 群内 @机器人（或昵称唤起）自动回应，带冷却防刷屏
 - 每个群可独立开关业务（面板操作，持久化 SQLite）
 
@@ -109,13 +110,13 @@ xingchao/
 │           ├── admin.py      # 超管指令（词库 / 白名单 / 插件开关）
 │           ├── stats.py      # /stats 活跃统计
 │           ├── groupadmin.py # 群管 + 进群欢迎
-│           └── panel.py      # 官网（/，site/dist）与 Web 面板（/panel，web/dist）挂载
+│           └── panel.py      # Web 管理面板（/panel）；/ 重定向官网
 ├── web/                    # 管理面板前端（Vite + React + Tailwind v4 + coss ui，base=/panel/）
 └── data/                   # 运行数据（compose 挂载，不入库）
 ```
 
 > 官网（xingchao.dev）源码在独立仓库 [xingchao_site](https://github.com/08820048/xingchao_site) 维护，
-> 由 bot 镜像构建时克隆并编译，运行时同样由本容器提供。
+> 部署在 Cloudflare Pages，与本容器无关；本容器根路径 `/` 重定向到官网。
 
 ## 安全约定
 

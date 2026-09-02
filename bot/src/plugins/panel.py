@@ -1,6 +1,6 @@
 """官网与 Web 管理面板：挂载在 NoneBot 的 FastAPI 应用上（与反向 WS 共用 8080 端口）。
 
-- 页面：/（官网）、/panel（管理面板）
+- 页面：/（重定向到官网 https://xingchao.dev）、/panel（管理面板）
 - 认证：XINGCHAO_PANEL_PASSWORD，留空则启动时随机生成并打印到日志；
   登录成功后种 HttpOnly Cookie（sha256(password)）
 - 功能：运行状态 / 活跃统计 / 群日志查看 / 关键词词库编辑 / 白名单管理
@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from nonebot import get_driver, get_loaded_plugins
 from nonebot.log import logger
 
@@ -794,13 +794,16 @@ def _register_routes() -> None:
             return JSONResponse({"ok": True, "data": {"message": f"已{state}群 {gid} 的业务"}})
         return JSONResponse({"ok": False, "error": "action 应为 add / del / on / off"}, status_code=400)
 
-    # 官网（xingchao_site 构建）挂载在 /，管理面板（web 构建，base=/panel/）挂载在 /panel。
-    # mount 必须放在所有 API 路由之后，且 / 在最后。
+    # 官网部署在 Cloudflare Pages（独立仓库 xingchao_site），bot 只负责管理面板（base=/panel/）。
+    # mount 必须放在所有 API 路由之后。
     from fastapi.staticfiles import StaticFiles
 
     base_dir = Path(__file__).resolve().parents[2]
     dist_dir = base_dir / "web" / "dist"
-    site_dir = base_dir / "site" / "dist"
+
+    @app.get("/", include_in_schema=False)
+    async def root() -> RedirectResponse:
+        return RedirectResponse("https://xingchao.dev", status_code=302)
 
     @app.get("/panel", response_model=None)
     @app.get("/panel/", response_model=None)
@@ -814,14 +817,6 @@ def _register_routes() -> None:
         logger.info(f"Web 管理面板（React 构建）已挂载：/panel（{dist_dir}）")
     else:
         logger.info("Web 管理面板（内嵌单页）已挂载：/panel（未找到 web/dist）")
-
-    if site_dir.is_dir():
-        app.mount("/", StaticFiles(directory=str(site_dir), html=True), name="site")
-        logger.info(f"官网（xingchao_site 构建）已挂载：/（{site_dir}）")
-    elif dist_dir.is_dir():
-        # 兜底：未打包官网时，把面板构建产物挂在 /（官网不可用，但面板可访问）
-        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="web")
-        logger.info("未找到 site/dist，官网回退为面板构建产物：/")
 
 
 def _setup() -> None:

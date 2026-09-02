@@ -1,15 +1,5 @@
-# 官网源码仓库（独立仓库 xingchao_site），构建时克隆并编译；
-# 如仓库私有或地址不同，可用 --build-arg SITE_REPO_URL=<git url> 覆盖
-ARG SITE_REPO_URL=https://github.com/08820048/xingchao_site.git
-
-FROM node:22-alpine AS site
-ARG SITE_REPO_URL
-RUN apk add --no-cache git
-WORKDIR /site
-RUN git clone --depth 1 "$SITE_REPO_URL" .
-RUN npm ci && npm run build
-
 FROM node:22-alpine AS web
+
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -37,7 +27,6 @@ COPY bot/bot.py ./
 COPY bot/.env.prod ./
 RUN cp .env.prod .env
 COPY --from=web /web/dist ./web/dist
-COPY --from=site /site/dist ./site/dist
 
 EXPOSE 8080
 
