@@ -41,7 +41,8 @@ THIRD_PARTY_PLUGINS = (
     "nonebot_plugin_batch_withdrawal",   # /delete @某人 <条数> 批量撤回（群管/超管）
     "nonebot_plugin_BotMailNotice",      # Bot 上下线邮件通知（SMTP 配置见文档）
     "nonebot_plugin_emojilike",          # 被动：消息含表情时自动贴同款回应
-    "nonebot_plugin_internet_outage",    # 服务器断网监控
+    # internet_outage：需 Cloudflare Radar token（OUTAGE_CF_TOKEN），配置后取消下行注释
+    # "nonebot_plugin_internet_outage",
     "nonebot_plugin_QRrender",           # /QR 生成二维码
     "nonebot_plugin_qqdetail",           # QQ 资料查询卡片
     "nonebot_plugin_revolver",           # /轮盘 /开枪 俄罗斯轮盘
