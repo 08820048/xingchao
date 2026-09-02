@@ -82,10 +82,12 @@ ADMIN_TEXT = (
     "  ◈ /拉黑用户|拉黑群 <目标> — 黑名单（详见文档）\n"
 )
 
-HELP_TEXT = COMMON_TEXT + THIRD_PARTY_TEXT + ADMIN_TEXT + (
+PUBLIC_TEXT = COMMON_TEXT + THIRD_PARTY_TEXT + (
     "\n✧ ─────────── ✧\n"
     "💌 途中遇到问题？联系超管处理吧～"
 )
+
+HELP_TEXT = PUBLIC_TEXT + ADMIN_TEXT
 
 async def _send(matcher: Matcher, text: str) -> None:
     try:
@@ -123,13 +125,13 @@ async def _is_group_admin(bot: Bot, event: MessageEvent) -> bool:
 @help_cmd.handle()
 @help_alias.handle()
 async def handle_help(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
-    # 群主/管理员/超管看全部菜单；普通成员只看公共菜单
+    # 群主/管理员/超管看全部菜单；普通成员看公共菜单（趣味互动/实用功能也可见）
     if await _is_group_admin(bot, event):
         await _send(matcher, HELP_TEXT)
     else:
-        await _send(matcher, COMMON_TEXT + (
-            "\n✧ ─────────── ✧\n"
-            "💌 管理指令仅群管理与超管可见～"
+        await _send(matcher, PUBLIC_TEXT.replace(
+            "💌 途中遇到问题？联系超管处理吧～",
+            "💌 管理指令仅群管理与超管可见～",
         ))
 
 
