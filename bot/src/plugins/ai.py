@@ -573,6 +573,18 @@ async def _t_ai_clear(bot, event, args) -> str:
     return "本会话 AI 上下文已清空。"
 
 
+async def _t_weather(bot, event, args) -> str:
+    from src.plugins import weather as weather_plugin
+
+    city = str(args.get("city", "")).strip()
+    if not city:
+        return "错误：需要 city（城市名，如“北京”）。"
+    data, err = await weather_plugin.fetch_weather(city)
+    if err:
+        return f"查询失败：{err}"
+    return _j(data)
+
+
 async def _t_now(bot, event, args) -> str:
     now = datetime.now().astimezone()
     week = "一二三四五六日"[now.weekday()]
@@ -668,6 +680,9 @@ def _build_tools(is_superuser: bool) -> list[dict]:
                   "language": {"type": "string", "description": "编程语言筛选，如 python，留空为全部"},
               }, "required": []},
               "all", _t_gh_trending),
+        _tool("get_weather", "查询指定城市的实时天气（天气现象、温度、体感、风力、湿度）",
+              {"type": "object", "properties": {"city": {"type": "string", "description": "城市名，如“北京”"}}, "required": ["city"]},
+              "all", _t_weather),
         _tool("get_current_time", "获取当前的日期、时间、星期与时区（回答任何与当前时间/日期/星期相关的问题前必须先调用）",
               {"type": "object", "properties": {}, "required": []},
               "all", _t_now),

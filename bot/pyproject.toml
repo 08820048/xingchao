@@ -12,6 +12,17 @@ dependencies = [
     "httpx>=0.27",
     "openai>=1.40",
     "nonebot-plugin-status>=0.7,<1",
+    # ─── 第三方插件（详见 docs/THIRD_PARTY_PLUGINS.md）───
+    # 注：heweather / dialectlist 因需 chromium 渲染（内存峰值高）已放弃，见该文档
+    "nonebot-plugin-blacklist>=1.4.3,<2",
+    "nonebot-plugin-cloudsignx>=3.1.0,<4",
+    "nonebot-plugin-githubcard>=0.4.1,<1",   # 附带 alconna
+    "nonebot-plugin-groupmate-waifu>=1.6.1,<2",
+    "nonebot-plugin-miao>=1.1.0,<2",
+    "nonebot-plugin-remake>=0.4.4,<1",       # 附带 alconna / pillow
+    "nonebot-plugin-uninfo>=0.4,<1",          # handle 运行时依赖（handle 用 --no-deps 安装）
+    "pypinyin>=0.40,<1",                       # handle 运行时依赖
+    "pyjwt[crypto]>=2.10,<3",                  # /天气 QWeather JWT 鉴权
 ]
 
 [build-system]

@@ -26,8 +26,21 @@ elif len(_access_token) < 16 or _access_token == "change-me-long-random":
 
 nonebot.load_plugins("src/plugins")
 
-# 第三方插件（nb 商店）：系统状态查看（/sysstatus，避免与内置 /status 冲突）
-nonebot.load_plugin("nonebot_plugin_status")
+# ─── 第三方插件（nb 商店，详见 docs/THIRD_PARTY_PLUGINS.md）───
+THIRD_PARTY_PLUGINS = (
+    "nonebot_plugin_blacklist",      # 黑名单（拉黑用户/群，event_preprocessor 拦截）
+    "nonebot_plugin_cloudsignx",     # 云签到（签到/积分/挖矿小游戏）
+    "nonebot_plugin_crazy_thursday", # 疯狂星期四文案
+    "nonebot_plugin_dog",            # 舔狗日记/讲个笑话/一言
+    "nonebot_plugin_githubcard",     # GitHub 链接卡片（自动识别消息里的 GitHub 链接）
+    "nonebot_plugin_groupmate_waifu",# 娶群友/CP抽卡
+    "nonebot_plugin_handle",         # 猜成语（/handle、/猜成语）
+    "nonebot_plugin_miao",           # 口僻（发言随机加「喵」，概率见 .env）
+    "nonebot_plugin_remake",         # 人生重开模拟器（/人生重开）
+    "nonebot_plugin_status",         # 服务器资源状态（/状态）
+)
+for _plugin in THIRD_PARTY_PLUGINS:
+    nonebot.load_plugin(_plugin)
 
 logger.info("星潮 Xingchao bot 启动完成，等待 NapCat 反向 WS 连接 /onebot/v11/ws")
 

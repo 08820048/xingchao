@@ -52,6 +52,7 @@
 | `/help` | `get_help` | 所有人 | 「你能做什么」「 help 」 |
 | 「关于星潮」 | `get_about` | 所有人 | 「你是谁做的」「开发者是谁」 |
 | `/stats [day]` | `get_active_stats` | 所有人 | 「今天群里活跃吗」 |
+| `/天气 <城市>` | `get_weather` | 所有人（需配置 QWEATHER_JWT_*） | 「北京今天天气怎么样」 |
 | `/状态` | —（第三方插件 nonebot-plugin-status，硬编码指令，未接入 AI 工具） | 超管 | 群里发 `/状态` 查看服务器 CPU/内存/磁盘；私聊戳一戳也可触发 |
 | `/trending [since] [lang]` | `get_github_trending` | 所有人 | 「今天 GitHub 有什么火的项目」 |
 | `/mute @某人 [分钟]` | `mute_member` | 超管 | 「把TA禁言十分钟」 |
