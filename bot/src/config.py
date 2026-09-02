@@ -55,10 +55,22 @@ _config: Config | None = None
 
 
 def get_config() -> Config:
-    """惰性单例：首次调用需在 nonebot.init() 之后。"""
+    """惰性单例：首次调用需在 nonebot.init() 之后。
+
+    NoneBot 配置源以 .env 文件为主，OS 环境变量仅能覆盖文件中已存在的同名项；
+    为保证 compose 注入的 XINGCHAO_* 变量（如 AI 配置）总能生效，
+    这里再用 os.environ 显式覆盖一次（环境变量优先级最高）。
+    """
     global _config
     if _config is None:
-        _config = Config.model_validate(get_driver().config.model_dump())
+        import os
+
+        data = get_driver().config.model_dump()
+        for field in Config.model_fields:
+            env_val = os.getenv(field.upper())
+            if env_val is not None:
+                data[field] = env_val
+        _config = Config.model_validate(data)
         logger.debug(f"星潮配置加载完成：白名单群 {_config.xingchao_group_whitelist or '{空}'}")
     return _config
 

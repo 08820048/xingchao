@@ -8,6 +8,10 @@ RUN npm run build
 
 FROM python:3.12-slim
 
+# 可选：构建时传入 PIP_INDEX_URL（如国内镜像 https://pypi.tuna.tsinghua.edu.cn/simple）
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \

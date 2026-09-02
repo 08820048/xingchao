@@ -15,6 +15,7 @@ from nonebot import get_driver, on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
 from nonebot.exception import MatcherException
 from nonebot.log import logger
+from nonebot.matcher import Matcher
 
 from src.permission import GROUP_WHITELIST
 from src.store import get_store
