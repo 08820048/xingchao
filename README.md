@@ -92,6 +92,7 @@ xingchao/
 ├── docker-compose.yml      # xingchao-bot + xingchao-napcat，内部网络
 ├── .env.example            # 根环境变量模板（真实 .env 不入库）
 ├── docs/REQUIREMENTS.md    # 需求说明书
+├── docs/AI_CAPABILITIES.md # AI 能力同步规约（斜杠指令 ⇄ 自然语言）
 ├── docs/DEPLOYMENT.md      # 部署指南（新服务器/迁移/Cloudflare）
 ├── docs/OPERATIONS.md      # 运维与操作手册（凭据位置 / 日常操作 / 故障排查）
 ├── napcat/README.md        # 扫码与 WS 客户端配置步骤

@@ -1,6 +1,7 @@
 """AI 问答：@机器人 / 昵称唤起时调用 LLM（OpenAI 兼容接口，如 B.AI）回答。
 
-- 触发：to_me 且非指令的群消息（超管私聊对话也可用）
+- 触发：to_me 且非指令的群消息（超管私聊对话也可用）；纯 @（无文字）同样响应
+  （结合上下文回，无上下文则自由发挥；AI 不可用/超限时发送固定兜底回应）
 - 上下文：每群保留最近 N 轮会话（内存），/ai clear 可清空
 - 护栏：每群 / 每人每日调用上限（面板可配），超限静默忽略
 - 配置：base_url / api_key 来自环境变量；开关、模型、系统提示词、限额存 SQLite kv
@@ -23,6 +24,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.markdown import md_to_qq
 from src.config import get_config
 from src.permission import SUPERUSER
 from src.store import get_store
@@ -182,6 +184,26 @@ MAX_TOOL_ROUNDS = 4
 MAX_BAN_SECONDS = 30 * 24 * 3600  # OneBot v11 上限 30 天
 
 ROLE_NAME = {"owner": "群主", "admin": "管理员", "member": "普通成员"}
+
+CAPABILITY_RULES = (
+    "【能力规约（必须严格遵守）】\n"
+    "下面列出的是你通过工具可以直接完成的全部能力（与 /help 指令菜单一一对应）：\n"
+    "{capabilities}\n"
+    "规则：\n"
+    "1. 用户用自然语言提出的需求，只要命中上述任何一项能力，就必须直接调用对应工具完成，"
+    "严禁回复“我没有这个功能”“我做不到”之类的说法。\n"
+    "2. 用户不会说指令名，而会用口语描述，例如“把TA禁言十分钟”→ mute_member、"
+    "“看看今天GitHub上有什么火的项目”→ get_github_trending、“现在几点了”→ get_current_time、"
+    "“你能做什么”→ 直接用文字介绍上述能力。\n"
+    "3. 需要超管权限的工具不在你的工具列表中时，如实告知该操作需要超管权限（用 /help 查看对应指令）。\n"
+    "4. 工具执行失败时如实说明原因（常见：机器人不是群管理员、目标不存在、权限不足），不要编造结果。"
+)
+
+
+def _capability_prompt(tools: list[tuple[dict, tuple]]) -> str:
+    """从工具注册表动态生成能力清单，保证与斜杠指令能力天然同步。"""
+    lines = [f"- {pair[0]['function']['name']}：{pair[0]['function']['description']}" for pair in tools]
+    return CAPABILITY_RULES.replace("{capabilities}", "\n".join(lines))
 
 
 async def _build_scene(bot, event: MessageEvent) -> str:
@@ -401,6 +423,156 @@ async def _t_reject_request(bot, event, args) -> str:
     return f"已拒绝申请 #{seq}（QQ {r['user_id']}），理由：{reason}"
 
 
+async def _t_recall(bot, event, args) -> str:
+    message_id = args.get("message_id")
+    if not message_id and getattr(event, "reply", None) is not None:
+        message_id = event.reply.message_id
+    if not message_id:
+        return "错误：需要 message_id，或回复（引用）目标消息后再让我撤回。"
+    await bot.call_api("delete_msg", message_id=int(message_id))
+    return f"已撤回消息 {message_id}。"
+
+
+async def _t_ping(bot, event, args) -> str:
+    return _j({"连通": "pong", "self_id": bot.self_id})
+
+
+async def _t_my_id(bot, event, args) -> str:
+    gid = getattr(event, "group_id", None)
+    return _j({"group_id": gid, "user_id": event.user_id, "self_id": bot.self_id, "环境": "群聊" if gid else "私聊"})
+
+
+async def _t_help(bot, event, args) -> str:
+    from src.plugins.basic import ADMIN_TEXT, COMMON_TEXT, _is_group_admin
+    if await _is_group_admin(bot, event):
+        return COMMON_TEXT + ADMIN_TEXT
+    return COMMON_TEXT + "\n管理指令仅群管理与超管可见～"
+
+
+async def _t_about(bot, event, args) -> str:
+    cfg = get_config()
+    return _j({
+        "机器人": "星潮（开源 QQ 群助手机器人）",
+        "开发者": "XuYi",
+        "开发者QQ": cfg.xingchao_developer_id,
+        "开发者博客": cfg.xingchao_developer_blog,
+        "官网": cfg.xingchao_developer_site,
+        "开源地址": "https://github.com/08820048/xingchao",
+    })
+
+
+async def _t_welcome_view(bot, event, args) -> str:
+    from src.plugins import groupadmin as ga
+    return _j({"启用": await ga.is_welcome_enabled(), "欢迎语": await ga.get_welcome_text()})
+
+
+async def _t_welcome_set(bot, event, args) -> str:
+    text = str(args.get("text", "")).strip()
+    if not text:
+        return "错误：需要 text（欢迎语内容，支持占位符 {at}/{qq}/{group}）。"
+    if len(text) > 1000:
+        return "错误：欢迎语过长（上限 1000 字）。"
+    await get_store().set_kv("welcome_text", text)
+    return f"欢迎语已更新：{text[:150]}"
+
+
+async def _t_welcome_toggle(bot, event, args) -> str:
+    enable = bool(args.get("enabled", True))
+    await get_store().set_kv("welcome_enabled", "true" if enable else "false")
+    return f"新人进群欢迎已{'开启' if enable else '关闭'}。"
+
+
+async def _t_notice_publish(bot, event, args) -> str:
+    content = str(args.get("content", "")).strip()
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not content:
+        return "错误：需要 content（公告内容）。"
+    if not group_id:
+        return "错误：未指定群号，且当前不是群聊环境。"
+    try:
+        await bot.call_api("_send_group_notice", group_id=int(group_id), content=content)
+    except Exception:
+        await bot.call_api("send_group_notice", group_id=int(group_id), content=content)
+    return "群公告已发布。"
+
+
+async def _t_notice_list(bot, event, args) -> str:
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not group_id:
+        return "错误：未指定群号，且当前不是群聊环境。"
+    notices = await bot.call_api("get_group_notice", group_id=int(group_id))
+    items = notices if isinstance(notices, list) else notices.get("notices", [])
+    return _j({"公告": [{"内容": str(n.get("content", ""))[:100], "发布时间": n.get("publish_time", "")} for n in items[:5]]})
+
+
+async def _t_task_list(bot, event, args) -> str:
+    from src.plugins.scheduler import REPEAT_LABEL, WEEKDAY_NAME
+    tasks = await get_store().list_tasks()
+    items = []
+    for t in tasks:
+        desc = REPEAT_LABEL.get(t["repeat"], t["repeat"])
+        if t["repeat"] == "weekly" and t.get("weekday") is not None:
+            desc += f"（{WEEKDAY_NAME[t['weekday']]}）"
+        if t["repeat"] == "once" and t.get("date"):
+            desc += f"（{t['date']}）"
+        items.append({"id": t["id"], "时间": t["time"], "重复": desc, "群号": t["group_id"],
+                      "内容": t["message"], "at全体": t["at_all"], "启用": t["enabled"]})
+    return _j({"定时任务": items, "提示": "增删改请在 Web 管理面板「定时任务」页操作"})
+
+
+async def _t_superuser_list(bot, event, args) -> str:
+    from src.permission import runtime_superuser_ids, superuser_ids
+    env_ids = get_config().xingchao_superusers
+    return _j({"超管": [{"QQ": u, "来源": "env" if u in env_ids else "运行时"}
+                      for u in sorted(superuser_ids() | runtime_superuser_ids())]})
+
+
+async def _t_superuser_add(bot, event, args) -> str:
+    from src.permission import add_runtime_superuser
+    uid = int(args["user_id"])
+    return f"已添加超管 {uid}。" if await add_runtime_superuser(uid) else f"QQ {uid} 已是超管。"
+
+
+async def _t_superuser_del(bot, event, args) -> str:
+    from src.permission import remove_runtime_superuser
+    uid = int(args["user_id"])
+    if uid in get_config().xingchao_superusers:
+        return f"QQ {uid} 来自环境变量，无法移除，请修改 XINGCHAO_SUPERUSERS。"
+    return f"已移除超管 {uid}。" if await remove_runtime_superuser(uid) else f"QQ {uid} 不在运行时超管中。"
+
+
+async def _t_reply_toggle(bot, event, args) -> str:
+    from src.plugins import reply as reply_plugin
+    enable = bool(args.get("enabled", True))
+    reply_plugin.set_enabled(enable)
+    await get_store().set_kv("reply_enabled", "true" if enable else "false")
+    return f"关键词模块已{'开启' if enable else '关闭'}。"
+
+
+async def _t_ai_toggle(bot, event, args) -> str:
+    enable = bool(args.get("enabled", True))
+    if not (await is_configured()):
+        return "AI 未配置 API 地址或密钥，请先在 Web 管理面板「AI」页填写。"
+    await get_store().set_kv("ai_enabled", "true" if enable else "false")
+    return f"AI 问答已{'开启' if enable else '关闭'}。"
+
+
+async def _t_ai_status(bot, event, args) -> str:
+    cfg = await ai_config()
+    return _j({
+        "开启": await is_ai_enabled(), "已配置API": await is_configured(),
+        "模型": cfg["ai_model"], "上下文轮数": cfg["ai_ctx_rounds"],
+        "今日限额": {"每群": cfg["ai_limit_group"], "每人": cfg["ai_limit_user"]},
+        "今日用量": await _usage_payload(),
+    })
+
+
+async def _t_ai_clear(bot, event, args) -> str:
+    group_key = getattr(event, "group_id", 0) or -int(event.user_id)
+    _ctx.pop(group_key, None)
+    return "本会话 AI 上下文已清空。"
+
+
 async def _t_now(bot, event, args) -> str:
     now = datetime.now().astimezone()
     week = "一二三四五六日"[now.weekday()]
@@ -517,13 +689,71 @@ def _build_tools(is_superuser: bool) -> list[dict]:
         _tool("reload_replies", "重载关键词词库",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_reply_reload),
+        _tool("set_reply_enabled", "开启/关闭关键词回复模块",
+              {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
+              "superuser", _t_reply_toggle),
+        _tool("recall_message", "撤回一条消息（回复目标消息后提出，或提供 message_id）",
+              {"type": "object", "properties": {"message_id": {"type": "integer", "description": "可选；不填则撤回当前引用的消息"}}, "required": []},
+              "superuser", _t_recall),
+        _tool("ping", "连通测试",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_ping),
+        _tool("get_my_id", "查看当前群号 / 用户 QQ / 机器人 ID",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_my_id),
+        _tool("get_help", "查看帮助菜单（我能做什么的完整清单）",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_help),
+        _tool("get_about", "获取机器人与开发者信息",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_about),
+        _tool("get_welcome", "查看进群欢迎语及开关状态",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_welcome_view),
+        _tool("set_welcome", "设置进群欢迎语（支持占位符 {at}=@新人、{qq}=新人QQ、{group}=群号）",
+              {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+              "superuser", _t_welcome_set),
+        _tool("set_welcome_enabled", "开启/关闭新人进群欢迎",
+              {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
+              "superuser", _t_welcome_toggle),
+        _tool("publish_group_notice", "发布群公告",
+              {"type": "object", "properties": {"content": {"type": "string"}, "group_id": {"type": "integer"}}, "required": ["content"]},
+              "superuser", _t_notice_publish),
+        _tool("get_group_notices", "查看当前群公告列表",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": []},
+              "superuser", _t_notice_list),
+        _tool("list_scheduled_tasks", "查看定时任务列表（增删改在 Web 面板）",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_task_list),
+        _tool("list_superusers", "查看超级管理员列表",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_superuser_list),
+        _tool("add_superuser", "添加超级管理员",
+              {"type": "object", "properties": {"user_id": {"type": "integer", "description": "QQ 号"}}, "required": ["user_id"]},
+              "superuser", _t_superuser_add),
+        _tool("remove_superuser", "移除超级管理员（env 来源除外）",
+              {"type": "object", "properties": {"user_id": {"type": "integer", "description": "QQ 号"}}, "required": ["user_id"]},
+              "superuser", _t_superuser_del),
+        _tool("set_ai_enabled", "开启/关闭 AI 问答功能",
+              {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
+              "superuser", _t_ai_toggle),
+        _tool("get_ai_status", "查看 AI 问答状态、模型、限额与今日用量",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_ai_status),
+        _tool("clear_ai_context", "清空本群/本会话的 AI 对话上下文",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_ai_clear),
     ]
     permitted = [pair for pair in tools if pair[1][0] != "superuser" or is_superuser]
     return permitted
 
 
-async def chat(event: MessageEvent, text: str, bot=None) -> str | None:
-    """调用 LLM（带工具调用循环）；返回回复文本，失败/被拦截返回 None（静默处理）。"""
+async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: str | None = None) -> str | None:
+    """调用 LLM（带工具调用循环）；返回回复文本，失败/被拦截返回 None（静默处理）。
+
+    history_user_text：写入历史上下文的用户消息文本（默认用 text）。
+    纯 @ 唤起时传入标记文本，避免把内部元提示写入上下文。
+    """
     cfg = await ai_config()
     client = await get_client()
     if client is None:
@@ -544,6 +774,7 @@ async def chat(event: MessageEvent, text: str, bot=None) -> str | None:
     scene = await _build_scene(bot, event)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": cfg["ai_system_prompt"]},
+        {"role": "system", "content": _capability_prompt(tools)},
         {"role": "system", "content": scene},
         *history,
         {"role": "user", "content": text},
@@ -591,7 +822,7 @@ async def chat(event: MessageEvent, text: str, bot=None) -> str | None:
     if not reply:
         return None
 
-    _append_history(group_key, "user", text, cfg["ai_ctx_rounds"])
+    _append_history(group_key, "user", history_user_text or text, cfg["ai_ctx_rounds"])
     _append_history(group_key, "assistant", reply, cfg["ai_ctx_rounds"])
     if len(reply) > MAX_REPLY_CHARS:
         reply = reply[:MAX_REPLY_CHARS] + "\n…（内容过长已截断）"
@@ -608,15 +839,35 @@ def _is_command(text: str) -> bool:
     return any(text.startswith(s) for s in start)
 
 
+PURE_AT_PROMPT = (
+    "（用户只是@了你，没有输入文字。请结合上面的上下文聊天记录自然回应；"
+    "如果没有相关上下文，就打个招呼并简短介绍你能做什么，一两句话即可，不要长篇大论）"
+)
+
+PURE_AT_FALLBACK = (
+    "在的～我在这儿呢！发送 /help 可以看到我的全部功能，直接@我聊天也行哦～",
+    "我在！有什么可以帮你的吗？发送 /help 查看我的技能清单～",
+    "在的在的～想让我帮你做什么？/help 有完整功能列表哦～",
+)
+
+
 @ai_matcher.handle()
 async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     if not event.to_me:
         return
-    text = event.message.extract_plain_text().strip()
-    if not text or _is_command(text):
+    raw_text = event.message.extract_plain_text().strip()
+    if _is_command(raw_text):
         return
+    # 纯 @（无文字）也必须响应：结合上下文回，没上下文就自由发挥，
+    # 避免成员以为机器人挂了。AI 不可用时兜底固定回应。
+    pure_at = not raw_text
+    text = PURE_AT_PROMPT if pure_at else raw_text
     if not await is_ai_enabled():
-        return  # mention 插件已处理固定回应
+        if pure_at:
+            import random
+
+            await matcher.send(MessageSegment.at(event.user_id) + " " + random.choice(PURE_AT_FALLBACK))
+        return  # mention 插件已处理其他固定回应
     # 群聊：已在白名单（规则）；私聊：仅超管（mention 层已放行超管私聊）
     from nonebot.adapters.onebot.v11 import PrivateMessageEvent
 
@@ -625,9 +876,15 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     }:
         return
 
-    reply = await chat(event, text, bot=bot)
+    reply = await chat(event, text, bot=bot, history_user_text="@星潮" if pure_at else None)
     if reply is None:
+        if pure_at:
+            # AI 超限/调用失败时的兜底，保证纯 @ 必有回应
+            import random
+
+            await matcher.send(MessageSegment.at(event.user_id) + " " + random.choice(PURE_AT_FALLBACK))
         return
+    reply = md_to_qq(reply)  # QQ 不渲染标准 Markdown，发送前降级为可读文本
     dev_id = get_config().xingchao_developer_id
     try:
         if isinstance(event, GroupMessageEvent):
@@ -706,7 +963,7 @@ async def handle_ai_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
                 messages=[{"role": "user", "content": rest.strip()}],
             )
             reply = (completion.choices[0].message.content or "").strip()
-            await _send(ai_cmd, f"模型回复：\n{reply or '（空）'}")
+            await _send(ai_cmd, f"模型回复：\n{md_to_qq(reply) if reply else '（空）'}")
         except Exception as e:
             logger.exception("AI 测试调用失败")
             await _send(ai_cmd, f"调用失败：{e}")
