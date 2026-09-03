@@ -1,4 +1,4 @@
-"""入群申请智能审批 + 退群群内播报。
+"""入群申请智能审批 + 退群通知管理员。
 
 入群申请（GroupRequestEvent，request_type=group）处理链：
   1. AI 判断（首选）：把验证问题与申请人回答交给 LLM，输出 JSON 决定
@@ -10,7 +10,7 @@
   3. 转人工：通知所有超管私聊，携带序号；/approve <序号> [理由]、/reject <序号> [理由]
      或在面板操作（凭证 flag 保存在内存，重启失效，QQ 侧申请过期同样失效）
 
-退群（GroupDecreaseNoticeEvent）：群内播报（可开关），机器人被踢（kick_me）通知超管。
+退群（GroupDecreaseNoticeEvent）：私聊通知超管（可开关），群内不播报。
 配置均持久化 SQLite kv，面板「加群审批」页可改，即时生效。
 """
 
@@ -45,7 +45,7 @@ DEFAULTS: dict[str, Any] = {
     "join_question": "GitHub是干什么的？",
     "join_fallback": "manual",  # AI 不可用时的兜底：manual | approve | reject
     "join_keywords": "github,git,代码托管,开源,托管平台,版本控制,程序员,代码仓库",
-    "leave_report": True,  # 退群群内播报开关
+    "leave_report": True,  # 退群私聊通知超管开关
 }
 
 _PENDING: dict[int, dict[str, Any]] = {}
@@ -276,16 +276,16 @@ async def handle_leave(bot: Bot, event: GroupDecreaseNoticeEvent) -> None:
             nickname = info["nickname"]
     except Exception:
         pass
+    operator = f"，操作者 {event.operator_id}" if event.sub_type == "kick" else ""
     try:
-        await bot.call_api(
-            "send_group_msg",
-            group_id=event.group_id,
-            message=f"👋 成员 {nickname}（{event.user_id}）已{action}本群",
+        await _notify_superusers(
+            bot,
+            f"👋 群 {event.group_id}：成员 {nickname}（{event.user_id}）已{action}本群{operator}",
         )
     except MatcherException:
         raise
     except Exception:
-        logger.exception(f"退群播报失败：group={event.group_id}")
+        logger.exception(f"退群通知管理员失败：group={event.group_id}")
 
 
 # ---------------------------------------------------------------- /approve /reject

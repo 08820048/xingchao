@@ -1265,9 +1265,9 @@ function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
           </div>
           <div className="border-input flex items-center justify-between rounded-lg border p-3">
             <div>
-              <p className="text-sm font-medium">退群群内播报</p>
+              <p className="text-sm font-medium">退群通知管理员</p>
               <p className="text-muted-foreground text-xs">
-                成员退群/被移出时在群里播报；机器人被踢会通知超管
+                成员退群/被移出时私聊通知超管，群内不播报
               </p>
             </div>
             <Switch
