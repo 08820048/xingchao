@@ -175,7 +175,7 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 | `/recall` | 撤回消息（回复目标消息发送，或 `/recall <message_id>`） |
 | `/reply reload\|list` | 词库热重载 / 列表 |
 | `/group list\|add\|del <群号>` | 白名单管理（add/del 即时生效，重启保留） |
-| `/plugin reply\|link\|vision on\|off` | 关键词 / 链接自动解读 / 图片违规处理开关 |
+| `/plugin reply\|link\|vision\|proactive on\|off` | 关键词 / 链接自动解读 / 图片违规处理 / 群聊主动性 开关 |
 | `/welcome on\|off` | 进群欢迎开关 |
 | `/welcome view` | 查看当前欢迎语 |
 | `/welcome set <欢迎语>` | 自定义欢迎语（占位符：`{at}`=@新人、`{qq}`=新人QQ、`{group}`=群号；也可在面板「仪表盘」页编辑） |

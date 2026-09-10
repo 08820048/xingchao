@@ -2,7 +2,7 @@
 自动撤回消息并对发送者禁言（默认 15 分钟），同时私聊通知超管。
 
 - 白名单群；跳过机器人自己与指令消息
-- 正常图片：默认不回复；仅在 @机器人 时回复一句图片描述（vision_reply_safe=true 可改为总是回复）
+- 正常图片：完全静默（不回复描述），只有命中违规才撤回/禁言
 - 违规图片：撤回 + 禁言 + 通知超管；发送者为群主/管理员/超管时只通知不处罚，避免误伤
 - 模型：ai_vision_model（需视觉模型，OpenAI 兼容 image_url 格式；/ai vision <模型> 可改）
 - 开关 vision_guard_enabled（面板模块开关 / /plugin vision on|off）
@@ -23,8 +23,7 @@ from datetime import datetime
 
 import httpx
 from nonebot import on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
-from nonebot.exception import MatcherException
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
 from nonebot.log import logger
 from nonebot.matcher import Matcher
 
@@ -36,7 +35,6 @@ DEFAULTS: dict[str, object] = {
     "vision_guard_enabled": True,
     "vision_mute_minutes": 15,     # 命中后禁言分钟数，0 = 只撤回不禁言
     "vision_notify": True,         # 命中后私聊通知超管
-    "vision_reply_safe": False,    # 正常图片是否也回复描述（默认仅 @机器人 时回复）
     "vision_cooldown": 10,         # 每用户冷却秒数，防止连发刷 AI
     "vision_daily_limit": 300,     # 每群每日识别上限
 }
@@ -298,13 +296,4 @@ async def handle_vision(bot: Bot, event: GroupMessageEvent, matcher: Matcher) ->
             )
         return
 
-    # 正常图片：仅在 @机器人 或开启 vision_reply_safe 时回复描述
-    if event.to_me or await _kv("vision_reply_safe"):
-        matcher.stop_propagation()  # 避免 AI/mention 重复兜底
-        message = MessageSegment.reply(event.message_id) + f"🖼️ 图片内容：{desc or '（无法描述）'}"
-        try:
-            await matcher.send(message)
-        except MatcherException:
-            raise
-        except Exception:
-            logger.exception("图片描述回复发送失败")
+    # 正常图片：静默放行，不做任何回复/提示

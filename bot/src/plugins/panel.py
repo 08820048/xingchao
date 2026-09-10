@@ -82,6 +82,7 @@ async def _status_payload() -> dict[str, Any]:
     welcome_enabled = await store.get_kv("welcome_enabled")
     link_preview_enabled = await store.get_kv("link_preview_enabled")
     vision_guard_enabled = await store.get_kv("vision_guard_enabled")
+    proactive_enabled = await store.get_kv("proactive_enabled")
     log_dir = cfg.xingchao_log_dir
     log_files = sorted(log_dir.glob("group-*.jsonl")) if log_dir.exists() else []
     names = sorted(
@@ -99,6 +100,7 @@ async def _status_payload() -> dict[str, Any]:
         "welcome_enabled": welcome_enabled != "false",
         "link_preview_enabled": link_preview_enabled != "false",
         "vision_guard_enabled": vision_guard_enabled != "false",
+        "proactive_enabled": proactive_enabled != "false",
         "log_files": [f.name for f in log_files],
         "today": datetime.now().astimezone().strftime("%Y-%m-%d"),
     }
@@ -736,13 +738,15 @@ def _register_routes() -> None:
         body = await request.json()
         key = str(body.get("key", ""))
         enabled = body.get("enabled")
-        if key not in ("reply", "welcome", "link", "vision") or not isinstance(enabled, bool):
+        if key not in ("reply", "welcome", "link", "vision", "proactive") or not isinstance(enabled, bool):
             return JSONResponse(
-                {"ok": False, "error": "key 应为 reply/welcome/link/vision，enabled 应为布尔值"}, status_code=400
+                {"ok": False, "error": "key 应为 reply/welcome/link/vision/proactive，enabled 应为布尔值"}, status_code=400
             )
-        kv_key = {"link": "link_preview_enabled", "vision": "vision_guard_enabled"}.get(
-            key, f"{key}_enabled"
-        )
+        kv_key = {
+            "link": "link_preview_enabled",
+            "vision": "vision_guard_enabled",
+            "proactive": "proactive_enabled",
+        }.get(key, f"{key}_enabled")
         try:
             await get_store().set_kv(kv_key, "true" if enabled else "false")
         except Exception:
@@ -755,6 +759,7 @@ def _register_routes() -> None:
             "welcome": "进群欢迎",
             "link": "链接自动解读",
             "vision": "图片识别与违规处理",
+            "proactive": "群聊主动性",
         }
         return JSONResponse(
             {"ok": True, "data": {"message": f"{labels[key]}已{'开启' if enabled else '关闭'}"}}

@@ -666,6 +666,12 @@ async def _t_vision_guard_toggle(bot, event, args) -> str:
     return f"图片 AI 识别与违规处理已{'开启' if enable else '关闭'}。"
 
 
+async def _t_proactive_toggle(bot, event, args) -> str:
+    enable = bool(args.get("enabled", True))
+    await get_store().set_kv("proactive_enabled", "true" if enable else "false")
+    return f"群聊主动性已{'开启' if enable else '关闭'}。"
+
+
 async def _t_vision_model_set(bot, event, args) -> str:
     model = str(args.get("model", "")).strip()
     if not model:
@@ -823,6 +829,9 @@ def _build_tools(is_superuser: bool) -> list[dict]:
         _tool("set_vision_model", "设置图片识别用的视觉模型（需支持图片输入）",
               {"type": "object", "properties": {"model": {"type": "string", "description": "如 glm-4v-flash"}}, "required": ["model"]},
               "superuser", _t_vision_model_set),
+        _tool("set_proactive_enabled", "开启/关闭群聊主动性（话题明确或有人求助时 AI 自动参与讨论）",
+              {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
+              "superuser", _t_proactive_toggle),
         _tool("recall_message", "撤回一条消息（回复目标消息后提出，或提供 message_id）",
               {"type": "object", "properties": {"message_id": {"type": "integer", "description": "可选；不填则撤回当前引用的消息"}}, "required": []},
               "superuser", _t_recall),

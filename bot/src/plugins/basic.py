@@ -53,7 +53,8 @@ THIRD_PARTY_TEXT = (
     "  ◈ /发言统计 / 月发言统计 — 群活跃水群榜\n"
     "  ◈ /查询资料 <QQ> — QQ 资料卡片\n"
     "  ◈ 发网页链接 — AI 自动一句话解读\n"
-    "  ◈ 发图片 — AI 识别内容（违规图自动撤回 + 禁言）\n"
+    "  ◈ 发图片 — 违规图（翻墙/色情/血腥）自动撤回 + 禁言\n"
+    "  ◈ 群聊话题 — 讨论明确或有人求助时 AI 偶尔参与\n"
     "  ◈ 直接发 GitHub 链接 — 自动生成仓库卡片\n"
     "  ◈ 给消息贴 QQ 表情 — 机器人也会同款回应～\n"
 )
@@ -76,7 +77,7 @@ ADMIN_TEXT = (
     "  ◈ /welcome on|off|set — 欢迎语配置\n"
     "  ◈ /task list — 定时任务列表\n"
     "  ◈ /notice <内容> — 发布群公告\n"
-    "  ◈ /plugin reply|link|vision on|off — 模块开关\n"
+    "  ◈ /plugin reply|link|vision|proactive on|off — 模块开关\n"
     "  ◈ /delete @某人 <条数> — 批量撤回（群管可用）\n"
     "  ◈ /拉黑用户|拉黑群 <目标> — 黑名单（详见文档）\n"
 )

@@ -65,6 +65,7 @@
 | `/plugin reply on/off` | `set_reply_enabled` | 超管 | 「关闭关键词回复」 |
 | `/plugin link on/off` | `set_link_preview_enabled` | 超管 | 「关闭链接自动解读」 |
 | `/plugin vision on/off` | `set_vision_guard_enabled` | 超管 | 「关闭图片违规检测」 |
+| `/plugin proactive on/off` | `set_proactive_enabled` | 超管 | 「关闭群聊主动性」 |
 | `/ai vision <模型>` | `set_vision_model` | 超管 | 「把视觉模型换成 glm-4v-flash」 |
 | `/reply list/reload` | `list_replies` / `reload_replies` | 超管 | 「看看词库里有什么」 |
 | `/welcome view/set/on/off` | `get_welcome` / `set_welcome` / `set_welcome_enabled` | 超管 | 「把欢迎语改成……」 |
@@ -79,12 +80,15 @@
 | —（内置能力） | `get_group_info` / `get_member_list` / `get_member_info` | 所有人 | 「群里多少人」「他是什么身份」 |
 | —（内置能力） | `get_current_time` / `calculate` | 所有人 | 「现在几点」「(3+4)*2 等于多少」 |
 
-> 另有两大类**自动能力**（无需指令、无需 AI 显式调用工具，直接监听群消息）：
+> 另有三大类**自动能力**（无需指令、无需 AI 显式调用工具，直接监听群消息）：
 > - **链接自动解读**（`linkpreview.py`）：白名单群有人发网页链接时，抓取标题/描述并调用
 >   AI 用一句话概括，引用原消息回复；开关 `link_preview_enabled`（`/plugin link on|off`）。
-> - **图片识别与违规处理**（`visionguard.py`）：白名单群图片经视觉模型识别，命中
->   翻墙/VPN、色情、血腥暴力时自动撤回并禁言发送者（默认 15 分钟）；开关
+> - **图片识别与违规处理**（`visionguard.py`）：白名单群图片经视觉模型识别，**仅正常图片完全静默**，
+>   只有命中翻墙/VPN、色情、血腥暴力时才自动撤回并禁言发送者（默认 15 分钟）；开关
 >   `vision_guard_enabled`（`/plugin vision on|off`），视觉模型由 `/ai vision <模型>` 配置。
+> - **群聊主动性**（`proactive.py`）：群里讨论明确话题或有人求助/提问时，AI 自然加入一句；
+>   两段式控本（活跃度门槛 + 模型自行 SKIP）+ 冷却/日限；开关 `proactive_enabled`
+>   （`/plugin proactive on|off`）。
 
 ## 5. 消息格式规约（Markdown 处理）
 

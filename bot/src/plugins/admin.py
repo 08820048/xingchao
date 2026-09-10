@@ -146,6 +146,7 @@ _PLUGIN_KEYS = {
     "linkpreview": ("link_preview_enabled", "链接自动解读"),
     "vision": ("vision_guard_enabled", "图片识别与违规处理"),
     "visionguard": ("vision_guard_enabled", "图片识别与违规处理"),
+    "proactive": ("proactive_enabled", "群聊主动性"),
 }
 
 
@@ -153,7 +154,7 @@ _PLUGIN_KEYS = {
 async def handle_plugin(args: Message = CommandArg()) -> None:
     parts = args.extract_plain_text().strip().lower().split()
     if len(parts) != 2 or parts[1] not in ("on", "off") or parts[0] not in _PLUGIN_KEYS:
-        await _send(plugin_admin, "用法：/plugin reply|link|vision on|off")
+        await _send(plugin_admin, "用法：/plugin reply|link|vision|proactive on|off")
         return
     key, label = _PLUGIN_KEYS[parts[0]]
     enable = parts[1] == "on"

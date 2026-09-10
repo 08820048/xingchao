@@ -198,6 +198,7 @@ type Status = {
   welcome_enabled: boolean;
   link_preview_enabled: boolean;
   vision_guard_enabled: boolean;
+  proactive_enabled: boolean;
   log_files: string[];
   today: string;
 };
@@ -291,6 +292,18 @@ function Dashboard({
             <Switch
               checked={status.vision_guard_enabled}
               onCheckedChange={(v) => setModule("vision", v)}
+            />
+          </div>
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">群聊主动性</p>
+              <p className="text-muted-foreground text-xs">
+                话题明确或有人求助时 AI 自动参与
+              </p>
+            </div>
+            <Switch
+              checked={status.proactive_enabled}
+              onCheckedChange={(v) => setModule("proactive", v)}
             />
           </div>
         </CardPanel>

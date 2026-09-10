@@ -41,8 +41,10 @@ data/xingchao.db + data/replies.json + data/logs/
 - 链接自动解读（白名单群，`/plugin link on|off`）：有人发网页链接时，抓取页面信息并调用
   AI 用一句话概括，引用原消息回复
 - 图片识别与违规处理（白名单群，`/plugin vision on|off`）：AI 视觉识别图片内容，
-  命中翻墙/VPN、色情、血腥暴力时自动撤回并禁言发送者（默认 15 分钟），并私聊通知超管；
-  视觉模型用 `/ai vision <模型>` 配置
+  **正常图片完全静默不回复**，只有命中翻墙/VPN、色情、血腥暴力时才自动撤回并禁言发送者
+  （默认 15 分钟），并私聊通知超管；视觉模型用 `/ai vision <模型>` 配置
+- 群聊主动性（白名单群，`/plugin proactive on|off`）：群里讨论明确话题或有人求助时，
+  AI 自然加入一句；两段式控本（活跃度门槛 + 模型自行 SKIP）+ 冷却与每日尝试上限
 - 新人进群欢迎（白名单群，`/welcome on|off` 开关，持久化 kv）
 - Web 管理面板：`http://127.0.0.1:8081/panel`（公网为 `panel.xingchao.dev`）
   （compose 映射 `127.0.0.1:8081:8080`，
