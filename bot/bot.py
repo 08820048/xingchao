@@ -31,19 +31,16 @@ THIRD_PARTY_PLUGINS = (
     "nonebot_plugin_blacklist",      # 黑名单（拉黑用户/群，event_preprocessor 拦截）
     "nonebot_plugin_cloudsignx",     # 云签到（签到/积分/挖矿小游戏）
     "nonebot_plugin_crazy_thursday", # 疯狂星期四文案
-    "nonebot_plugin_dog",            # 舔狗日记/讲个笑话/一言
     "nonebot_plugin_githubcard",     # GitHub 链接卡片（自动识别消息里的 GitHub 链接）
     "nonebot_plugin_groupmate_waifu",# 娶群友/CP抽卡
     "nonebot_plugin_handle",         # 猜成语（/handle、/猜成语）
     "nonebot_plugin_miao",           # 口僻（发言随机加「喵」，概率见 .env）
-    "nonebot_plugin_remake",         # 人生重开模拟器（/人生重开）
     "nonebot_plugin_status",         # 服务器资源状态（/状态）
     "nonebot_plugin_batch_withdrawal",   # /delete @某人 <条数> 批量撤回（群管/超管）
     "nonebot_plugin_BotMailNotice",      # Bot 上下线邮件通知（SMTP 配置见文档）
     "nonebot_plugin_emojilike",          # 被动：消息含表情时自动贴同款回应
     # internet_outage：需 Cloudflare Radar token（OUTAGE_CF_TOKEN），配置后取消下行注释
     # "nonebot_plugin_internet_outage",
-    "nonebot_plugin_QRrender",           # /QR 生成二维码
     "nonebot_plugin_qqdetail",           # QQ 资料查询卡片
     "nonebot_plugin_revolver",           # /轮盘 /开枪 俄罗斯轮盘
     "nonebot_plugin_water_geoup_stats",  # /发言统计 /月发言统计

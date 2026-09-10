@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from datetime import datetime
@@ -31,11 +32,12 @@ from src.store import get_store
 
 # ---------------------------------------------------------------- 配置（kv）
 
-_KV_KEYS = ("ai_enabled", "ai_model", "ai_system_prompt", "ai_ctx_rounds", "ai_limit_group", "ai_limit_user")
+_KV_KEYS = ("ai_enabled", "ai_model", "ai_vision_model", "ai_system_prompt", "ai_ctx_rounds", "ai_limit_group", "ai_limit_user")
 
 DEFAULTS: dict[str, Any] = {
     "ai_enabled": True,
     "ai_model": "deepseek-v4-flash",
+    "ai_vision_model": "glm-4v-flash",  # 图片识别需视觉模型（OpenAI 兼容 image_url 格式）
     "ai_system_prompt": (
         "你是「星潮」，一个开源的 QQ 群助手机器人（官网 https://xingchao.dev）。"
         "回答简洁、友好、口语化，避免长篇大论；不懂就说不懂，不要编造。"
@@ -118,6 +120,90 @@ async def is_ai_enabled() -> bool:
     if not (await is_configured()):
         return False
     return await _kv("ai_enabled") is True
+
+
+async def _vision_model() -> str:
+    """视觉模型：kv 配置优先，留空回退到文本模型。"""
+    model = str(await _kv("ai_vision_model")).strip()
+    return model or str(await _kv("ai_model"))
+
+
+async def generate_text(
+    prompt: str,
+    *,
+    system: str | None = None,
+    model: str | None = None,
+    max_tokens: int = 1000,
+    temperature: float = 0.3,
+) -> str | None:
+    """轻量文本补全（供链接解读等自动任务调用）；失败返回 None，不抛异常。
+
+    注意：glm-5.3-flash 等思维链模型的隐藏推理会占用 max_tokens，
+    预算过小会出现 finish_reason=length 且 content 为空，故默认给足空间。
+    """
+    client = await get_client()
+    if client is None:
+        return None
+    cfg = await ai_config()
+    messages: list[dict[str, Any]] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    last_err: Exception | None = None
+    for attempt in range(2):
+        try:
+            completion = await client.chat.completions.create(
+                model=model or cfg["ai_model"],
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                await asyncio.sleep(1)
+            continue
+        return (completion.choices[0].message.content or "").strip() or None
+    logger.warning(f"AI 文本生成失败（已重试）：{last_err}")
+    return None
+
+
+async def generate_vision(
+    image_ref: str,
+    prompt: str,
+    *,
+    model: str | None = None,
+    max_tokens: int = 400,
+) -> str | None:
+    """图片理解：image_ref 可为 http(s) URL 或 data URI；失败返回 None。"""
+    client = await get_client()
+    if client is None:
+        return None
+    last_err: Exception | None = None
+    for attempt in range(2):
+        try:
+            completion = await client.chat.completions.create(
+                model=model or await _vision_model(),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": image_ref}},
+                        ],
+                    }
+                ],
+                temperature=0.2,
+                max_tokens=max_tokens,
+            )
+        except Exception as e:
+            last_err = e
+            if attempt == 0:
+                await asyncio.sleep(1)
+            continue
+        return (completion.choices[0].message.content or "").strip() or None
+    logger.warning(f"AI 视觉识别失败（已重试）：{last_err}")
+    return None
 
 
 # ---------------------------------------------------------------- 上下文
@@ -561,10 +647,31 @@ async def _t_ai_status(bot, event, args) -> str:
     cfg = await ai_config()
     return _j({
         "开启": await is_ai_enabled(), "已配置API": await is_configured(),
-        "模型": cfg["ai_model"], "上下文轮数": cfg["ai_ctx_rounds"],
+        "模型": cfg["ai_model"], "视觉模型": await _vision_model(),
+        "上下文轮数": cfg["ai_ctx_rounds"],
         "今日限额": {"每群": cfg["ai_limit_group"], "每人": cfg["ai_limit_user"]},
         "今日用量": await _usage_payload(),
     })
+
+
+async def _t_link_preview_toggle(bot, event, args) -> str:
+    enable = bool(args.get("enabled", True))
+    await get_store().set_kv("link_preview_enabled", "true" if enable else "false")
+    return f"链接自动解读已{'开启' if enable else '关闭'}。"
+
+
+async def _t_vision_guard_toggle(bot, event, args) -> str:
+    enable = bool(args.get("enabled", True))
+    await get_store().set_kv("vision_guard_enabled", "true" if enable else "false")
+    return f"图片 AI 识别与违规处理已{'开启' if enable else '关闭'}。"
+
+
+async def _t_vision_model_set(bot, event, args) -> str:
+    model = str(args.get("model", "")).strip()
+    if not model:
+        return "错误：需要 model（视觉模型名，如 glm-4v-flash）。"
+    await get_store().set_kv("ai_vision_model", model)
+    return f"视觉模型已设为：{model}"
 
 
 async def _t_ai_clear(bot, event, args) -> str:
@@ -707,6 +814,15 @@ def _build_tools(is_superuser: bool) -> list[dict]:
         _tool("set_reply_enabled", "开启/关闭关键词回复模块",
               {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
               "superuser", _t_reply_toggle),
+        _tool("set_link_preview_enabled", "开启/关闭链接自动解读功能（群里发链接时 AI 一句话概括）",
+              {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
+              "superuser", _t_link_preview_toggle),
+        _tool("set_vision_guard_enabled", "开启/关闭图片 AI 识别与违规图片自动撤回禁言",
+              {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
+              "superuser", _t_vision_guard_toggle),
+        _tool("set_vision_model", "设置图片识别用的视觉模型（需支持图片输入）",
+              {"type": "object", "properties": {"model": {"type": "string", "description": "如 glm-4v-flash"}}, "required": ["model"]},
+              "superuser", _t_vision_model_set),
         _tool("recall_message", "撤回一条消息（回复目标消息后提出，或提供 message_id）",
               {"type": "object", "properties": {"message_id": {"type": "integer", "description": "可选；不填则撤回当前引用的消息"}}, "required": []},
               "superuser", _t_recall),
@@ -966,6 +1082,13 @@ async def handle_ai_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
         else:
             await _send(ai_cmd, "本群没有正在进行的 AI 会话。")
         return
+    if action == "vision":
+        if rest.strip():
+            await get_store().set_kv("ai_vision_model", rest.strip())
+            await _send(ai_cmd, f"视觉模型已设为：{rest.strip()}")
+        else:
+            await _send(ai_cmd, f"当前视觉模型：{await _vision_model()}\n用法：/ai vision <模型名>")
+        return
     if action == "test" and rest.strip():
         cfg = await ai_config()
         client = await get_client()
@@ -985,7 +1108,7 @@ async def handle_ai_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
         return
     await _send(
         ai_cmd,
-        "用法：/ai on|off、/ai status、/ai clear、/ai test <问题>\n"
+        "用法：/ai on|off、/ai status、/ai clear、/ai vision <模型>、/ai test <问题>\n"
         "（配置修改请在 Web 管理面板「AI」页操作）",
     )
 

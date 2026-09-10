@@ -196,6 +196,8 @@ type Status = {
   replies: number;
   reply_enabled: boolean;
   welcome_enabled: boolean;
+  link_preview_enabled: boolean;
+  vision_guard_enabled: boolean;
   log_files: string[];
   today: string;
 };
@@ -265,6 +267,30 @@ function Dashboard({
             <Switch
               checked={status.welcome_enabled}
               onCheckedChange={(v) => setModule("welcome", v)}
+            />
+          </div>
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">链接自动解读</p>
+              <p className="text-muted-foreground text-xs">
+                群里发链接时 AI 一句话概括
+              </p>
+            </div>
+            <Switch
+              checked={status.link_preview_enabled}
+              onCheckedChange={(v) => setModule("link", v)}
+            />
+          </div>
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">图片识别与违规处理</p>
+              <p className="text-muted-foreground text-xs">
+                违规图片自动撤回并禁言
+              </p>
+            </div>
+            <Switch
+              checked={status.vision_guard_enabled}
+              onCheckedChange={(v) => setModule("vision", v)}
             />
           </div>
         </CardPanel>
@@ -813,6 +839,7 @@ type AiConfig = {
   api_key_masked: string;
   enabled: boolean;
   model: string;
+  vision_model: string;
   system_prompt: string;
   ctx_rounds: number;
   limit_group: number;
@@ -984,6 +1011,24 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
               onClick={() => save({ model: cfg.model })}
             >
               {saving && <Spinner />}保存模型
+            </Button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="visionModel">视觉模型（图片识别用）</Label>
+              <Input
+                id="visionModel"
+                value={cfg.vision_model}
+                onChange={(e) => setCfg({ ...cfg, vision_model: e.target.value })}
+                placeholder="如 glm-4v-flash（需支持图片输入）"
+              />
+            </div>
+            <Button
+              className="self-end"
+              disabled={saving}
+              onClick={() => save({ vision_model: cfg.vision_model })}
+            >
+              {saving && <Spinner />}保存视觉模型
             </Button>
           </div>
           <div className="flex flex-col gap-1.5">

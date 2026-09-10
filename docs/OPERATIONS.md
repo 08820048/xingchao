@@ -168,14 +168,14 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 | 指令 | 说明 |
 |---|---|
 | `/status` | 运行状态 |
-| `/mute @某人 [分钟]` | 禁言（默认 10 分钟，上限 30 天；**需机器人是群管理员**） |
-| `/unmute @某人` | 解除禁言 |
-| `/banall on\|off` | 全体禁言 |
-| `/kick @某人` | 移出群聊 |
+| `/禁言 @某人 [分钟]` | 禁言（默认 10 分钟，上限 30 天；**需机器人是群管理员**） |
+| `/解除禁言 @某人` | 解除禁言 |
+| `/全体禁言 开\|关` | 全体禁言 |
+| `/踢出 @某人` | 移出群聊 |
 | `/recall` | 撤回消息（回复目标消息发送，或 `/recall <message_id>`） |
 | `/reply reload\|list` | 词库热重载 / 列表 |
 | `/group list\|add\|del <群号>` | 白名单管理（add/del 即时生效，重启保留） |
-| `/plugin reply on\|off` | 关键词模块开关 |
+| `/plugin reply\|link\|vision on\|off` | 关键词 / 链接自动解读 / 图片违规处理开关 |
 | `/welcome on\|off` | 进群欢迎开关 |
 | `/welcome view` | 查看当前欢迎语 |
 | `/welcome set <欢迎语>` | 自定义欢迎语（占位符：`{at}`=@新人、`{qq}`=新人QQ、`{group}`=群号；也可在面板「仪表盘」页编辑） |

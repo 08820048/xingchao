@@ -32,13 +32,12 @@ COPY bot/src ./src
 RUN pip install --no-cache-dir .
 
 # 依赖钉子过老的第三方插件：跳过依赖解析单独安装
-# （crazy_thursday 钉 httpx<0.24、handle 钉 Pillow<11、dog 错误依赖 poetry、
+# （crazy_thursday 钉 httpx<0.24、handle 钉 Pillow<11、
 #   pokepoke_miss 声明的 pil_utils==0.1.10 钉死 Pillow<11 但源码实际未用到，
 #   其运行时依赖 nonebot2/adapter/httpx/pillow 已由主安装提供）
 RUN pip install --no-cache-dir --no-deps \
         nonebot_plugin_crazy_thursday \
         nonebot_plugin_handle \
-        nonebot_plugin_dog \
         pokepoke_miss
 
 # 俄罗斯轮盘（revolver）补丁：原版 enabled_ban_groups 白名单为空时一律不执行禁言，

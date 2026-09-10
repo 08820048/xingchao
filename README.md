@@ -36,9 +36,14 @@ data/xingchao.db + data/replies.json + data/logs/
   超管私聊为全群总览
 - 白名单运行时管理：`/group add|del <群号>` 热更新，持久化到 SQLite 重启保留；
   env 基础白名单仍需改环境变量重启
-- 群管（仅超管，需机器人为群管理员）：`/mute @某人 [分钟]`、`/unmute @某人`、
-  `/banall on|off`、`/kick @某人`、`/recall`（回复目标消息或带 message_id）
-- 新人进群欢迎（白名单群，`/plugin welcome on|off` 开关，持久化 kv）
+- 群管（仅超管，需机器人为群管理员）：`/禁言 @某人 [分钟]`、`/解除禁言 @某人`、
+  `/全体禁言 开|关`、`/踢出 @某人`、`/recall`（回复目标消息或带 message_id）
+- 链接自动解读（白名单群，`/plugin link on|off`）：有人发网页链接时，抓取页面信息并调用
+  AI 用一句话概括，引用原消息回复
+- 图片识别与违规处理（白名单群，`/plugin vision on|off`）：AI 视觉识别图片内容，
+  命中翻墙/VPN、色情、血腥暴力时自动撤回并禁言发送者（默认 15 分钟），并私聊通知超管；
+  视觉模型用 `/ai vision <模型>` 配置
+- 新人进群欢迎（白名单群，`/welcome on|off` 开关，持久化 kv）
 - Web 管理面板：`http://127.0.0.1:8081/panel`（公网为 `panel.xingchao.dev`）
   （compose 映射 `127.0.0.1:8081:8080`，
   远程用 SSH 隧道 `ssh -L 8081:127.0.0.1:8081 ...`；密码见 `XINGCHAO_PANEL_PASSWORD`，

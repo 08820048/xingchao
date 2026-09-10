@@ -423,8 +423,8 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 ### 17.3 群管 `groupadmin.py`
 
 - 全部仅超管（SUPERUSER），仅群聊可用
-- `/mute @某人 [分钟]`（默认 10，上限 30 天）、`/unmute @某人`、`/banall on|off`、
-  `/kick @某人`、`/recall`（回复目标消息或 `/recall <message_id>`）
+- `/禁言 @某人 [分钟]`（默认 10，上限 30 天）、`/解除禁言 @某人`、`/全体禁言 开|关`、
+  `/踢出 @某人`、`/recall`（回复目标消息或 `/recall <message_id>`）
 - API 失败（权限不足等）时回复友好提示，不抛崩
 - 新人进群欢迎：白名单群 GroupIncrease 事件，默认开启，`/plugin welcome on|off` 开关
   （写 kv `welcome_enabled`，重启保留）；机器人自己进群不触发
@@ -495,7 +495,7 @@ CREATE TABLE IF NOT EXISTS msg_stat (
   开关 / 模型 / 系统提示词 / 会话轮数 / 每日限额存 SQLite kv（面板可改，即时生效）
 - 上下文：每群保留最近 N 轮会话（内存），`/ai clear` 清空
 - 护栏：每群 / 每人每日调用上限（持久化到 kv，按天统计），超限静默；回复超长截断
-- 指令：`/ai on|off|status|clear|test <问题>`（超管）
+- 指令：`/ai on|off|status|clear|vision <模型>|test <问题>`（超管）
 - 面板：GET/POST `/panel/api/ai`；「AI」页含开关、模型、人设、限额、今日用量
 
 ### 17.11 AI 凭据面板化管理

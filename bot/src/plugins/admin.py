@@ -140,18 +140,29 @@ async def handle_group(args: Message = CommandArg()) -> None:
     await _send(group_admin, "用法：/group list | /group add <群号> | /group del <群号>")
 
 
+_PLUGIN_KEYS = {
+    "reply": ("reply_enabled", "关键词回复"),
+    "link": ("link_preview_enabled", "链接自动解读"),
+    "linkpreview": ("link_preview_enabled", "链接自动解读"),
+    "vision": ("vision_guard_enabled", "图片识别与违规处理"),
+    "visionguard": ("vision_guard_enabled", "图片识别与违规处理"),
+}
+
+
 @plugin_admin.handle()
 async def handle_plugin(args: Message = CommandArg()) -> None:
-    from src.plugins import reply as reply_plugin
-
     parts = args.extract_plain_text().strip().lower().split()
-    if len(parts) != 2 or parts[0] != "reply" or parts[1] not in ("on", "off"):
-        await _send(plugin_admin, "用法：/plugin reply on 或 /plugin reply off")
+    if len(parts) != 2 or parts[1] not in ("on", "off") or parts[0] not in _PLUGIN_KEYS:
+        await _send(plugin_admin, "用法：/plugin reply|link|vision on|off")
         return
+    key, label = _PLUGIN_KEYS[parts[0]]
     enable = parts[1] == "on"
-    reply_plugin.set_enabled(enable)
+    if parts[0] == "reply":
+        from src.plugins import reply as reply_plugin
+
+        reply_plugin.set_enabled(enable)
     try:
-        await get_store().set_kv("reply_enabled", "true" if enable else "false")
+        await get_store().set_kv(key, "true" if enable else "false")
     except Exception:
-        logger.exception("写入 reply_enabled 开关失败（内存开关已生效，重启后恢复默认）")
-    await _send(plugin_admin, f"关键词模块已{'开启' if enable else '关闭'}。")
+        logger.exception(f"写入 {key} 开关失败（重启后可能恢复默认）")
+    await _send(plugin_admin, f"{label}已{'开启' if enable else '关闭'}。")

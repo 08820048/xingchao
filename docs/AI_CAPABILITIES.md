@@ -6,7 +6,7 @@
 
 机器人有两套交互方式：
 
-1. **斜杠指令**：`/help`、`/mute`、`/trending` 等，由各插件 `on_command` 注册；
+1. **斜杠指令**：`/help`、`/禁言`、`/trending` 等，由各插件 `on_command` 注册；
 2. **自然语言对话**：用户 @机器人（或私聊超管）直接说话，由 AI 插件
    （`bot/src/plugins/ai.py`）调用 LLM 并通过 **工具调用（function calling）** 完成。
 
@@ -55,14 +55,17 @@
 | `/天气 <城市>` | `get_weather` | 所有人（需配置 QWEATHER_JWT_*） | 「北京今天天气怎么样」 |
 | `/状态` | —（第三方插件 nonebot-plugin-status，硬编码指令，未接入 AI 工具） | 超管 | 群里发 `/状态` 查看服务器 CPU/内存/磁盘；私聊戳一戳也可触发 |
 | `/trending [since] [lang]` | `get_github_trending` | 所有人 | 「今天 GitHub 有什么火的项目」 |
-| `/mute @某人 [分钟]` | `mute_member` | 超管 | 「把TA禁言十分钟」 |
-| `/unmute @某人` | `unmute_member` | 超管 | 「解除他的禁言」 |
-| `/kick @某人` | `kick_member` | 超管 | 「把TA踢出去」 |
-| `/banall on/off` | `set_whole_ban` | 超管 | 「开启全体禁言」 |
+| `/禁言 @某人 [分钟]` | `mute_member` | 超管 | 「把TA禁言十分钟」 |
+| `/解除禁言 @某人` | `unmute_member` | 超管 | 「解除他的禁言」 |
+| `/踢出 @某人` | `kick_member` | 超管 | 「把TA踢出去」 |
+| `/全体禁言 开/关` | `set_whole_ban` | 超管 | 「开启全体禁言」 |
 | `/recall` | `recall_message` | 超管 | 「把上面那条消息撤回」 |
 | `/group list/add/del` | `list_whitelist` / `add_whitelist_group` / `remove_whitelist_group` | 超管 | 「把群 123 加入白名单」 |
 | `/superuser list/add/del` | `list_superusers` / `add_superuser` / `remove_superuser` | 超管 | 「添加超管 123456」 |
 | `/plugin reply on/off` | `set_reply_enabled` | 超管 | 「关闭关键词回复」 |
+| `/plugin link on/off` | `set_link_preview_enabled` | 超管 | 「关闭链接自动解读」 |
+| `/plugin vision on/off` | `set_vision_guard_enabled` | 超管 | 「关闭图片违规检测」 |
+| `/ai vision <模型>` | `set_vision_model` | 超管 | 「把视觉模型换成 glm-4v-flash」 |
 | `/reply list/reload` | `list_replies` / `reload_replies` | 超管 | 「看看词库里有什么」 |
 | `/welcome view/set/on/off` | `get_welcome` / `set_welcome` / `set_welcome_enabled` | 超管 | 「把欢迎语改成……」 |
 | `/notice <内容>` / `/notice list` | `publish_group_notice` / `get_group_notices` | 超管 | 「发个公告说周五维护」 |
@@ -75,6 +78,13 @@
 | `/ai clear` | `clear_ai_context` | 超管 | 「忘掉我们刚才聊的」 |
 | —（内置能力） | `get_group_info` / `get_member_list` / `get_member_info` | 所有人 | 「群里多少人」「他是什么身份」 |
 | —（内置能力） | `get_current_time` / `calculate` | 所有人 | 「现在几点」「(3+4)*2 等于多少」 |
+
+> 另有两大类**自动能力**（无需指令、无需 AI 显式调用工具，直接监听群消息）：
+> - **链接自动解读**（`linkpreview.py`）：白名单群有人发网页链接时，抓取标题/描述并调用
+>   AI 用一句话概括，引用原消息回复；开关 `link_preview_enabled`（`/plugin link on|off`）。
+> - **图片识别与违规处理**（`visionguard.py`）：白名单群图片经视觉模型识别，命中
+>   翻墙/VPN、色情、血腥暴力时自动撤回并禁言发送者（默认 15 分钟）；开关
+>   `vision_guard_enabled`（`/plugin vision on|off`），视觉模型由 `/ai vision <模型>` 配置。
 
 ## 5. 消息格式规约（Markdown 处理）
 

@@ -1,6 +1,6 @@
-"""群管功能（仅超管）：/mute /unmute /banall /kick /recall + 新人进群欢迎。
+"""群管功能（仅超管）：/禁言 /解除禁言 /全体禁言 /踢出 /recall + 新人进群欢迎。
 
-- 目标用户通过 @提及 指定（/mute @某人 10）
+- 目标用户通过 @提及 指定（/禁言 @某人 10）
 - /recall 可回复目标消息后发送，或直接带 message_id
 - 机器人小号必须是群管理员，API 失败（权限不足等）时友好提示，不抛崩
 - 新人进群欢迎（白名单群），可通过 /plugin welcome on|off 开关（持久化 kv）
@@ -30,10 +30,10 @@ from src.store import get_store
 
 MAX_BAN_SECONDS = 30 * 24 * 3600  # OneBot v11 上限 30 天
 
-mute_cmd = on_command("mute", rule=SUPERUSER, priority=1, block=True)
-unmute_cmd = on_command("unmute", rule=SUPERUSER, priority=1, block=True)
-banall_cmd = on_command("banall", rule=SUPERUSER, priority=1, block=True)
-kick_cmd = on_command("kick", rule=SUPERUSER, priority=1, block=True)
+mute_cmd = on_command("禁言", aliases={"mute"}, rule=SUPERUSER, priority=1, block=True)
+unmute_cmd = on_command("解除禁言", aliases={"unmute"}, rule=SUPERUSER, priority=1, block=True)
+banall_cmd = on_command("全体禁言", aliases={"banall"}, rule=SUPERUSER, priority=1, block=True)
+kick_cmd = on_command("踢出", aliases={"kick"}, rule=SUPERUSER, priority=1, block=True)
 recall_cmd = on_command("recall", rule=SUPERUSER, priority=1, block=True)
 welcome_cmd = on_command("welcome", rule=SUPERUSER, priority=1, block=True)
 notice_cmd = on_command("notice", rule=SUPERUSER, priority=1, block=True)
@@ -131,7 +131,7 @@ async def handle_mute(bot: Bot, event: MessageEvent, matcher: Matcher, args: Mes
         return
     target = _target_from_args(args)
     if target is None:
-        await _send(mute_cmd, "用法：/mute @某人 [分钟数，默认 10]")
+        await _send(mute_cmd, "用法：/禁言 @某人 [分钟数，默认 10]")
         return
     duration = _duration_from_args(args)
     await _call(
@@ -153,7 +153,7 @@ async def handle_unmute(bot: Bot, event: MessageEvent, matcher: Matcher, args: M
         return
     target = _target_from_args(args)
     if target is None:
-        await _send(unmute_cmd, "用法：/unmute @某人")
+        await _send(unmute_cmd, "用法：/解除禁言 @某人")
         return
     await _call(
         matcher,
@@ -170,10 +170,13 @@ async def handle_banall(bot: Bot, event: MessageEvent, matcher: Matcher, args: M
     if group is None:
         return
     action = args.extract_plain_text().strip().lower()
-    if action not in ("on", "off"):
-        await _send(banall_cmd, "用法：/banall on 或 /banall off")
+    if action in ("on", "开", "开启"):
+        enable = True
+    elif action in ("off", "关", "关闭"):
+        enable = False
+    else:
+        await _send(banall_cmd, "用法：/全体禁言 开 或 /全体禁言 关")
         return
-    enable = action == "on"
     await _call(
         matcher,
         bot.call_api("set_group_whole_ban", group_id=group.group_id, enable=enable),
@@ -188,7 +191,7 @@ async def handle_kick(bot: Bot, event: MessageEvent, matcher: Matcher, args: Mes
         return
     target = _target_from_args(args)
     if target is None:
-        await _send(kick_cmd, "用法：/kick @某人")
+        await _send(kick_cmd, "用法：/踢出 @某人")
         return
     await _call(
         matcher,

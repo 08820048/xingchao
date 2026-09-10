@@ -69,17 +69,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 
 无需前缀、无需 @，所有人可用。
 
-### 6. nonebot-plugin-dog — 舔狗日记 / 笑话 / 一言
-| 指令 | 说明 |
-|---|---|
-| `/舔狗日记`（别名 舔狗嘤嘤嘤） | 随机舔狗日记文案 |
-| `/讲个笑话`（别名 说个笑话） | 随机笑话 |
-| `/一言` | 随机一言 |
-| 消息以「文案」结尾 | 超管/群管切换该群文案类推送开关 |
-
-所有人可用（「文案」结尾的开关仅超管/群主/群管理）。
-
-### 7. nonebot-plugin-githubcard — GitHub 链接卡片
+### 6. nonebot-plugin-githubcard — GitHub 链接卡片
 | 触发方式 | 说明 |
 |---|---|
 | 消息中出现任意 `https://github.com/...` 链接 | **自动**发送仓库卡片（star 数、简介等） |
@@ -87,7 +77,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 
 所有人可用，白名单群外也会响应链接。
 
-### 8. nonebot-plugin-groupmate-waifu — 娶群友
+### 7. nonebot-plugin-groupmate-waifu — 娶群友
 | 指令 | 说明 |
 |---|---|
 | `/娶群友 @某人` | 随机娶（每日重置，可配置） |
@@ -100,7 +90,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 
 卡片图片用 PIL 渲染，容器内已装文泉驿微米黑字体（GROUPMATE_WAIFU_FONTNAME）。
 
-### 9. nonebot-plugin-handle — 猜成语
+### 8. nonebot-plugin-handle — 猜成语
 | 指令 | 说明 |
 |---|---|
 | `/handle` 或 `/猜成语` | 开始游戏，根据拼音提示猜成语 |
@@ -108,7 +98,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 
 所有人可用，每群同时只进行一局。
 
-### 10. nonebot-plugin-miao — 口癖（被动）
+### 9. nonebot-plugin-miao — 口癖（被动）
 **无指令**。机器人所有**单段纯文本**回复有概率在末尾加「喵」。
 当前配置（.env.prod，可改）：
 ```
@@ -118,13 +108,6 @@ MIAO_POSITION=end     # 加在末尾
 MIAO_COUNT=1
 ```
 注意：AI 回复是「@+文本」多段消息，不会被加口癖；管理指令的纯文本回复会。
-
-### 11. nonebot-plugin-remake — 人生重开模拟器
-| 指令 | 说明 |
-|---|---|
-| `/人生重开`（别名 人生重来、liferestart） | 开局抽天赋 → 分配属性 → 走完一生 |
-
-交互式多轮对话，所有人可用。
 
 ## 三、未安装清单及原因
 
@@ -147,13 +130,12 @@ MIAO_COUNT=1
 
 ## 五、Dockerfile 特殊处理说明
 
-`bot/Dockerfile` 中有四个插件用 `--no-deps` 安装：
+`bot/Dockerfile` 中有三个插件用 `--no-deps` 安装：
 
 | 插件 | 跳过原因 | 手动保证的运行时依赖 |
 |---|---|---|
 | nonebot_plugin_crazy_thursday | 钉死 httpx<0.24 | httpx≥0.27（主安装已有） |
 | nonebot_plugin_handle | 钉死 Pillow<11 | Pillow≥11.3（主安装已有）、alconna、uninfo、pypinyin（pyproject 已加） |
-| nonebot_plugin_dog | 错误地把 poetry 列为运行时依赖 | httpx / nonebot2 / adapter（主安装已有） |
 | pokepoke_miss | 声明 pil_utils==0.1.10（钉死 Pillow<11），但源码实际未 import pil_utils，属过时声明 | 仅 nonebot2 / adapter（主安装已有） |
 
 升级这些插件时注意检查其代码是否用到了被跳过的新依赖。

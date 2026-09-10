@@ -80,6 +80,8 @@ async def _status_payload() -> dict[str, Any]:
     items = reply_plugin.get_items()
     reply_enabled = await store.get_kv("reply_enabled")
     welcome_enabled = await store.get_kv("welcome_enabled")
+    link_preview_enabled = await store.get_kv("link_preview_enabled")
+    vision_guard_enabled = await store.get_kv("vision_guard_enabled")
     log_dir = cfg.xingchao_log_dir
     log_files = sorted(log_dir.glob("group-*.jsonl")) if log_dir.exists() else []
     names = sorted(
@@ -95,6 +97,8 @@ async def _status_payload() -> dict[str, Any]:
         "replies": len(items),
         "reply_enabled": reply_enabled != "false",
         "welcome_enabled": welcome_enabled != "false",
+        "link_preview_enabled": link_preview_enabled != "false",
+        "vision_guard_enabled": vision_guard_enabled != "false",
         "log_files": [f.name for f in log_files],
         "today": datetime.now().astimezone().strftime("%Y-%m-%d"),
     }
@@ -323,6 +327,7 @@ def _register_routes() -> None:
                     "api_key_masked": ai_plugin.mask_key(api_key),
                     "enabled": await ai_plugin.is_ai_enabled(),
                     "model": cfg["ai_model"],
+                    "vision_model": cfg["ai_vision_model"],
                     "system_prompt": cfg["ai_system_prompt"],
                     "ctx_rounds": cfg["ai_ctx_rounds"],
                     "limit_group": cfg["ai_limit_group"],
@@ -356,13 +361,13 @@ def _register_routes() -> None:
                 updates["ai_api_key"] = key
         if "enabled" in body and not isinstance(body["enabled"], bool):
             return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
-        for key in ("model", "system_prompt"):
+        for key in ("model", "system_prompt", "vision_model"):
             if key in body:
                 val = str(body[key]).strip()
                 if not val:
                     return JSONResponse({"ok": False, "error": f"{key} 不能为空"}, status_code=400)
-                if key == "model" and (len(val) > 100 or any(c.isspace() for c in val)):
-                    return JSONResponse({"ok": False, "error": "model 不合法"}, status_code=400)
+                if key in ("model", "vision_model") and (len(val) > 100 or any(c.isspace() for c in val)):
+                    return JSONResponse({"ok": False, "error": f"{key} 不合法"}, status_code=400)
                 updates[f"ai_{key}"] = val
         for key in ("ctx_rounds", "limit_group", "limit_user"):
             if key in body:
@@ -731,19 +736,28 @@ def _register_routes() -> None:
         body = await request.json()
         key = str(body.get("key", ""))
         enabled = body.get("enabled")
-        if key not in ("reply", "welcome") or not isinstance(enabled, bool):
+        if key not in ("reply", "welcome", "link", "vision") or not isinstance(enabled, bool):
             return JSONResponse(
-                {"ok": False, "error": "key 应为 reply/welcome，enabled 应为布尔值"}, status_code=400
+                {"ok": False, "error": "key 应为 reply/welcome/link/vision，enabled 应为布尔值"}, status_code=400
             )
+        kv_key = {"link": "link_preview_enabled", "vision": "vision_guard_enabled"}.get(
+            key, f"{key}_enabled"
+        )
         try:
-            await get_store().set_kv(f"{key}_enabled", "true" if enabled else "false")
+            await get_store().set_kv(kv_key, "true" if enabled else "false")
         except Exception:
             logger.exception("面板写入模块开关失败")
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         if key == "reply":
             reply_plugin.set_enabled(enabled)
+        labels = {
+            "reply": "关键词模块",
+            "welcome": "进群欢迎",
+            "link": "链接自动解读",
+            "vision": "图片识别与违规处理",
+        }
         return JSONResponse(
-            {"ok": True, "data": {"message": f"{'关键词模块' if key == 'reply' else '进群欢迎'}已{'开启' if enabled else '关闭'}"}}
+            {"ok": True, "data": {"message": f"{labels[key]}已{'开启' if enabled else '关闭'}"}}
         )
 
     @app.get("/panel/api/groups")
