@@ -21,22 +21,7 @@
 | 权限 | 仅超管 |
 | 输出 | CPU / 内存 / Swap / 磁盘占用、NoneBot 运行时长 |
 
-### 2. nonebot-plugin-weather（自写）— 天气查询
-| | |
-|---|---|
-| 指令 | `/天气 <城市>`，如 `/天气 北京` |
-| 权限 | 白名单群 / 超管私聊（与内置指令一致） |
-| AI | 支持：「北京今天天气怎么样」→ AI 调用 `get_weather` 工具 |
-
-配置（.env / 环境变量，缺一则提示配置方法）：
-```
-QWEATHER_JWT_SUB=         # 和风天气项目ID（console.qweather.com）
-QWEATHER_JWT_KID=         # 上传 Ed25519 公钥后获得的 Key ID
-QWEATHER_JWT_PRIVATE_KEY= # Ed25519 私钥（支持 base64 或 \n 转义 PEM）
-QWEATHER_API_HOST=https://api.qweather.com
-```
-
-### 3. nonebot-plugin-blacklist — 黑名单
+### 2. nonebot-plugin-blacklist — 黑名单
 | 指令 | 说明 |
 |---|---|
 | `/拉黑用户 <QQ>` / `/屏蔽用户` | 禁止该用户使用机器人（全功能拦截） |
@@ -48,7 +33,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 仅超管。通过 `event_preprocessor` 在**最前端**拦截黑名单目标，优先级高于一切插件。
 黑名单持久化由插件自行管理（json 文件）。
 
-### 4. nonebot-plugin-cloudsignx — 云签到（小游戏合集）
+### 3. nonebot-plugin-cloudsignx — 云签到（小游戏合集）
 | 指令 | 说明 |
 |---|---|
 | `/签到` | 每日签到得积分 |
@@ -61,7 +46,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 也没有 `/` 前缀要求（`^签到$` 正则直接匹配消息）。群员日常聊天若恰好是
 「签到」二字就会触发，属正常现象。
 
-### 5. nonebot-plugin-crazy-thursday — 疯狂星期四
+### 4. nonebot-plugin-crazy-thursday — 疯狂星期四
 | 指令 | 说明 |
 |---|---|
 | 发送 `疯狂星期X`（如 疯狂星期四） | 返回对应的 KFC 疯四文案 |
@@ -69,7 +54,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 
 无需前缀、无需 @，所有人可用。
 
-### 6. nonebot-plugin-githubcard — GitHub 链接卡片
+### 5. nonebot-plugin-githubcard — GitHub 链接卡片
 | 触发方式 | 说明 |
 |---|---|
 | 消息中出现任意 `https://github.com/...` 链接 | **自动**发送仓库卡片（star 数、简介等） |
@@ -77,7 +62,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 
 所有人可用，白名单群外也会响应链接。
 
-### 7. nonebot-plugin-groupmate-waifu — 娶群友
+### 6. nonebot-plugin-groupmate-waifu — 娶群友
 | 指令 | 说明 |
 |---|---|
 | `/娶群友 @某人` | 随机娶（每日重置，可配置） |
@@ -90,7 +75,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 
 卡片图片用 PIL 渲染，容器内已装文泉驿微米黑字体（GROUPMATE_WAIFU_FONTNAME）。
 
-### 8. nonebot-plugin-handle — 猜成语
+### 7. nonebot-plugin-handle — 猜成语
 | 指令 | 说明 |
 |---|---|
 | `/handle` 或 `/猜成语` | 开始游戏，根据拼音提示猜成语 |
@@ -98,7 +83,7 @@ QWEATHER_API_HOST=https://api.qweather.com
 
 所有人可用，每群同时只进行一局。
 
-### 9. nonebot-plugin-miao — 口癖（被动）
+### 8. nonebot-plugin-miao — 口癖（被动）
 **无指令**。机器人所有**单段纯文本**回复有概率在末尾加「喵」。
 当前配置（.env.prod，可改）：
 ```
@@ -114,7 +99,7 @@ MIAO_COUNT=1
 | 插件 | 原因 |
 |---|---|
 | nonebot-plugin-txt2img | 硬冲突：钉死 `pydantic<2` + `localstore<0.7`，与 heweather/dialectlist 等现代插件依赖无法共存 |
-| nonebot-plugin-heweather | 需 chromium 渲染天气卡片，内存峰值高（1.4G 服务器风险）→ 已用自写文本版 `/天气` 替代 |
+| nonebot-plugin-heweather | 需 chromium 渲染天气卡片，内存峰值高（1.4G 服务器风险）→ 放弃 |
 | nonebot-plugin-dialectlist | 需 chromium 渲染榜单图片 → 功能与内置 `/stats` 高度重叠，放弃 |
 
 ## 四、新增第三方插件流程

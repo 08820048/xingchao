@@ -21,7 +21,6 @@ dependencies = [
     "nonebot-plugin-miao>=1.1.0,<2",
     "nonebot-plugin-uninfo>=0.4,<1",          # handle 运行时依赖（handle 用 --no-deps 安装）
     "pypinyin>=0.40,<1",                       # handle 运行时依赖
-    "pyjwt[crypto]>=2.10,<3",                  # /天气 QWeather JWT 鉴权
     "nonebot-plugin-batch-withdrawal>=0.0.6,<1",   # /delete 批量撤回
     "nonebot-plugin-botmailnotice>=0.0.3,<1",      # Bot 上下线邮件通知（需 SMTP 配置）
     "nonebot-plugin-emojilike>=0.2.4,<1",          # 被动：消息贴表情回应

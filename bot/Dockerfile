@@ -46,6 +46,11 @@ RUN pip install --no-cache-dir --no-deps \
 RUN sed -i 's/if event.group_id in ENABLED_BAN_GROUPS:/if (not ENABLED_BAN_GROUPS) or (event.group_id in ENABLED_BAN_GROUPS):/' \
         /usr/local/lib/python3.12/site-packages/nonebot_plugin_revolver/__init__.py
 
+# 俄罗斯轮盘（revolver）补丁 2：ROLLING_BAN 随机秒数时，原提示 `{ban_duration // 60}分钟`
+# 对不足 1 分钟的结果会显示「0分钟」，改为直接按秒展示
+RUN sed -i 's|你已被禁言{ban_duration // 60}分钟|你已被禁言{ban_duration}秒|' \
+        /usr/local/lib/python3.12/site-packages/nonebot_plugin_revolver/__init__.py
+
 COPY bot/bot.py ./
 COPY bot/.env.prod ./
 RUN cp .env.prod .env
