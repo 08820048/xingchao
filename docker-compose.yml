@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: bot/Dockerfile
+      args:
+        # pip 源：默认国内清华镜像（可在根 .env 用 PIP_INDEX_URL 覆盖，海外可改回官方源）
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
     image: xingchao-bot:latest
     container_name: xingchao-bot
     restart: unless-stopped

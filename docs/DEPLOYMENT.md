@@ -115,10 +115,19 @@ docker compose ps        # 两个容器均应为 Up
 docker logs xingchao-bot # 应看到「星潮 Xingchao bot 启动完成」
 ```
 
-**国内构建 pip 下载慢/超时？** 可指定国内 PyPI 镜像重建：
+**国内构建 pip 下载慢/超时？** `docker-compose.yml` 已默认使用国内 PyPI 镜像
+（清华 `pypi.tuna.tsinghua.edu.cn`），通常无需手动指定。如需改用其他源或官方源，
+在根目录 `.env` 设置后重建即可：
 
 ```bash
-docker compose build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+# .env
+PIP_INDEX_URL=https://pypi.org/simple
+```
+
+也可临时用命令行覆盖：
+
+```bash
+docker compose build --build-arg PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
 docker compose up -d
 ```
 
@@ -268,7 +277,7 @@ Cloudflare Dashboard → DNS → 添加一条 CNAME（开启橙色云代理）�
 |---|---|
 | 拉镜像 `dial tcp ... i/o timeout` | Docker Hub 被阻断，见 1.1 配置镜像加速 |
 | `git clone` 提示输用户名/404 | 仓库私有或 HTTPS 被阻断，见 1.3 换 SSH + Deploy Key |
-| 构建时 pip 下载极慢/超时 | 见 1.5 用 `--build-arg PIP_INDEX_URL` 指定国内源 |
+| 构建时 pip 下载极慢/超时 | 已默认国内 PyPI 镜像；如需换源见 1.5 |
 | NapCat 日志 `Login Error ErrCode: 3` | 二维码过期（约 2 分钟刷新）。**刷新二维码页面后立即扫码**并手机确认 |
 | NapCat 重启后要求重新扫码 | 未设快速登录；按 1.6 第 4 步设置 `autoLoginAccount` |
 | NapCat 反向 WS 报 `403 Forbidden` | ① Token 与 `.env` 的 `ONEBOT_ACCESS_TOKEN` 不一致；② URL 有首尾空格。核对后保存 |
