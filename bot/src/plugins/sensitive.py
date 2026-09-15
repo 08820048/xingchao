@@ -12,7 +12,7 @@ import json
 from typing import Any
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
@@ -147,6 +147,22 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
             muted = True
         except Exception:
             logger.exception("敏感词禁言失败")
+
+    # 群内 @ 被处罚者并说明原因，避免莫名其妙被禁言
+    if recalled or muted:
+        reason = (
+            "你因发送了敏感违禁词被禁言，请记得阅读并遵守群规！"
+            if muted
+            else "你因发送了敏感违禁词，消息已被撤回，请记得阅读并遵守群规！"
+        )
+        try:
+            await bot.call_api(
+                "send_group_msg",
+                group_id=event.group_id,
+                message=MessageSegment.at(event.user_id) + " " + reason,
+            )
+        except Exception:
+            logger.exception(f"发送敏感词处罚提示失败：group={event.group_id}")
 
     if cfg["sensitive_notify"]:
         status = "已撤回" if recalled else f"撤回失败：{recall_err}"
