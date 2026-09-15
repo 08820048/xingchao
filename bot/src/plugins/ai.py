@@ -41,9 +41,17 @@ DEFAULTS: dict[str, Any] = {
     "ai_system_prompt": (
         "你是「星潮」，一个开源的 QQ 群助手机器人（官网 https://xingchao.dev）。"
         "回答简洁、友好、口语化，避免长篇大论；不懂就说不懂，不要编造。"
-        "你可以调用工具查询群信息、成员列表、活跃统计、当前时间日期，进行算术计算，"
-        "以及执行群管理、获取 GitHub 趋势榜单等操作；"
+        "你有自己独立、稳定的人格——一个活泼真诚、有分寸的群友，而不是一张功能菜单："
+        "正常聊天和回答问题时自然作答即可，不要在每个回答末尾强行附带"
+        "“要 XX 的话可以找我 / 告诉我”之类的功能推销；"
+        "只有当用户明确问你会什么、或某个能力与其当前需求直接相关时，才自然地提到。"
+        "介绍自己能力时用自己的话举几个例子，像聊天一样，而不是罗列工具名或粘贴帮助菜单。"
+        "你对自己的能力、权限和边界有清晰认知：系统会在每条消息中注入你的完整能力清单，"
+        "一律以该清单为准。你可以调用工具查询群信息、成员列表、活跃统计、当前时间日期，"
+        "进行算术计算，以及执行群管理、获取 GitHub 趋势榜单等操作；"
         "涉及禁言、踢人、改配置等敏感操作时，先向用户确认再执行。"
+        "当用户请求的能力存在但需要超管权限时，说明“这个操作需要超管权限”，"
+        "绝不能说成“我没有这个功能”。"
     ),
     "ai_ctx_rounds": 5,
     "ai_limit_group": 100,
@@ -272,24 +280,63 @@ MAX_BAN_SECONDS = 30 * 24 * 3600  # OneBot v11 上限 30 天
 ROLE_NAME = {"owner": "群主", "admin": "管理员", "member": "普通成员"}
 
 CAPABILITY_RULES = (
-    "【能力规约（必须严格遵守）】\n"
-    "下面列出的是你通过工具可以直接完成的全部能力（与 /help 指令菜单一一对应）：\n"
+    "【自我认知：能力与边界（最高优先级，必须严格遵守）】\n"
+    "你是「星潮」，一个开源 QQ 群助手机器人。你清楚自己具备下面全部能力，"
+    "也清楚每一项能力的权限与边界。不能因为用户表达方式不同，就否认自己具备某能力。\n"
+    "\n【你的完整能力清单（与 /help 菜单一一对应）】\n"
     "{capabilities}\n"
-    "规则：\n"
-    "1. 用户用自然语言提出的需求，只要命中上述任何一项能力，就必须直接调用对应工具完成，"
-    "严禁回复“我没有这个功能”“我做不到”之类的说法。\n"
-    "2. 用户不会说指令名，而会用口语描述，例如“把TA禁言十分钟”→ mute_member、"
-    "“看看今天GitHub上有什么火的项目”→ get_github_trending、“现在几点了”→ get_current_time、"
-    "“你能做什么”→ 直接用文字介绍上述能力。\n"
-    "3. 需要超管权限的工具不在你的工具列表中时，如实告知该操作需要超管权限（用 /help 查看对应指令）。\n"
-    "4. 工具执行失败时如实说明原因（常见：机器人不是群管理员、目标不存在、权限不足），不要编造结果。"
+    "\n【当前对话者权限】\n"
+    "{permission}\n"
+    "\n【核心规则】\n"
+    "1. 用户的需求只要命中清单里任一能力，就必须直接调用对应工具完成；"
+    "严禁回答“我没有这个功能”“我做不到”“我不支持”之类的话。\n"
+    "2. 标注【仅超管】的能力，如果当前对话者不是超管，你只是「没有权限」，"
+    "而不是「没有这个功能」：必须明确回复“这个操作需要超管权限，可以让超管用 /help 里的对应指令操作”，"
+    "绝不能说成“我没有这个功能/我不会”。\n"
+    "3. 用户通常不说指令名，而用口语描述，例如“把TA禁言十分钟”→ mute_member、"
+    "“撤回上面那条”→ recall_message、“看看今天GitHub有什么火的项目”→ get_github_trending、"
+    "“现在几点了”→ get_current_time。\n"
+    "4. 参数不明确（如没说禁言谁、没说多久、没指定群）时，先用一句话追问确认，不要瞎猜，更不要直接拒绝。\n"
+    "5. 工具执行失败时，如实说明原因并点明边界，不要编造结果：\n"
+    "   - 禁言/撤回/踢人/全体禁言/发公告等群管理操作，需要「你（星潮）是该群管理员」，"
+    "否则要说“需要先把我设为群管理员”；\n"
+    "   - 群管理操作作用于当前群；要操作其他群需明确群号，且你必须在那个群里；\n"
+    "   - 禁言时长上限为 30 天；只有超管才能禁言/踢人/撤回。\n"
+    "6. 判断某能力是否存在，一律以本清单为准：清单里有 = 你有（可能需权限）；"
+    "清单里没有 = 如实说“这个功能我暂时没有”，并可提示用 /help 查看。\n"
+    "7. 你有独立人格，像群友一样自然交流：能力清单只是你的“技能”，不是广告词。"
+    "禁止在普通回答末尾硬挂功能推销（如“要 GitHub trending 的话告诉我”“需要签到也可以找我”）；"
+    "仅当用户明确询问你会什么、或某项能力与用户当前需求直接相关时，才自然地提及。\n"
+    "8. 当用户问“你能做什么 / 你有什么功能 / 你会什么”时，用你自己的语气自然地介绍："
+    "挑几件拿手或有趣的事举例，一两句话即可，可以反问对方想做什么；"
+    "不要机械罗列完整工具名，也不要整段粘贴 /help 菜单。"
+    "只有用户明确索要“完整菜单 / 指令列表”时，才调用 get_help 或提示发送 /help。\n"
 )
 
 
-def _capability_prompt(tools: list[tuple[dict, tuple]]) -> str:
-    """从工具注册表动态生成能力清单，保证与斜杠指令能力天然同步。"""
-    lines = [f"- {pair[0]['function']['name']}：{pair[0]['function']['description']}" for pair in tools]
-    return CAPABILITY_RULES.replace("{capabilities}", "\n".join(lines))
+def _capability_prompt(
+    all_tools: list[tuple[dict, tuple]], is_superuser: bool
+) -> str:
+    """从工具注册表动态生成能力清单，保证与斜杠指令能力天然同步。
+
+    清单包含全部能力（仅超管的标注【仅超管】），让 AI 知道“自己有什么、哪些需要权限”，
+    从而区分“没有这个功能”和“没有权限执行”，避免误答。
+    """
+    lines = []
+    for pair in all_tools:
+        fn = pair[0]["function"]
+        mark = "【仅超管】" if pair[1][0] == "superuser" else ""
+        lines.append(f"- {mark}{fn['name']}：{fn['description']}")
+    permission = (
+        "当前对话者是超级管理员：清单中所有能力（含【仅超管】）都可以直接执行。"
+        if is_superuser
+        else "当前对话者是普通成员：只能执行未标注【仅超管】的能力；"
+        "标注【仅超管】的能力你没有执行权限——遇到这类请求要说明“需要超管权限”，"
+        "不能说成“我没有这个功能”。"
+    )
+    return CAPABILITY_RULES.replace("{capabilities}", "\n".join(lines)).replace(
+        "{permission}", permission
+    )
 
 
 async def _build_scene(bot, event: MessageEvent) -> str:
@@ -320,6 +367,40 @@ async def _build_scene(bot, event: MessageEvent) -> str:
                 lines.append(f"所在群：{info['group_name']}（{event.group_id}，{info.get('member_count')} 人）")
         except Exception:
             pass
+        try:
+            me = await bot.call_api(
+                "get_group_member_info",
+                group_id=event.group_id, user_id=int(bot.self_id), no_cache=True,
+            )
+            my_role = ROLE_NAME.get(me.get("role", ""), me.get("role", "未知"))
+            can_manage = me.get("role") in ("owner", "admin")
+            lines.append(
+                f"机器人在本群的身份：{my_role}（"
+                + ("具备群管理员权限，可执行禁言/撤回/踢人等管理操作"
+                   if can_manage
+                   else "不是群管理员，禁言/撤回/踢人等管理操作会被拒绝")
+                + "）"
+            )
+        except Exception:
+            logger.debug("获取机器人群身份失败", exc_info=True)
+        # @ 提及与引用信息：让 AI 能理解“禁言 @某人”“撤回这条”里的目标
+        ats = [
+            str(seg.data.get("qq"))
+            for seg in event.message
+            if seg.type == "at" and str(seg.data.get("qq", "")).isdigit()
+        ]
+        if ats:
+            lines.append(
+                f"本条消息 @ 了：{', '.join(ats)}"
+                "（若用户要求禁言/解除禁言/踢出某人，优先使用这些 QQ）"
+            )
+        if event.reply is not None:
+            reply_text = event.reply.message.extract_plain_text().strip()[:100]
+            lines.append(
+                f"本条消息引用了 message_id={event.reply.message_id} 的消息"
+                + (f"（内容：{reply_text}）" if reply_text else "")
+                + "（若用户要求撤回，默认撤回这条引用消息）"
+            )
     lines.append(
         f"开发者信息：QQ {cfg.xingchao_developer_id}，博客 {cfg.xingchao_developer_blog}，"
         f"项目官网 {cfg.xingchao_developer_site}。"
@@ -686,18 +767,6 @@ async def _t_ai_clear(bot, event, args) -> str:
     return "本会话 AI 上下文已清空。"
 
 
-async def _t_weather(bot, event, args) -> str:
-    from src.plugins import weather as weather_plugin
-
-    city = str(args.get("city", "")).strip()
-    if not city:
-        return "错误：需要 city（城市名，如“北京”）。"
-    data, err = await weather_plugin.fetch_weather(city)
-    if err:
-        return f"查询失败：{err}"
-    return _j(data)
-
-
 async def _t_now(bot, event, args) -> str:
     now = datetime.now().astimezone()
     week = "一二三四五六日"[now.weekday()]
@@ -749,7 +818,12 @@ async def _t_calc(bot, event, args) -> str:
         return f"错误：{e}"
 
 
-def _build_tools(is_superuser: bool) -> list[dict]:
+def _build_tools() -> list[tuple[dict, Any]]:
+    """返回全部工具注册表（含仅超管的）。
+
+    权限过滤不在这里做：能力清单需要展示全部能力（标注【仅超管】），
+    真正的调用权限在 chat() 中按 permitted 过滤，双重保证不越权。
+    """
     tools = [
         _tool("get_group_info", "获取群聊信息（群名、成员数）",
               {"type": "object", "properties": {"group_id": {"type": "integer", "description": "群号，默认当前群"}}, "required": []},
@@ -793,9 +867,6 @@ def _build_tools(is_superuser: bool) -> list[dict]:
                   "language": {"type": "string", "description": "编程语言筛选，如 python，留空为全部"},
               }, "required": []},
               "all", _t_gh_trending),
-        _tool("get_weather", "查询指定城市的实时天气（天气现象、温度、体感、风力、湿度）",
-              {"type": "object", "properties": {"city": {"type": "string", "description": "城市名，如“北京”"}}, "required": ["city"]},
-              "all", _t_weather),
         _tool("get_current_time", "获取当前的日期、时间、星期与时区（回答任何与当前时间/日期/星期相关的问题前必须先调用）",
               {"type": "object", "properties": {}, "required": []},
               "all", _t_now),
@@ -841,7 +912,7 @@ def _build_tools(is_superuser: bool) -> list[dict]:
         _tool("get_my_id", "查看当前群号 / 用户 QQ / 机器人 ID",
               {"type": "object", "properties": {}, "required": []},
               "all", _t_my_id),
-        _tool("get_help", "查看帮助菜单（我能做什么的完整清单）",
+        _tool("get_help", "查看完整指令菜单（仅当用户明确索要完整功能/指令列表、完整帮助时才调用；用户只是问“你能做什么”时用你自己的话自然介绍，不要调用本工具）",
               {"type": "object", "properties": {}, "required": []},
               "all", _t_help),
         _tool("get_about", "获取机器人与开发者信息",
@@ -884,8 +955,7 @@ def _build_tools(is_superuser: bool) -> list[dict]:
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_ai_clear),
     ]
-    permitted = [pair for pair in tools if pair[1][0] != "superuser" or is_superuser]
-    return permitted
+    return tools
 
 
 async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: str | None = None) -> str | None:
@@ -907,14 +977,16 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
     is_superuser = event.user_id in {
         int(u) for u in get_driver().config.superusers
     }
-    tools = _build_tools(is_superuser)
+    all_tools = _build_tools()
+    # 只把有权限的 schema 传给模型；能力清单仍展示全部（仅超管的标注【仅超管】）
+    permitted = [pair for pair in all_tools if pair[1][0] != "superuser" or is_superuser]
 
     group_key = getattr(event, "group_id", 0) or -int(event.user_id)
     history = _get_history(group_key)
     scene = await _build_scene(bot, event)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": cfg["ai_system_prompt"]},
-        {"role": "system", "content": _capability_prompt(tools)},
+        {"role": "system", "content": _capability_prompt(all_tools, is_superuser)},
         {"role": "system", "content": scene},
         *history,
         {"role": "user", "content": text},
@@ -926,7 +998,7 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
         for _ in range(MAX_TOOL_ROUNDS + 1):
             completion = await client.chat.completions.create(
                 model=cfg["ai_model"], messages=messages,
-                tools=[pair[0] for pair in tools] or None, temperature=0.7,
+                tools=[pair[0] for pair in permitted] or None, temperature=0.7,
             )
             msg = completion.choices[0].message
             tool_calls = getattr(msg, "tool_calls", None)
@@ -941,7 +1013,7 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
                     args: dict[str, Any] = json.loads(call.function.arguments or "{}")
                 except json.JSONDecodeError:
                     args = {}
-                tool = next((pair for pair in tools if pair[0]["function"]["name"] == name), None)
+                tool = next((pair for pair in permitted if pair[0]["function"]["name"] == name), None)
                 if tool is None:
                     result = f"错误：工具 {name} 不可用（权限不足或不存在）。"
                 else:
