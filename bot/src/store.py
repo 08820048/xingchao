@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -42,6 +42,20 @@ CREATE TABLE IF NOT EXISTS msg_stat_user (
     user_id INTEGER,
     count INTEGER,
     PRIMARY KEY (group_id, day, user_id)
+);
+CREATE TABLE IF NOT EXISTS punishments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    word TEXT NOT NULL,
+    action TEXT NOT NULL,
+    mute_minutes INTEGER DEFAULT 0,
+    reason TEXT DEFAULT '',
+    source TEXT DEFAULT 'sensitive',
+    appeal_status TEXT DEFAULT 'none',
+    appeal_text TEXT DEFAULT '',
+    appeal_ts TEXT
 );
 """
 
@@ -209,6 +223,169 @@ class Store:
             (day, limit),
         ) as cur:
             return [(int(r[0]), int(r[1])) for r in await cur.fetchall()]
+
+    async def get_range_users(self, start: str, end: str, group_id: int | None = None) -> int:
+        """区间内去重参与人数；group_id 为空时跨群统计。"""
+        conn = await self._ensure()
+        where = "day BETWEEN ? AND ?"
+        params: list[str | int] = [start, end]
+        if group_id is not None:
+            where += " AND group_id = ?"
+            params.append(group_id)
+        async with conn.execute(
+            f"SELECT COUNT(DISTINCT user_id) FROM msg_stat_user WHERE {where}", params
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
+    async def get_top_users_range(
+        self, start: str, end: str, group_id: int | None = None, limit: int = 5
+    ) -> list[tuple[int, int]]:
+        """区间内发言 Top；group_id 为空时跨群统计。"""
+        conn = await self._ensure()
+        where = "day BETWEEN ? AND ?"
+        params: list[str | int] = [start, end]
+        if group_id is not None:
+            where += " AND group_id = ?"
+            params.append(group_id)
+        async with conn.execute(
+            f"SELECT user_id, SUM(count) FROM msg_stat_user WHERE {where} "
+            "GROUP BY user_id ORDER BY SUM(count) DESC, user_id LIMIT ?",
+            [*params, limit],
+        ) as cur:
+            return [(int(r[0]), int(r[1])) for r in await cur.fetchall()]
+
+    # ------------------------------------------------------------ 违规记录 / 申诉
+
+    async def add_punishment(
+        self,
+        group_id: int,
+        user_id: int,
+        word: str,
+        action: str,
+        mute_minutes: int = 0,
+        reason: str = "",
+        source: str = "sensitive",
+    ) -> int:
+        """记录一次处罚（不存聊天内容，只存命中词与处理结果）。"""
+        conn = await self._ensure()
+        cur = await conn.execute(
+            "INSERT INTO punishments (ts, group_id, user_id, word, action, mute_minutes,"
+            " reason, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                datetime.now().astimezone().isoformat(timespec="seconds"),
+                group_id, user_id, word, action, mute_minutes, reason[:200], source,
+            ),
+        )
+        await conn.commit()
+        return int(cur.lastrowid)
+
+    async def list_punishments(
+        self, limit: int = 100, group_id: int | None = None
+    ) -> list[dict]:
+        conn = await self._ensure()
+        sql = (
+            "SELECT id, ts, group_id, user_id, word, action, mute_minutes, reason,"
+            " appeal_status, appeal_text FROM punishments"
+        )
+        params: list[int] = []
+        if group_id is not None:
+            sql += " WHERE group_id = ?"
+            params.append(group_id)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        async with conn.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "id": r[0], "ts": r[1], "group_id": r[2], "user_id": r[3], "word": r[4],
+                "action": r[5], "mute_minutes": r[6], "reason": r[7],
+                "appeal_status": r[8], "appeal_text": r[9],
+            }
+            for r in rows
+        ]
+
+    async def repeat_offenders(self, days: int = 30, limit: int = 10) -> list[dict]:
+        """近 N 天被处罚次数排行。"""
+        since = (datetime.now().astimezone() - timedelta(days=days)).isoformat(timespec="seconds")
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT user_id, COUNT(*), COUNT(DISTINCT group_id) FROM punishments"
+            " WHERE ts >= ? GROUP BY user_id ORDER BY COUNT(*) DESC, user_id LIMIT ?",
+            (since, limit),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [{"user_id": r[0], "count": r[1], "groups": r[2]} for r in rows]
+
+    async def latest_punishment_for(self, user_id: int, hours: int = 24) -> dict | None:
+        since = (datetime.now().astimezone() - timedelta(hours=hours)).isoformat(timespec="seconds")
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT id, ts, group_id, word, action, appeal_status FROM punishments"
+            " WHERE user_id = ? AND ts >= ? ORDER BY id DESC LIMIT 1",
+            (user_id, since),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0], "ts": row[1], "group_id": row[2], "word": row[3],
+            "action": row[4], "appeal_status": row[5],
+        }
+
+    async def appeal_punishment(self, punishment_id: int, text: str) -> bool:
+        """提交申诉；仅当该记录尚未申诉过。"""
+        conn = await self._ensure()
+        cur = await conn.execute(
+            "UPDATE punishments SET appeal_status = 'pending', appeal_text = ?, appeal_ts = ?"
+            " WHERE id = ? AND appeal_status = 'none'",
+            (
+                text[:300],
+                datetime.now().astimezone().isoformat(timespec="seconds"),
+                punishment_id,
+            ),
+        )
+        await conn.commit()
+        return cur.rowcount > 0
+
+    async def resolve_appeal(self, punishment_id: int, accept: bool) -> dict | None:
+        """处理申诉，返回该记录（含群/用户，便于撤销禁言）；非待处理记录返回 None。"""
+        conn = await self._ensure()
+        status = "accepted" if accept else "rejected"
+        cur = await conn.execute(
+            "UPDATE punishments SET appeal_status = ? WHERE id = ? AND appeal_status = 'pending'",
+            (status, punishment_id),
+        )
+        await conn.commit()
+        if cur.rowcount == 0:
+            return None
+        async with conn.execute(
+            "SELECT id, group_id, user_id, word, action, mute_minutes"
+            " FROM punishments WHERE id = ?",
+            (punishment_id,),
+        ) as cur2:
+            row = await cur2.fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0], "group_id": row[1], "user_id": row[2],
+            "word": row[3], "action": row[4], "mute_minutes": row[5],
+        }
+
+    async def pending_appeals(self) -> list[dict]:
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT id, ts, group_id, user_id, word, action, appeal_text, appeal_ts"
+            " FROM punishments WHERE appeal_status = 'pending' ORDER BY appeal_ts",
+        ) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "id": r[0], "ts": r[1], "group_id": r[2], "user_id": r[3], "word": r[4],
+                "action": r[5], "appeal_text": r[6], "appeal_ts": r[7],
+            }
+            for r in rows
+        ]
 
     async def close(self) -> None:
         if self._conn is not None:

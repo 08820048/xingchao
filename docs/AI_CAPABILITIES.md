@@ -79,6 +79,7 @@
 | `/ai vision <模型>` | `set_vision_model` | 超管 | 「把视觉模型换成 glm-4v-flash」 |
 | `/reply list/reload` | `list_replies` / `reload_replies` | 超管 | 「看看词库里有什么」 |
 | `/敏感词 add/del/list` | `add_sensitive_words` / `remove_sensitive_words` / `list_sensitive_words` | 超管 | 「把“代刷”加入敏感词」「删掉敏感词 代刷」 |
+| `/申诉 <理由>` | —（私聊指令：AI 私聊仅超管可用，被处罚者多为普通成员，故未接入 AI 工具；面板「违规记录」页可处理） | 被处罚者 | 对敏感词处罚有异议时私聊说明理由 |
 | `/welcome view/set/on/off` | `get_welcome` / `set_welcome` / `set_welcome_enabled` | 超管 | 「把欢迎语改成……」 |
 | `/notice <内容>` / `/notice list` | `publish_group_notice` / `get_group_notices` | 超管 | 「发个公告说周五维护」 |
 | `/task list` | `list_scheduled_tasks` | 超管 | 「现在有哪些定时任务」 |
@@ -122,3 +123,6 @@
   修复纯 @ 无响应；新增 Markdown 降级转换。
 - 2026-10-05：新增 `/敏感词 add|del|list` 斜杠指令（超管，支持批量增删/查看），
   同步注册 AI 工具 `add_sensitive_words` / `remove_sensitive_words` / `list_sensitive_words`。
+- 2026-10-05：敏感词支持变体归一化（全角/空格标点/繁简/可选拼音）与豁免短语；
+  新增处罚记录（面板「违规记录」页）与私聊 `/申诉`（处理后自动解除禁言）；
+  新增群活跃周报（面板「定时任务」页配置）。

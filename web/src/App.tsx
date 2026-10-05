@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   ClipboardList,
+  Gavel,
   LogOut,
   MessageSquareText,
   Monitor,
@@ -1723,6 +1724,7 @@ type SensitiveConfig = {
   notify: boolean;
   review: boolean;
   fallback: string;
+  variant: string;
 };
 
 function SensitiveTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
@@ -1862,11 +1864,233 @@ function SensitiveTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
               <option value="recall">照常自动撤回</option>
             </select>
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="svl">变体匹配强度</Label>
+            <select
+              id="svl"
+              value={cfg.variant}
+              onChange={(e) => save({ variant: e.target.value })}
+              className="border-input bg-background flex h-8 w-full items-center rounded-lg border px-2 text-sm sm:w-72"
+            >
+              <option value="basic">原样匹配（最快，可被变体绕过）</option>
+              <option value="normal">归一化：全角 / 空格标点 / 繁体</option>
+              <option value="pinyin">归一化 + 拼音（拦「威信」「weixin」）</option>
+            </select>
+          </div>
           <Button disabled={saving} onClick={() => save({
             words: cfg.words, mute_minutes: cfg.mute_minutes,
           })}>
             {saving && <Spinner />}保存词库与禁言设置（{isGroup ? `群 ${sel}` : "全局默认"}）
           </Button>
+        </CardPanel>
+      </Card>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ 违规记录 */
+
+type Punishment = {
+  id: number;
+  ts: string;
+  group_id: number;
+  user_id: number;
+  word: string;
+  action: string;
+  mute_minutes: number;
+  reason: string;
+  appeal_status: string;
+  appeal_text: string;
+};
+
+type PunishmentsData = {
+  records: Punishment[];
+  offenders: { user_id: number; count: number; groups: number }[];
+  appeals: {
+    id: number;
+    ts: string;
+    group_id: number;
+    user_id: number;
+    word: string;
+    action: string;
+    appeal_text: string;
+    appeal_ts: string;
+  }[];
+  groups: number[];
+};
+
+const ACTION_LABEL: Record<string, string> = {
+  recall: "撤回",
+  mute: "禁言",
+  recall_mute: "撤回+禁言",
+};
+
+const APPEAL_LABEL: Record<string, string> = {
+  none: "—",
+  pending: "待处理",
+  accepted: "已通过",
+  rejected: "已驳回",
+};
+
+const shortTime = (ts: string) => ts.slice(5, 16).replace("T", " ");
+
+function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [data, setData] = useState<PunishmentsData | null>(null);
+  const [gid, setGid] = useState("all");
+  const load = useCallback((g: string) => {
+    const q = g !== "all" ? `?group_id=${g}` : "";
+    api<{ ok: boolean; data: PunishmentsData }>(`/panel/api/punishments${q}`).then(
+      (r) => r.ok && setData(r.data),
+    );
+  }, []);
+  useEffect(() => load(gid), [gid, load]);
+  if (!data) return <Spinner className="m-8" />;
+  const resolve = async (id: number, approve: boolean) => {
+    const r = await post("/panel/api/punishments", { action: "resolve", id, approve });
+    if (r.ok) {
+      toast(r.data.message);
+      load(gid);
+    } else toast(r.error, false);
+  };
+  return (
+    <div className="grid gap-4">
+      {data.appeals.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">待处理申诉（{data.appeals.length}）</CardTitle>
+            <CardDescription>
+              通过后会自动解除对应禁言，并私聊通知申诉人；申诉来自用户私聊 /申诉
+            </CardDescription>
+          </CardHeader>
+          <CardPanel className="grid gap-2">
+            {data.appeals.map((a) => (
+              <div
+                key={a.id}
+                className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"
+              >
+                <div className="text-sm">
+                  <b>#{a.id}</b> QQ {a.user_id} · 群 {a.group_id} · 命中「{a.word}」 ·{" "}
+                  {ACTION_LABEL[a.action] ?? a.action}
+                  <p className="text-muted-foreground text-xs">
+                    申诉：{a.appeal_text}（{shortTime(a.appeal_ts)}）
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => resolve(a.id, true)}>
+                    通过
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => resolve(a.id, false)}>
+                    驳回
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardPanel>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">近 30 天处罚排行</CardTitle>
+          <CardDescription>被处罚次数最多的成员（含撤回与禁言）</CardDescription>
+        </CardHeader>
+        <CardPanel>
+          {data.offenders.length === 0 ? (
+            <p className="text-muted-foreground text-sm">近 30 天没有处罚记录</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-14">#</TableHead>
+                  <TableHead>QQ</TableHead>
+                  <TableHead>次数</TableHead>
+                  <TableHead>涉及群数</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.offenders.map((o, i) => (
+                  <TableRow key={o.user_id}>
+                    <TableCell>
+                      <Badge variant={i === 0 ? "default" : "secondary"}>{i + 1}</Badge>
+                    </TableCell>
+                    <TableCell className="font-mono">{o.user_id}</TableCell>
+                    <TableCell>{o.count}</TableCell>
+                    <TableCell>{o.groups}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardPanel>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">处罚记录</CardTitle>
+          <CardDescription>
+            敏感词命中的撤回 / 禁言记录（不含聊天内容），最多展示最近 100 条
+          </CardDescription>
+        </CardHeader>
+        <CardPanel className="grid gap-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="pgid">筛选群</Label>
+              <select
+                id="pgid"
+                value={gid}
+                onChange={(e) => setGid(e.target.value)}
+                className="border-input bg-background flex h-8 min-w-40 items-center rounded-lg border px-2 text-sm"
+              >
+                <option value="all">全部群</option>
+                {data.groups.map((g) => (
+                  <option key={g} value={g}>
+                    群 {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {data.records.length === 0 ? (
+            <p className="text-muted-foreground text-sm">还没有处罚记录</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>时间</TableHead>
+                  <TableHead>群</TableHead>
+                  <TableHead>QQ</TableHead>
+                  <TableHead>命中词</TableHead>
+                  <TableHead>处理</TableHead>
+                  <TableHead>AI 理由</TableHead>
+                  <TableHead>申诉</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.records.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="text-muted-foreground text-xs">
+                      {shortTime(p.ts)}
+                    </TableCell>
+                    <TableCell className="font-mono">{p.group_id}</TableCell>
+                    <TableCell className="font-mono">{p.user_id}</TableCell>
+                    <TableCell>{p.word}</TableCell>
+                    <TableCell>
+                      {ACTION_LABEL[p.action] ?? p.action}
+                      {p.mute_minutes ? ` ${p.mute_minutes} 分` : ""}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground max-w-40 truncate text-xs">
+                      {p.reason || "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={p.appeal_status === "pending" ? "info" : "secondary"}>
+                        {APPEAL_LABEL[p.appeal_status] ?? p.appeal_status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardPanel>
       </Card>
     </div>
@@ -1879,6 +2103,99 @@ type Task = {
   id: number; group_id: number; time: string; message: string;
   at_all: boolean; repeat: string; weekday: number | null; date: string | null; enabled: boolean;
 };
+
+type ReportConfig = {
+  enabled: boolean;
+  weekday: number;
+  time: string;
+  scope: string;
+  groups: number[];
+};
+
+function ReportCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [cfg, setCfg] = useState<ReportConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: ReportConfig }>("/panel/api/report").then(
+      (r) => r.ok && setCfg(r.data),
+    );
+  }, []);
+  useEffect(() => load(), [load]);
+  if (!cfg) return <Spinner className="m-8" />;
+  const save = async (patch: Record<string, unknown>) => {
+    setSaving(true);
+    const r = await post("/panel/api/report", patch);
+    setSaving(false);
+    if (r.ok) {
+      toast(r.data.message);
+      load();
+    } else toast(r.error || "保存失败", false);
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">群活跃周报</CardTitle>
+        <CardDescription>
+          按设定时间向群内播报前一周活跃数据（消息量环比、参与人数、最活跃日、发言 Top3）
+        </CardDescription>
+      </CardHeader>
+      <CardPanel className="grid gap-3">
+        <div className="border-input flex items-center justify-between rounded-lg border p-3">
+          <div>
+            <p className="text-sm font-medium">功能开关</p>
+            <p className="text-muted-foreground text-xs">关闭后不再自动播报</p>
+          </div>
+          <Switch checked={cfg.enabled} onCheckedChange={(v) => save({ enabled: v })} />
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="flex flex-col gap-1.5">
+            <Label>播报星期</Label>
+            <select
+              value={cfg.weekday}
+              onChange={(e) => save({ weekday: +e.target.value })}
+              className="border-input bg-background flex h-8 items-center rounded-lg border px-2 text-sm"
+            >
+              {WEEKDAY_NAME.map((n, i) => (
+                <option key={i} value={i}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rpt-time">时间</Label>
+            <Input
+              id="rpt-time"
+              type="time"
+              value={cfg.time}
+              onChange={(e) => setCfg({ ...cfg, time: e.target.value })}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>目标范围</Label>
+            <select
+              value={cfg.scope}
+              onChange={(e) => save({ scope: e.target.value })}
+              className="border-input bg-background flex h-8 items-center rounded-lg border px-2 text-sm"
+            >
+              <option value="all">全部白名单群</option>
+              {cfg.groups.map((g) => (
+                <option key={g} value={g}>
+                  群 {g}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="flex justify-end">
+          <Button disabled={saving} onClick={() => save({ time: cfg.time })}>
+            {saving && <Spinner />}保存时间
+          </Button>
+        </div>
+      </CardPanel>
+    </Card>
+  );
+}
 
 function TasksTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -1925,6 +2242,8 @@ function TasksTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
 
   return (
     <div className="grid gap-4">
+      <ReportCard toast={toast} />
+
       <Card>
         <CardHeader>
           <CardTitle className="text-base">新建定时任务</CardTitle>
@@ -2044,6 +2363,7 @@ const NAV = [
   { id: "ai", label: "AI", icon: Sparkles },
   { id: "join", label: "加群审批", icon: UserPlus },
   { id: "sensitive", label: "敏感词", icon: ShieldAlert },
+  { id: "punishments", label: "违规记录", icon: Gavel },
   { id: "tasks", label: "定时任务", icon: Clock3 },
 ] as const;
 
@@ -2141,6 +2461,7 @@ function PanelApp() {
           {tab === "ai" && <AiTab toast={toast} />}
           {tab === "join" && <JoinTab toast={toast} />}
           {tab === "sensitive" && <SensitiveTab toast={toast} />}
+          {tab === "punishments" && <PunishmentsTab toast={toast} />}
           {tab === "tasks" && <TasksTab toast={toast} />}
         </div>
       </SidebarInset>

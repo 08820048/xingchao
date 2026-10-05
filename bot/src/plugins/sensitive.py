@@ -4,6 +4,8 @@
 - 配置分全局默认 + 每群覆盖（面板「敏感词」页可改，持久化 kv，即时生效）
 - 词条以 ~ 开头表示豁免短语（匹配前从消息中剔除，如 ~机场大巴 避免「机场」误伤）
 - 纯英文/数字词条按词边界匹配（PIA 不会命中 Olympiad）
+- 变体匹配（sensitive_variant_level）：basic=原样；normal=归一化（全角/空格标点/繁简）；
+  pinyin=归一化+拼音（拦「加 微 信」「ＶＰＮ」「廣告」「weixin/威信」等绕过写法）
 - 命中候选默认交 AI 结合语境复核：只有确认违规才撤回/禁言，正常讨论直接放行；
   AI 不可用时按 fallback 处理（默认仅通知超管人工判断，不自动撤回）
 - 动作：撤回原消息；mute_minutes > 0 时追加禁言；notify 开启时通知超管
@@ -16,18 +18,35 @@ import asyncio
 import json
 import re
 import time
-from typing import Any
+import unicodedata
+from typing import Any, NamedTuple
 
 from nonebot import get_driver, on_command, on_message
 from nonebot.adapters import Message
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import (
+    Bot,
+    GroupMessageEvent,
+    MessageEvent,
+    MessageSegment,
+    PrivateMessageEvent,
+)
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
+from nonebot.rule import Rule
+from opencc import OpenCC
+from pypinyin import lazy_pinyin
 
 from src.permission import GROUP_WHITELIST, SUPERUSER
 from src.store import get_store
+
+try:
+    _t2s = OpenCC("t2s").convert
+except Exception:  # 词典缺失等异常时退化为不做繁简转换
+
+    def _t2s(text: str) -> str:
+        return text
 
 DEFAULTS: dict[str, Any] = {
     "sensitive_enabled": False,  # 默认关闭，需在面板开启
@@ -36,7 +55,9 @@ DEFAULTS: dict[str, Any] = {
     "sensitive_notify": True,  # 命中后通知超管
     "sensitive_review": True,  # 命中候选后由 AI 结合语境复核
     "sensitive_review_fallback": "notify",  # AI 不可用：notify=仅通知不撤回 / recall=照常撤回
+    "sensitive_variant_level": "normal",  # 变体匹配：basic=原样 / normal=归一化 / pinyin=归一化+拼音
 }
+_VARIANT_LEVELS = ("basic", "normal", "pinyin")
 
 
 async def _kv(key: str) -> Any:
@@ -99,6 +120,8 @@ async def sensitive_config(group_id: int | None = None) -> dict[str, Any]:
     )
     if merged["sensitive_review_fallback"] not in ("notify", "recall"):
         merged["sensitive_review_fallback"] = "notify"
+    if merged["sensitive_variant_level"] not in _VARIANT_LEVELS:
+        merged["sensitive_variant_level"] = "normal"
     return merged
 
 
@@ -167,6 +190,48 @@ async def remove_words(items: list[str]) -> tuple[list[str], list[str]]:
 # ---------------------------------------------------------------- 匹配
 
 _ASCII_WORD_RE = re.compile(r"^[a-z0-9][a-z0-9 ._+\-]*$")
+_KEEP_RE = re.compile(r"[^0-9a-z\u4e00-\u9fff]+")
+_PINYIN_CACHE_MAX = 4096
+
+
+def _normalize(text: str) -> str:
+    """变体归一化：NFKC（全角→半角）→ 繁转简 → 去掉空格/标点/表情，只留字母数字与汉字。"""
+    t = unicodedata.normalize("NFKC", text).lower()
+    return _KEEP_RE.sub("", _t2s(t))
+
+
+_pinyin_cache: dict[str, tuple[str, ...]] = {}
+
+
+def _pinyin(text: str) -> tuple[str, ...]:
+    """转为小写音节序列（缓存）；非中文片段整体保留为一个元素。"""
+    cached = _pinyin_cache.get(text)
+    if cached is None:
+        cached = tuple(s.lower() for s in lazy_pinyin(text))
+        if len(_pinyin_cache) >= _PINYIN_CACHE_MAX:
+            _pinyin_cache.clear()
+        _pinyin_cache[text] = cached
+    return cached
+
+
+def _contains_slice(hay: tuple[str, ...], needle: tuple[str, ...]) -> bool:
+    """音节序列的连续匹配（避免 daili 命中 dailiang 这类跨音节误报）。"""
+    n = len(needle)
+    if not n or n > len(hay):
+        return False
+    for i in range(len(hay) - n + 1):
+        if hay[i : i + n] == needle:
+            return True
+    return False
+
+
+class _WordForm(NamedTuple):
+    word: str  # 词库原文
+    pattern: re.Pattern[str] | None  # 原样文本上，纯 ASCII 词的边界正则；中文词为 None
+    normalized: str  # 归一化形式
+    normalized_pattern: re.Pattern[str] | None  # 归一化文本上的边界正则（纯 ASCII 词）
+    pinyin: tuple[str, ...]  # 归一化形式的音节序列
+    pinyin_join: str  # 音节拼接串，用于「拼音直写」文本的兜底匹配
 
 
 def split_word_lists(raw: str) -> tuple[list[str], list[str]]:
@@ -186,22 +251,33 @@ def split_word_lists(raw: str) -> tuple[list[str], list[str]]:
     return words, exempts
 
 
-def _build_matchers(words: list[str]) -> list[tuple[str, re.Pattern[str] | None]]:
-    """纯 ASCII 词条用词边界正则，其余（中文等）用子串；返回 (原词, 正则或 None)。"""
-    matchers: list[tuple[str, re.Pattern[str] | None]] = []
+def _build_matchers(words: list[str]) -> list[_WordForm]:
+    """为每个词条预编译三种形态：原样（ASCII 词边界 / 中文子串）、归一化、拼音。"""
+    forms: list[_WordForm] = []
     for w in words:
-        if _ASCII_WORD_RE.match(w.lower()):
-            pattern = re.compile(r"(?<![a-z0-9])" + re.escape(w.lower()) + r"(?![a-z0-9])")
-        else:
-            pattern = None
-        matchers.append((w, pattern))
-    return matchers
+        wl = w.lower()
+        pattern = None
+        if _ASCII_WORD_RE.match(wl):
+            pattern = re.compile(r"(?<![a-z0-9])" + re.escape(wl) + r"(?![a-z0-9])")
+        normalized = _normalize(w)
+        normalized_pattern = None
+        if normalized and _ASCII_WORD_RE.match(normalized):
+            normalized_pattern = re.compile(
+                r"(?<![a-z0-9])" + re.escape(normalized) + r"(?![a-z0-9])"
+            )
+        syllables = _pinyin(normalized)
+        forms.append(
+            _WordForm(
+                w, pattern, normalized, normalized_pattern, syllables, "".join(syllables)
+            )
+        )
+    return forms
 
 
-_matcher_cache: dict[tuple[str, ...], list[tuple[str, re.Pattern[str] | None]]] = {}
+_matcher_cache: dict[tuple[str, ...], list[_WordForm]] = {}
 
 
-def _matchers(words: list[str]) -> list[tuple[str, re.Pattern[str] | None]]:
+def _matchers(words: list[str]) -> list[_WordForm]:
     key = tuple(words)
     cached = _matcher_cache.get(key)
     if cached is None:
@@ -212,19 +288,53 @@ def _matchers(words: list[str]) -> list[tuple[str, re.Pattern[str] | None]]:
     return cached
 
 
-def find_hit(text: str, words: list[str], exempts: list[str]) -> str | None:
-    """返回命中的词（词库原文）；先剔除豁免短语，再做词边界/子串匹配。"""
+def find_hit(
+    text: str, words: list[str], exempts: list[str], level: str = "normal"
+) -> str | None:
+    """返回命中的词（词库原文）。
+
+    basic：原样子串 / 词边界；normal：再加归一化（全角、空格标点、繁简）；
+    pinyin：再加拼音匹配（谐音、拼音写法）。
+    """
     hay = text.lower()
     for phrase in exempts:
         p = phrase.lower()
         if p in hay:
             hay = hay.replace(p, " ")
-    for word, pattern in _matchers(words):
-        if pattern is not None:
-            if pattern.search(hay):
-                return word
-        elif word.lower() in hay:
-            return word
+    for form in _matchers(words):
+        if form.pattern is not None:
+            if form.pattern.search(hay):
+                return form.word
+        elif form.word.lower() in hay:
+            return form.word
+    if level == "basic":
+        return None
+
+    nhay = _normalize(hay)
+    for phrase in exempts:
+        p = _normalize(phrase)
+        if p and p in nhay:
+            nhay = nhay.replace(p, "")
+    for form in _matchers(words):
+        if form.normalized_pattern is not None:
+            if form.normalized_pattern.search(nhay):
+                return form.word
+        elif form.normalized and form.normalized in nhay:
+            return form.word
+    if level != "pinyin":
+        return None
+
+    syllables = _pinyin(nhay)
+    runs = re.findall(r"[a-z0-9]+", nhay)
+    for form in _matchers(words):
+        # 纯 ASCII 词已在前两轮按词边界匹配过，拼音通道只用于含中文的词
+        if form.normalized_pattern is not None or not form.pinyin:
+            continue
+        if _contains_slice(syllables, form.pinyin):
+            return form.word
+        # 拼音直写（如 "jiawoweixin"）：在归一化文本的字母数字串里找音节拼接串
+        if len(form.pinyin_join) >= 4 and any(form.pinyin_join in run for run in runs):
+            return form.word
     return None
 
 
@@ -322,7 +432,7 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
         return
 
     words, exempts = split_word_lists(str(cfg["sensitive_words"]))
-    hit = find_hit(text, words, exempts)
+    hit = find_hit(text, words, exempts, cfg["sensitive_variant_level"])
     if not hit:
         return
 
@@ -393,10 +503,27 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
             await bot.call_api(
                 "send_group_msg",
                 group_id=event.group_id,
-                message=MessageSegment.at(event.user_id) + " " + reason,
+                message=(
+                    MessageSegment.at(event.user_id)
+                    + " " + reason
+                    + "\n（如认为误判，可私聊机器人发送 /申诉 说明理由）"
+                ),
             )
         except Exception:
             logger.exception(f"发送敏感词处罚提示失败：group={event.group_id}")
+        # 结构化记录（不存聊天内容），供面板查询与申诉
+        action = "recall_mute" if (recalled and muted) else ("mute" if muted else "recall")
+        try:
+            await get_store().add_punishment(
+                group_id=event.group_id,
+                user_id=event.user_id,
+                word=hit,
+                action=action,
+                mute_minutes=cfg["sensitive_mute_minutes"] if muted else 0,
+                reason=review_reason,
+            )
+        except Exception:
+            logger.exception("写入违规记录失败")
 
     if cfg["sensitive_notify"]:
         status = "已撤回" if recalled else f"撤回失败：{recall_err}"
@@ -510,3 +637,41 @@ async def handle_sensitive_admin(args: Message = CommandArg()) -> None:
         return
 
     await _send(sensitive_admin, _USAGE)
+
+
+# ---------------------------------------------------------------- 指令：/申诉
+
+
+async def _is_private(event: MessageEvent) -> bool:
+    return isinstance(event, PrivateMessageEvent)
+
+
+appeal_cmd = on_command(
+    "申诉", aliases={"appeal"}, rule=Rule(_is_private), priority=1, block=True
+)
+
+
+@appeal_cmd.handle()
+async def handle_appeal(bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None:
+    text = args.extract_plain_text().strip()
+    if not text:
+        await _send(appeal_cmd, "用法：/申诉 <说明理由>（针对你最近 24 小时内的一次撤回/禁言）")
+        return
+    store = get_store()
+    latest = await store.latest_punishment_for(event.user_id, hours=24)
+    if latest is None:
+        await _send(appeal_cmd, "近 24 小时内没有你的违规记录，如有疑问请联系群管理员。")
+        return
+    if latest["appeal_status"] != "none":
+        await _send(appeal_cmd, "你已提交过申诉，请等待管理员处理。")
+        return
+    if not await store.appeal_punishment(latest["id"], text):
+        await _send(appeal_cmd, "申诉提交失败，请稍后重试或联系管理员。")
+        return
+    await _send(appeal_cmd, "已收到你的申诉，管理员会尽快复核，请留意机器人通知。")
+    await _notify(
+        bot,
+        f"📮 违规申诉\nQQ: {event.user_id}\n群号: {latest['group_id']}\n"
+        f"命中词: {latest['word']}\n处罚时间: {latest['ts']}\n"
+        f"申诉理由: {text[:200]}\n请在 Web 面板「违规记录」页处理",
+    )

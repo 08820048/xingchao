@@ -77,6 +77,24 @@ def _valid_day(day: str) -> bool:
     return bool(_DAY_RE.match(day))
 
 
+def _panel_bot():
+    """取当前连接的机器人实例（面板操作需要主动调用 API 时用）。"""
+    from nonebot import get_bots
+
+    return next(iter(get_bots().values()), None)
+
+
+async def _try_unmute(group_id: int, user_id: int) -> tuple[bool, str]:
+    bot = _panel_bot()
+    if bot is None:
+        return False, "机器人未连接"
+    try:
+        await bot.call_api("set_group_ban", group_id=group_id, user_id=user_id, duration=0)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
 def _scan_hourly(log_dir: Path, day: str, group_id: int | None) -> list[int]:
     """扫描当天 jsonl 日志，按小时统计消息数（在线程中执行，避免阻塞事件循环）。"""
     hours = [0] * 24
@@ -588,6 +606,7 @@ def _register_routes() -> None:
             "notify": raw["sensitive_notify"],
             "review": raw["sensitive_review"],
             "fallback": raw["sensitive_review_fallback"],
+            "variant": raw["sensitive_variant_level"],
         }
         overrides = await sensitive_plugin._group_overrides()
         return JSONResponse(
@@ -647,6 +666,13 @@ def _register_routes() -> None:
                     {"ok": False, "error": "fallback 应为 notify / recall"}, status_code=400
                 )
             updates["sensitive_review_fallback"] = body["fallback"]
+        if "variant" in body:
+            if body["variant"] not in ("basic", "normal", "pinyin"):
+                return JSONResponse(
+                    {"ok": False, "error": "variant 应为 basic / normal / pinyin"},
+                    status_code=400,
+                )
+            updates["sensitive_variant_level"] = body["variant"]
         if not updates:
             return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
         try:
@@ -665,6 +691,109 @@ def _register_routes() -> None:
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         scope = f"群 {group_id}" if group_id is not None else "全局默认"
         return JSONResponse({"ok": True, "data": {"message": f"敏感词配置已保存并生效（{scope}）"}})
+
+    @app.get("/panel/api/punishments")
+    async def panel_punishments_get(
+        request: Request, group_id: int | None = None, limit: int = 100
+    ) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        store = get_store()
+        records = await store.list_punishments(limit=max(1, min(limit, 300)), group_id=group_id)
+        offenders = await store.repeat_offenders(days=30, limit=10)
+        appeals = await store.pending_appeals()
+        return JSONResponse(
+            {
+                "ok": True,
+                "data": {
+                    "records": records,
+                    "offenders": offenders,
+                    "appeals": appeals,
+                    "groups": sorted(merged_whitelist()),
+                },
+            }
+        )
+
+    @app.post("/panel/api/punishments")
+    async def panel_punishments_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        body = await request.json()
+        if body.get("action") != "resolve":
+            return JSONResponse({"ok": False, "error": "action 仅支持 resolve"}, status_code=400)
+        pid, approve = body.get("id"), body.get("approve")
+        if not isinstance(pid, int) or not isinstance(approve, bool):
+            return JSONResponse(
+                {"ok": False, "error": "id 应为整数，approve 应为布尔值"}, status_code=400
+            )
+        store = get_store()
+        record = await store.resolve_appeal(pid, approve)
+        if record is None:
+            return JSONResponse({"ok": False, "error": "该申诉不存在或已处理"}, status_code=404)
+        msg = "已通过申诉" if approve else "已驳回申诉"
+        if approve:
+            if record["action"] in ("mute", "recall_mute"):
+                ok, err = await _try_unmute(record["group_id"], record["user_id"])
+                msg += "，并已解除禁言" if ok else f"，但解除禁言失败：{err}"
+            else:
+                msg += "（原处罚为撤回，无需解除禁言）"
+        bot = _panel_bot()
+        if bot is not None:
+            try:
+                await bot.call_api(
+                    "send_private_msg",
+                    user_id=record["user_id"],
+                    message=f"你关于「{record['word']}」的申诉已{'通过' if approve else '被驳回'}。",
+                )
+            except Exception:
+                logger.warning("申诉结果通知发送失败", exc_info=True)
+        return JSONResponse({"ok": True, "data": {"message": msg}})
+
+    @app.get("/panel/api/report")
+    async def panel_report_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import weeklyreport as report_plugin
+
+        cfg = await report_plugin.report_config()
+        return JSONResponse({"ok": True, "data": {**cfg, "groups": sorted(merged_whitelist())}})
+
+    @app.post("/panel/api/report")
+    async def panel_report_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        body = await request.json()
+        updates: dict[str, str] = {}
+        if "enabled" in body:
+            if not isinstance(body["enabled"], bool):
+                return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
+            updates["report_enabled"] = "true" if body["enabled"] else "false"
+        if "weekday" in body:
+            try:
+                wd = int(body["weekday"])
+            except (TypeError, ValueError):
+                return JSONResponse({"ok": False, "error": "weekday 应为 0-6"}, status_code=400)
+            if not 0 <= wd <= 6:
+                return JSONResponse({"ok": False, "error": "weekday 应为 0-6"}, status_code=400)
+            updates["report_weekday"] = str(wd)
+        if "time" in body:
+            t = str(body["time"]).strip()
+            if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", t):
+                return JSONResponse({"ok": False, "error": "时间格式应为 HH:MM"}, status_code=400)
+            updates["report_time"] = t
+        if "scope" in body:
+            s = str(body["scope"]).strip()
+            if s != "all" and not (s.isdigit() and int(s) in merged_whitelist()):
+                return JSONResponse(
+                    {"ok": False, "error": "scope 应为 all 或白名单群号"}, status_code=400
+                )
+            updates["report_scope"] = s
+        if not updates:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        store = get_store()
+        for k, v in updates.items():
+            await store.set_kv(k, v)
+        return JSONResponse({"ok": True, "data": {"message": "周报配置已保存并生效"}})
 
     @app.get("/panel/api/tasks")
     async def panel_tasks_get(request: Request) -> JSONResponse:
