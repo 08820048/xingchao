@@ -586,6 +586,8 @@ def _register_routes() -> None:
             "words": raw["sensitive_words"],
             "mute_minutes": raw["sensitive_mute_minutes"],
             "notify": raw["sensitive_notify"],
+            "review": raw["sensitive_review"],
+            "fallback": raw["sensitive_review_fallback"],
         }
         overrides = await sensitive_plugin._group_overrides()
         return JSONResponse(
@@ -635,6 +637,16 @@ def _register_routes() -> None:
             if not isinstance(body["notify"], bool):
                 return JSONResponse({"ok": False, "error": "notify 应为布尔值"}, status_code=400)
             updates["sensitive_notify"] = body["notify"]
+        if "review" in body:
+            if not isinstance(body["review"], bool):
+                return JSONResponse({"ok": False, "error": "review 应为布尔值"}, status_code=400)
+            updates["sensitive_review"] = body["review"]
+        if "fallback" in body:
+            if body["fallback"] not in ("notify", "recall"):
+                return JSONResponse(
+                    {"ok": False, "error": "fallback 应为 notify / recall"}, status_code=400
+                )
+            updates["sensitive_review_fallback"] = body["fallback"]
         if not updates:
             return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
         try:

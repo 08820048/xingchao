@@ -1721,6 +1721,8 @@ type SensitiveConfig = {
   words: string;
   mute_minutes: number;
   notify: boolean;
+  review: boolean;
+  fallback: string;
 };
 
 function SensitiveTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
@@ -1815,8 +1817,12 @@ function SensitiveTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
               rows={3}
               value={cfg.words}
               onChange={(e) => setCfg({ ...cfg, words: e.target.value })}
-              placeholder="例如：加微信,低价代刷,博彩,代开发票"
+              placeholder="例如：加微信,低价代刷,博彩,代开发票,~机场大巴"
             />
+            <p className="text-muted-foreground text-xs">
+              纯英文/数字词按词边界匹配（PIA 不会命中 Olympiad）；以 ~ 开头的是豁免短语，
+              匹配前会从消息中剔除（如 ~机场大巴，避免「机场」误伤正常聊天）
+            </p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="mm">命中后禁言（分钟，0 = 不禁言）</Label>
@@ -1834,6 +1840,27 @@ function SensitiveTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
               <p className="text-muted-foreground text-xs">私聊推送命中详情与处理结果</p>
             </div>
             <Switch checked={cfg.notify} onCheckedChange={(v) => save({ notify: v })} />
+          </div>
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">AI 语境复核</p>
+              <p className="text-muted-foreground text-xs">
+                命中候选后由 AI 判断是推广还是正常讨论；确认违规才撤回，正常讨论直接放行，减少误杀
+              </p>
+            </div>
+            <Switch checked={cfg.review} onCheckedChange={(v) => save({ review: v })} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sfb">AI 复核不可用时（未配置 / 调用失败）</Label>
+            <select
+              id="sfb"
+              value={cfg.fallback}
+              onChange={(e) => save({ fallback: e.target.value })}
+              className="border-input bg-background flex h-8 w-full items-center rounded-lg border px-2 text-sm sm:w-72"
+            >
+              <option value="notify">仅通知超管，不自动撤回</option>
+              <option value="recall">照常自动撤回</option>
+            </select>
           </div>
           <Button disabled={saving} onClick={() => save({
             words: cfg.words, mute_minutes: cfg.mute_minutes,
