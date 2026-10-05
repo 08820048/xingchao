@@ -9,15 +9,18 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
-from nonebot import get_driver, on_message
+from nonebot import get_driver, on_command, on_message
+from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
+from nonebot.params import CommandArg
 
-from src.permission import GROUP_WHITELIST
+from src.permission import GROUP_WHITELIST, SUPERUSER
 from src.store import get_store
 
 DEFAULTS: dict[str, Any] = {
@@ -83,6 +86,68 @@ async def sensitive_config(group_id: int | None = None) -> dict[str, Any]:
     )
     merged["sensitive_mute_minutes"] = int(merged["sensitive_mute_minutes"] or 0)
     return merged
+
+
+# ---------------------------------------------------------------- 词库读写
+
+MAX_WORDS_CHARS = 5000  # 与面板上限一致
+
+
+def clean_words(items: list[str]) -> list[str]:
+    """去空白、去空项、按大小写不敏感去重（保持原顺序与原始大小写）。"""
+    words: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        w = str(item).strip()
+        if w and w.casefold() not in seen:
+            seen.add(w.casefold())
+            words.append(w)
+    return words
+
+
+async def get_words() -> list[str]:
+    """当前全局敏感词列表。"""
+    raw = str(await _kv("sensitive_words") or "")
+    return clean_words(raw.split(","))
+
+
+async def add_words(items: list[str]) -> tuple[list[str], list[str]]:
+    """批量添加，返回（新增, 已存在）。超长则抛 ValueError 且不落库。"""
+    requested = clean_words(items)
+    current = await get_words()
+    existing_keys = {w.casefold() for w in current}
+    added, existing = [], []
+    for w in requested:
+        if w.casefold() in existing_keys:
+            existing.append(w)
+        else:
+            added.append(w)
+            existing_keys.add(w.casefold())
+    merged = current + added
+    text = ",".join(merged)
+    if len(text) > MAX_WORDS_CHARS:
+        raise ValueError(
+            f"词库过长（上限 {MAX_WORDS_CHARS} 字），本次未修改；"
+            f"当前 {len(current)} 个词，请先移除部分再添加"
+        )
+    if added:
+        await get_store().set_kv("sensitive_words", text)
+    return added, existing
+
+
+async def remove_words(items: list[str]) -> tuple[list[str], list[str]]:
+    """批量移除（大小写不敏感），返回（已移除, 不在词库中）。"""
+    requested = clean_words(items)
+    current = await get_words()
+    keys = {w.casefold() for w in requested}
+    current_keys = {w.casefold() for w in current}
+    removed = [w for w in current if w.casefold() in keys]
+    missing = [w for w in requested if w.casefold() not in current_keys]
+    if removed:
+        await get_store().set_kv(
+            "sensitive_words", ",".join(w for w in current if w.casefold() not in keys)
+        )
+    return removed, missing
 
 
 # ---------------------------------------------------------------- 处理
@@ -173,3 +238,99 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
             f"命中词: {hit}\n处理: {status}{extra}\n"
             f"内容: {event.message.extract_plain_text()[:100]}",
         )
+
+
+# ---------------------------------------------------------------- 指令：/敏感词
+
+sensitive_admin = on_command(
+    "敏感词", aliases={"sensitive"}, rule=SUPERUSER, priority=1, block=True
+)
+
+_USAGE = (
+    "用法：\n"
+    "/敏感词 add <词1> [词2] … — 批量添加（空格 / 逗号分隔）\n"
+    "/敏感词 del <词1> [词2] … — 批量移除\n"
+    "/敏感词 list — 查看词库"
+)
+_ADD_ACTIONS = {"add", "添加", "增加"}
+_DEL_ACTIONS = {"del", "delete", "remove", "删除", "移除"}
+_LIST_ACTIONS = {"list", "列表", "查看"}
+
+
+async def _send(matcher: Matcher, text: str) -> None:
+    try:
+        await matcher.send(text)
+    except MatcherException:
+        raise
+    except Exception:
+        logger.exception("发送消息失败")
+
+
+def _brief(words: list[str], limit: int = 600) -> str:
+    """把词列表拼成一行，过长时截断（防止 QQ 消息刷屏）。"""
+    text = ""
+    for w in words:
+        piece = w if not text else "、" + w
+        if len(text) + len(piece) > limit:
+            return f"{text}……（共 {len(words)} 个）"
+        text += piece
+    return text
+
+
+@sensitive_admin.handle()
+async def handle_sensitive_admin(args: Message = CommandArg()) -> None:
+    parts = args.extract_plain_text().strip().split(maxsplit=1)
+    action = parts[0].lower() if parts else ""
+    rest = parts[1] if len(parts) > 1 else ""
+    words = clean_words(re.split(r"[\s,，、;；]+", rest))
+
+    if action in _LIST_ACTIONS or not action:
+        current = await get_words()
+        cfg = await sensitive_config()
+        state = "开启" if cfg["sensitive_enabled"] else "关闭"
+        if not current:
+            await _send(sensitive_admin, f"敏感词词库为空（监控开关：{state}）。\n{_USAGE}")
+            return
+        await _send(
+            sensitive_admin,
+            f"敏感词词库（全局，共 {len(current)} 个，监控：{state}）：\n{_brief(current)}",
+        )
+        return
+
+    if action in _ADD_ACTIONS:
+        if not words:
+            await _send(sensitive_admin, _USAGE)
+            return
+        try:
+            added, existing = await add_words(words)
+        except ValueError as e:
+            await _send(sensitive_admin, f"添加失败：{e}。")
+            return
+        total = len(await get_words())
+        lines = []
+        if added:
+            lines.append(f"已添加 {len(added)} 个：{_brief(added)}")
+        if existing:
+            lines.append(f"已存在 {len(existing)} 个（跳过）：{_brief(existing)}")
+        lines.append(f"词库共 {total} 个。")
+        if added and not (await sensitive_config())["sensitive_enabled"]:
+            lines.append("⚠️ 敏感词监控当前未开启，词库暂不生效（可在面板「敏感词」页开启）。")
+        await _send(sensitive_admin, "\n".join(lines))
+        return
+
+    if action in _DEL_ACTIONS:
+        if not words:
+            await _send(sensitive_admin, _USAGE)
+            return
+        removed, missing = await remove_words(words)
+        total = len(await get_words())
+        lines = []
+        if removed:
+            lines.append(f"已移除 {len(removed)} 个：{_brief(removed)}")
+        if missing:
+            lines.append(f"不在词库中 {len(missing)} 个：{_brief(missing)}")
+        lines.append(f"词库共 {total} 个。")
+        await _send(sensitive_admin, "\n".join(lines))
+        return
+
+    await _send(sensitive_admin, _USAGE)

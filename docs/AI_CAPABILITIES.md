@@ -78,6 +78,7 @@
 | `/plugin proactive on/off` | `set_proactive_enabled` | 超管 | 「关闭群聊主动性」 |
 | `/ai vision <模型>` | `set_vision_model` | 超管 | 「把视觉模型换成 glm-4v-flash」 |
 | `/reply list/reload` | `list_replies` / `reload_replies` | 超管 | 「看看词库里有什么」 |
+| `/敏感词 add/del/list` | `add_sensitive_words` / `remove_sensitive_words` / `list_sensitive_words` | 超管 | 「把“代刷”加入敏感词」「删掉敏感词 代刷」 |
 | `/welcome view/set/on/off` | `get_welcome` / `set_welcome` / `set_welcome_enabled` | 超管 | 「把欢迎语改成……」 |
 | `/notice <内容>` / `/notice list` | `publish_group_notice` / `get_group_notices` | 超管 | 「发个公告说周五维护」 |
 | `/task list` | `list_scheduled_tasks` | 超管 | 「现在有哪些定时任务」 |
@@ -119,3 +120,5 @@
 
 - 2025-XX-XX 初版：建立规约；AI 工具注册表补齐全部斜杠指令能力；
   修复纯 @ 无响应；新增 Markdown 降级转换。
+- 2026-10-05：新增 `/敏感词 add|del|list` 斜杠指令（超管，支持批量增删/查看），
+  同步注册 AI 工具 `add_sensitive_words` / `remove_sensitive_words` / `list_sensitive_words`。

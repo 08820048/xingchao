@@ -65,6 +65,7 @@ ADMIN_TEXT = (
     "  ◈ /踢出 @某人 — 移出本群\n"
     "  ◈ /recall — 撤回（回复目标消息）\n"
     "  ◈ /reply reload|list — 关键词词库\n"
+    "  ◈ /敏感词 add|del|list — 敏感词批量增删\n"
     "  ◈ /group list|add|del — 白名单管理\n"
     "  ◈ /superuser list|add|del — 超管管理\n"
     "  ◈ /ai on|off|status|clear|vision — AI 问答管理\n"

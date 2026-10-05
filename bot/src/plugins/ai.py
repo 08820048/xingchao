@@ -818,6 +818,52 @@ async def _t_calc(bot, event, args) -> str:
         return f"错误：{e}"
 
 
+async def _t_sensitive_list(bot, event, args) -> str:
+    from src.plugins import sensitive as sp
+
+    cfg = await sp.sensitive_config()
+    words = await sp.get_words()
+    return _j({
+        "监控开关": "开启" if cfg["sensitive_enabled"] else "关闭",
+        "词数": len(words),
+        "词库": words,
+    })
+
+
+async def _t_sensitive_add(bot, event, args) -> str:
+    from src.plugins import sensitive as sp
+
+    words = [str(w) for w in (args.get("words") or []) if str(w).strip()]
+    if not words:
+        return "错误：缺少 words（要添加的敏感词列表）。"
+    try:
+        added, existing = await sp.add_words(words)
+    except ValueError as e:
+        return f"错误：{e}"
+    cfg = await sp.sensitive_config()
+    parts = [f"新增 {len(added)} 个：{'、'.join(added) if added else '无'}"]
+    if existing:
+        parts.append(f"已存在 {len(existing)} 个：{'、'.join(existing)}")
+    parts.append(f"当前词库共 {len(await sp.get_words())} 个")
+    if added and not cfg["sensitive_enabled"]:
+        parts.append("注意：敏感词监控当前处于关闭状态，词库暂不生效，需在面板开启")
+    return "；".join(parts) + "。"
+
+
+async def _t_sensitive_remove(bot, event, args) -> str:
+    from src.plugins import sensitive as sp
+
+    words = [str(w) for w in (args.get("words") or []) if str(w).strip()]
+    if not words:
+        return "错误：缺少 words（要移除的敏感词列表）。"
+    removed, missing = await sp.remove_words(words)
+    parts = [f"已移除 {len(removed)} 个：{'、'.join(removed) if removed else '无'}"]
+    if missing:
+        parts.append(f"不在词库中 {len(missing)} 个：{'、'.join(missing)}")
+    parts.append(f"当前词库共 {len(await sp.get_words())} 个")
+    return "；".join(parts) + "。"
+
+
 def _build_tools() -> list[tuple[dict, Any]]:
     """返回全部工具注册表（含仅超管的）。
 
@@ -903,6 +949,15 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_proactive_enabled", "开启/关闭群聊主动性（话题明确或有人求助时 AI 自动参与讨论）",
               {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
               "superuser", _t_proactive_toggle),
+        _tool("list_sensitive_words", "查看敏感词词库（命中即撤回，可选禁言）与监控开关状态",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_sensitive_list),
+        _tool("add_sensitive_words", "批量添加敏感词（全局词库，命中后自动撤回/禁言；用户说“把 xxx 加进敏感词/违禁词”时使用）",
+              {"type": "object", "properties": {"words": {"type": "array", "items": {"type": "string"}, "description": "要添加的敏感词列表，可一次多个"}}, "required": ["words"]},
+              "superuser", _t_sensitive_add),
+        _tool("remove_sensitive_words", "批量移除敏感词（全局词库）",
+              {"type": "object", "properties": {"words": {"type": "array", "items": {"type": "string"}, "description": "要移除的敏感词列表，可一次多个"}}, "required": ["words"]},
+              "superuser", _t_sensitive_remove),
         _tool("recall_message", "撤回一条消息（回复目标消息后提出，或提供 message_id）",
               {"type": "object", "properties": {"message_id": {"type": "integer", "description": "可选；不填则撤回当前引用的消息"}}, "required": []},
               "superuser", _t_recall),
