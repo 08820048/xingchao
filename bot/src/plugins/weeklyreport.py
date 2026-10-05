@@ -33,7 +33,7 @@ _worker_started = False
 async def _kv(key: str) -> Any:
     raw = await get_store().get_kv(key)
     if raw is None:
-        raw = DEFAULTS[key]
+        return DEFAULTS[key]  # 注意：bool 默认值不能走下面的字符串比较分支
     default = DEFAULTS[key]
     if isinstance(default, bool):
         return raw != "false"
