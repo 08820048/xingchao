@@ -177,6 +177,39 @@ class Store:
         ) as cur:
             return [(int(r[0]), int(r[1])) for r in await cur.fetchall()]
 
+    async def get_day_series(
+        self, start: str, end: str, group_id: int | None = None
+    ) -> list[tuple[str, int, int]]:
+        """按天返回 [(day, 消息数, 参与人数)] 升序；group_id 为空时汇总全部群。"""
+        conn = await self._ensure()
+        where = "day BETWEEN ? AND ?"
+        params: list[str | int] = [start, end]
+        if group_id is not None:
+            where += " AND group_id = ?"
+            params.append(group_id)
+        async with conn.execute(
+            f"SELECT day, COALESCE(SUM(count), 0) FROM msg_stat WHERE {where} GROUP BY day",
+            params,
+        ) as cur:
+            totals = {str(r[0]): int(r[1]) for r in await cur.fetchall()}
+        async with conn.execute(
+            f"SELECT day, COUNT(DISTINCT user_id) FROM msg_stat_user "
+            f"WHERE {where} GROUP BY day",
+            params,
+        ) as cur:
+            users = {str(r[0]): int(r[1]) for r in await cur.fetchall()}
+        return [(d, totals.get(d, 0), users.get(d, 0)) for d in sorted(set(totals) | set(users))]
+
+    async def get_top_users_all(self, day: str, limit: int = 10) -> list[tuple[int, int]]:
+        """返回当天跨群发言 Top [(user_id, count)]，按发言数降序。"""
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT user_id, SUM(count) FROM msg_stat_user WHERE day = ? "
+            "GROUP BY user_id ORDER BY SUM(count) DESC, user_id LIMIT ?",
+            (day, limit),
+        ) as cur:
+            return [(int(r[0]), int(r[1])) for r in await cur.fetchall()]
+
     async def close(self) -> None:
         if self._conn is not None:
             await self._conn.close()

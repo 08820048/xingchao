@@ -9,12 +9,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
 import secrets
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +68,37 @@ def _authorized(request: Request) -> bool:
 
 def _unauthorized() -> JSONResponse:
     return JSONResponse({"ok": False, "error": "未登录或会话失效"}, status_code=401)
+
+
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _valid_day(day: str) -> bool:
+    return bool(_DAY_RE.match(day))
+
+
+def _scan_hourly(log_dir: Path, day: str, group_id: int | None) -> list[int]:
+    """扫描当天 jsonl 日志，按小时统计消息数（在线程中执行，避免阻塞事件循环）。"""
+    hours = [0] * 24
+    pattern = (
+        f"group-{group_id}-{day}.jsonl" if group_id is not None else f"group-*-{day}.jsonl"
+    )
+    for path in sorted(log_dir.glob(pattern)):
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    ts = str(rec.get("time", ""))
+                    if len(ts) >= 13 and ts[11:13].isdigit():
+                        hour = int(ts[11:13])
+                        if 0 <= hour < 24:
+                            hours[hour] += 1
+        except OSError:
+            logger.warning(f"读取日志失败，跳过：{path}")
+    return hours
 
 
 # ---------------------------------------------------------------- 视图数据
@@ -163,6 +195,77 @@ def _register_routes() -> None:
                 {"group_id": gid, "total": total, "users": users[1], "top": top}
             )
         return JSONResponse({"ok": True, "data": {"day": day, "groups": result}})
+
+    @app.get("/panel/api/stats/trend")
+    async def panel_stats_trend(
+        request: Request, end: str = "", days: int = 14, group_id: int | None = None
+    ) -> JSONResponse:
+        """近 N 天消息量与参与人数序列（缺失日期补 0）。"""
+        if not _authorized(request):
+            return _unauthorized()
+        end = end or datetime.now().astimezone().strftime("%Y-%m-%d")
+        if not _valid_day(end):
+            return JSONResponse(
+                {"ok": False, "error": "日期格式应为 YYYY-MM-DD"}, status_code=400
+            )
+        days = max(3, min(days, 90))
+        end_d = datetime.strptime(end, "%Y-%m-%d").date()
+        start = (end_d - timedelta(days=days - 1)).isoformat()
+        series = {
+            d: (t, u)
+            for d, t, u in await get_store().get_day_series(start, end, group_id)
+        }
+        points = []
+        for i in range(days):
+            d = (end_d - timedelta(days=days - 1 - i)).isoformat()
+            total, users = series.get(d, (0, 0))
+            points.append({"day": d, "total": total, "users": users})
+        return JSONResponse(
+            {
+                "ok": True,
+                "data": {"end": end, "days": days, "group_id": group_id, "series": points},
+            }
+        )
+
+    @app.get("/panel/api/stats/hourly")
+    async def panel_stats_hourly(
+        request: Request, day: str = "", group_id: int | None = None
+    ) -> JSONResponse:
+        """当日 24 小时消息分布（解析 jsonl 日志）。"""
+        if not _authorized(request):
+            return _unauthorized()
+        day = day or datetime.now().astimezone().strftime("%Y-%m-%d")
+        if not _valid_day(day):
+            return JSONResponse(
+                {"ok": False, "error": "日期格式应为 YYYY-MM-DD"}, status_code=400
+            )
+        log_dir = get_config().xingchao_log_dir
+        hours = await asyncio.to_thread(_scan_hourly, log_dir, day, group_id)
+        return JSONResponse(
+            {"ok": True, "data": {"day": day, "group_id": group_id, "hours": hours}}
+        )
+
+    @app.get("/panel/api/stats/top")
+    async def panel_stats_top(
+        request: Request, day: str = "", group_id: int | None = None, limit: int = 10
+    ) -> JSONResponse:
+        """当日发言 Top；group_id 为空时跨群汇总。"""
+        if not _authorized(request):
+            return _unauthorized()
+        day = day or datetime.now().astimezone().strftime("%Y-%m-%d")
+        if not _valid_day(day):
+            return JSONResponse(
+                {"ok": False, "error": "日期格式应为 YYYY-MM-DD"}, status_code=400
+            )
+        limit = max(1, min(limit, 50))
+        store = get_store()
+        if group_id is not None:
+            top = await store.get_top_users(group_id, day, limit)
+        else:
+            top = await store.get_top_users_all(day, limit)
+        return JSONResponse(
+            {"ok": True, "data": {"day": day, "group_id": group_id, "top": top}}
+        )
 
     @app.get("/panel/api/logfiles")
     async def panel_logfiles(request: Request) -> JSONResponse:
