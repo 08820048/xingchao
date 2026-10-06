@@ -1,5 +1,5 @@
 """图片 AI 视觉审查 + 二维码引流风控：识别白名单群里的图片内容，命中翻墙/VPN、
-色情、血腥暴力时自动撤回并对发送者禁言（默认 15 分钟），同时私聊通知超管。
+色情、血腥暴力、API/AI 中转站广告时自动撤回并对发送者禁言（默认 15 分钟），同时私聊通知超管。
 
 - 白名单群；跳过机器人自己与指令消息
 - 正常图片：完全静默（不回复描述），只有命中违规才撤回/禁言
@@ -49,8 +49,15 @@ DEFAULTS: dict[str, object] = {
     "qrcode_notify": True,         # 二维码命中后私聊通知超管
 }
 
-VIOLATION_CATEGORIES = {"vpn", "porn", "gore"}
-CATEGORY_LABEL = {"vpn": "翻墙/VPN", "porn": "色情", "gore": "血腥暴力", "other": "其他违规", "normal": "正常"}
+VIOLATION_CATEGORIES = {"vpn", "porn", "gore", "api_relay"}
+CATEGORY_LABEL = {
+    "vpn": "翻墙/VPN",
+    "porn": "色情",
+    "gore": "血腥暴力",
+    "api_relay": "API中转站广告",
+    "other": "其他违规",
+    "normal": "正常",
+}
 
 # 二维码内容分类（正则匹配解码出的文本）
 QR_TYPE_LABEL = {
@@ -84,6 +91,10 @@ VISION_PROMPT = (
     "- vpn：翻墙 / VPN / 代理 / 机场 / 科学上网相关（VPN 软件界面、节点订阅、翻墙教程截图等）\n"
     "- porn：色情、裸露、性暗示等成人内容\n"
     "- gore：血腥、暴力、尸体、严重伤害、恐怖画面\n"
+    "- api_relay：API / AI 中转站广告或推广（低价代充、转售大模型 API 服务）。典型特征：\n"
+    "  价目表或倍率截图（如「0.15 全模型不降智」「纯血 ccmax」「x 元一刀」「官转/号池」）、\n"
+    "  「来带量」「老板私聊」等招揽话术、中转站订阅页或推广海报。\n"
+    "  注意：正常的 API 文档、代码、报错截图、账单明细、技术讨论不算 api_relay。\n"
     "- other：其他违规但难以归类\n"
     "只输出 JSON。"
 )
@@ -92,6 +103,7 @@ _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 _VPN_KEYS = ("翻墙", "vpn", "代理", "机场", "科学上网", "shadowrocket", "clash", "v2ray", "trojan", "ssr")
 _PORN_KEYS = ("色情", "裸露", "性暗示", "成人", "porn", "nsfw", "裸照", "性感")
 _GORE_KEYS = ("血腥", "暴力", "尸体", "gore", "恐怖", "断肢", "伤害", "血")
+_API_RELAY_KEYS = ("中转", "全模型", "不降智", "纯血", "带量", "代充", "号池", "官转", "低价api", "api中转")
 
 
 # ---------------------------------------------------------------- 配置
@@ -336,6 +348,8 @@ def _parse_result(raw: str) -> tuple[str, str, str]:
         category = "porn"
     elif any(k in low.lower() for k in _GORE_KEYS):
         category = "gore"
+    elif any(k in low.lower() for k in _API_RELAY_KEYS):
+        category = "api_relay"
     else:
         category = "normal"
     return raw.strip()[:60], category, ""
