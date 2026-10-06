@@ -212,6 +212,32 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 - **代码约定**：ruff 风格、类型注解、中文用户文案、异常兜底不抛崩、不把聊天内容写进 SQLite
 - **提交规范**：feat/fix/chore/test 前缀 + 中文描述，直接推 `main`
 
+### 8.1 官网更新日志同步（xingchao_site）
+
+官网 <https://xingchao.dev/updates> 的更新日志有两层来源：
+
+1. **运行时实时拉取**：页面加载时请求 GitHub API（机器人仓库最近 6 条提交），自动按 feat/fix 归类；
+2. **兜底列表**：`xingchao_site/src/lib/github-updates.ts` 的 `projectUpdates`
+   （GitHub API 不可用或限流时展示；国内网络下多数访客实际看到的是这一层，需保持较新）。
+
+**产品更新后同步兜底列表**：
+
+```bash
+git clone git@github.com:08820048/xingchao_site.git && cd xingchao_site
+# 1) 更新 src/lib/github-updates.ts 的 projectUpdates（最新在前；sha/date/url 取自本仓库提交）
+#    并同步 scripts/check-github-updates.ts 里的条数断言
+# 2) 校验 + 构建
+npm run check:updates && npm ci && npm run build
+# 3) 提交推送
+git commit -am "docs(updates): 同步更新日志" && git push
+# 4) 发布（Cloudflare Pages 为 Direct Upload 模式，push 不会自动部署）
+npx wrangler pages deploy dist --project-name=xingchao --branch=main
+```
+
+> 本服务器只有机器人仓库的只读 Deploy Key，无法推送/发布官网仓库；
+> 若要在服务器上直接完成同步与发布，需给官网仓库的 Deploy Key 开启写权限，
+> 并提供 Cloudflare API Token（Pages:Edit）。
+
 ## 9. 相关文档
 
 - `docs/DEPLOYMENT.md` — **换新服务器/迁移部署必读**
