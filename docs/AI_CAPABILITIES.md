@@ -83,7 +83,7 @@
 | `/welcome view/set/on/off` | `get_welcome` / `set_welcome` / `set_welcome_enabled` | 超管 | 「把欢迎语改成……」 |
 | `/notice <内容>` / `/notice list` | `publish_group_notice` / `get_group_notices` | 超管 | 「发个公告说周五维护」 |
 | —（内置能力） | `send_group_message` | 超管 | 「在群 123 里说一句：今晚八点活动开始」 |
-| `/task list` | `list_scheduled_tasks` | 超管 | 「现在有哪些定时任务」 |
+| `/task list` | `list_scheduled_tasks` / `create_scheduled_task` / `delete_scheduled_task` / `toggle_scheduled_task` | 超管 | 「现在有哪些定时任务」「每天 9 点在群里提醒大家签到」「把 3 号任务停掉」 |
 | `/通过 /approve <序号>` | `approve_join_request` | 超管 | 「通过 3 号申请」 |
 | `/拒绝 /reject <序号>` | `reject_join_request` | 超管 | 「拒绝 3 号申请，理由：不符合要求」 |
 | `/pending` | `get_pending_join_requests` | 超管 | 「有没有人申请进群」 |

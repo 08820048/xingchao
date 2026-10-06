@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from datetime import datetime
 from typing import Any
@@ -710,7 +711,70 @@ async def _t_task_list(bot, event, args) -> str:
             desc += f"（{t['date']}）"
         items.append({"id": t["id"], "时间": t["time"], "重复": desc, "群号": t["group_id"],
                       "内容": t["message"], "at全体": t["at_all"], "启用": t["enabled"]})
-    return _j({"定时任务": items, "提示": "增删改请在 Web 管理面板「定时任务」页操作"})
+    return _j({"定时任务": items, "提示": "可直接用对话创建/删除/启停，也可在 Web 面板「定时任务」页管理"})
+
+
+async def _t_task_create(bot, event, args) -> str:
+    """创建定时任务（校验规则与面板一致）。"""
+    from src.permission import merged_whitelist
+    from src.plugins.scheduler import REPEAT_LABEL, WEEKDAY_NAME
+
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not group_id:
+        return "错误：需要 group_id（目标群号）；群聊中默认当前群。"
+    group_id = int(group_id)
+    if group_id not in merged_whitelist():
+        return f"错误：群 {group_id} 不在白名单内。"
+    time_ = str(args.get("time", "")).strip()
+    if not re.fullmatch(r"\d{2}:\d{2}", time_) or time_ >= "24:00":
+        return "错误：time 应为 HH:MM（24 小时制，如 09:00）。"
+    message = str(args.get("message", "")).strip()
+    if not message:
+        return "错误：需要 message（要发送的内容）。"
+    if len(message) > 2000:
+        return "错误：内容过长（上限 2000 字）。"
+    repeat = str(args.get("repeat", "daily")).strip()
+    if repeat not in ("daily", "weekdays", "weekend", "weekly", "once"):
+        return "错误：repeat 应为 daily/weekdays/weekend/weekly/once。"
+    weekday = args.get("weekday")
+    date_ = args.get("date")
+    if repeat == "weekly" and not (isinstance(weekday, int) and 0 <= weekday <= 6):
+        return "错误：weekly 需要 weekday（0=周一 … 6=周日）。"
+    if repeat == "once" and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(date_ or "")):
+        return "错误：once 需要 date（YYYY-MM-DD）。"
+    at_all = bool(args.get("at_all", False))
+    tid = await get_store().add_task(
+        group_id, time_, message, at_all, repeat,
+        int(weekday) if repeat == "weekly" else None,
+        str(date_) if repeat == "once" else None,
+    )
+    desc = REPEAT_LABEL.get(repeat, repeat)
+    if repeat == "weekly":
+        desc = f"每周{WEEKDAY_NAME[int(weekday)][1:]}"
+    elif repeat == "once":
+        desc = f"仅 {date_} 一次"
+    extra = "，并@全体" if at_all else ""
+    return f"已创建定时任务 #{tid}：{desc} {time_} → 群 {group_id}{extra}，内容：{message[:40]}"
+
+
+async def _t_task_delete(bot, event, args) -> str:
+    tid = args.get("task_id")
+    if not isinstance(tid, int):
+        return "错误：需要 task_id（可用 list_scheduled_tasks 查看编号）。"
+    ok = await get_store().delete_task(int(tid))
+    return f"定时任务 #{tid} 已删除。" if ok else f"错误：任务 #{tid} 不存在。"
+
+
+async def _t_task_toggle(bot, event, args) -> str:
+    tid = args.get("task_id")
+    enabled = args.get("enabled")
+    if not isinstance(tid, int) or not isinstance(enabled, bool):
+        return "错误：需要 task_id（整数）与 enabled（布尔值）。"
+    tasks = await get_store().list_tasks()
+    if not any(t["id"] == tid for t in tasks):
+        return f"错误：任务 #{tid} 不存在。"
+    await get_store().update_task(int(tid), enabled=enabled)
+    return f"定时任务 #{tid} 已{'启用' if enabled else '停用'}。"
 
 
 async def _t_superuser_list(bot, event, args) -> str:
@@ -1017,9 +1081,26 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("send_group_message", "让机器人在指定群发送一条普通群消息（仅限白名单群；与「群公告」不同；用户说“在群里说一句/帮我发条消息”时使用）",
               {"type": "object", "properties": {"group_id": {"type": "integer", "description": "目标群号，群聊中默认当前群；私聊时必须指定"}, "text": {"type": "string", "description": "要发送的文本内容"}}, "required": ["text"]},
               "superuser", _t_group_send),
-        _tool("list_scheduled_tasks", "查看定时任务列表（增删改在 Web 面板）",
+        _tool("list_scheduled_tasks", "查看定时任务列表（可用对话创建/删除/启停）",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_task_list),
+        _tool("create_scheduled_task", "创建定时任务（到点自动在群里发消息；用户说“每天9点提醒/每周一提醒”时使用；仅限白名单群）",
+              {"type": "object", "properties": {
+                  "time": {"type": "string", "description": "触发时间 HH:MM（北京时间）"},
+                  "message": {"type": "string", "description": "到点发送的内容"},
+                  "repeat": {"type": "string", "enum": ["daily", "weekdays", "weekend", "weekly", "once"], "description": "默认 daily"},
+                  "weekday": {"type": "integer", "description": "repeat=weekly 时必填：0=周一 … 6=周日"},
+                  "date": {"type": "string", "description": "repeat=once 时必填：YYYY-MM-DD"},
+                  "at_all": {"type": "boolean", "description": "是否 @全体成员，默认否（需要机器人为群管理员）"},
+                  "group_id": {"type": "integer", "description": "目标群号，群聊中默认当前群"},
+              }, "required": ["time", "message"]},
+              "superuser", _t_task_create),
+        _tool("delete_scheduled_task", "删除定时任务（需要 task_id，可用 list_scheduled_tasks 查看编号）",
+              {"type": "object", "properties": {"task_id": {"type": "integer"}}, "required": ["task_id"]},
+              "superuser", _t_task_delete),
+        _tool("toggle_scheduled_task", "启用/停用定时任务（需要 task_id 与 enabled）",
+              {"type": "object", "properties": {"task_id": {"type": "integer"}, "enabled": {"type": "boolean"}}, "required": ["task_id", "enabled"]},
+              "superuser", _t_task_toggle),
         _tool("list_superusers", "查看超级管理员列表",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_superuser_list),
