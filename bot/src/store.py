@@ -286,7 +286,7 @@ class Store:
         conn = await self._ensure()
         sql = (
             "SELECT id, ts, group_id, user_id, word, action, mute_minutes, reason,"
-            " appeal_status, appeal_text FROM punishments"
+            " appeal_status, appeal_text, source FROM punishments"
         )
         params: list[int] = []
         if group_id is not None:
@@ -300,7 +300,7 @@ class Store:
             {
                 "id": r[0], "ts": r[1], "group_id": r[2], "user_id": r[3], "word": r[4],
                 "action": r[5], "mute_minutes": r[6], "reason": r[7],
-                "appeal_status": r[8], "appeal_text": r[9],
+                "appeal_status": r[8], "appeal_text": r[9], "source": r[10],
             }
             for r in rows
         ]
@@ -375,14 +375,14 @@ class Store:
     async def pending_appeals(self) -> list[dict]:
         conn = await self._ensure()
         async with conn.execute(
-            "SELECT id, ts, group_id, user_id, word, action, appeal_text, appeal_ts"
+            "SELECT id, ts, group_id, user_id, word, action, appeal_text, appeal_ts, source"
             " FROM punishments WHERE appeal_status = 'pending' ORDER BY appeal_ts",
         ) as cur:
             rows = await cur.fetchall()
         return [
             {
                 "id": r[0], "ts": r[1], "group_id": r[2], "user_id": r[3], "word": r[4],
-                "action": r[5], "appeal_text": r[6], "appeal_ts": r[7],
+                "action": r[5], "appeal_text": r[6], "appeal_ts": r[7], "source": r[8],
             }
             for r in rows
         ]

@@ -1901,6 +1901,7 @@ type Punishment = {
   reason: string;
   appeal_status: string;
   appeal_text: string;
+  source: string;
 };
 
 type PunishmentsData = {
@@ -1915,8 +1916,14 @@ type PunishmentsData = {
     action: string;
     appeal_text: string;
     appeal_ts: string;
+    source: string;
   }[];
   groups: number[];
+};
+
+const SOURCE_LABEL: Record<string, string> = {
+  sensitive: "敏感词",
+  vision: "图片",
 };
 
 const ACTION_LABEL: Record<string, string> = {
@@ -1971,6 +1978,9 @@ function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void })
                 <div className="text-sm">
                   <b>#{a.id}</b> QQ {a.user_id} · 群 {a.group_id} · 命中「{a.word}」 ·{" "}
                   {ACTION_LABEL[a.action] ?? a.action}
+                  <Badge variant="secondary" className="ml-1">
+                    {SOURCE_LABEL[a.source] ?? a.source}
+                  </Badge>
                   <p className="text-muted-foreground text-xs">
                     申诉：{a.appeal_text}（{shortTime(a.appeal_ts)}）
                   </p>
@@ -2060,6 +2070,7 @@ function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void })
                   <TableHead>群</TableHead>
                   <TableHead>QQ</TableHead>
                   <TableHead>命中词</TableHead>
+                  <TableHead>来源</TableHead>
                   <TableHead>处理</TableHead>
                   <TableHead>AI 理由</TableHead>
                   <TableHead>申诉</TableHead>
@@ -2074,6 +2085,9 @@ function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void })
                     <TableCell className="font-mono">{p.group_id}</TableCell>
                     <TableCell className="font-mono">{p.user_id}</TableCell>
                     <TableCell>{p.word}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{SOURCE_LABEL[p.source] ?? p.source}</Badge>
+                    </TableCell>
                     <TableCell>
                       {ACTION_LABEL[p.action] ?? p.action}
                       {p.mute_minutes ? ` ${p.mute_minutes} 分` : ""}

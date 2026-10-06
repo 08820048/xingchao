@@ -285,6 +285,20 @@ async def handle_vision(bot: Bot, event: GroupMessageEvent, matcher: Matcher) ->
                     muted = True
                 except Exception:
                     logger.warning("违规图片禁言失败（机器人可能不是群管理员）", exc_info=True)
+        if recalled or muted:
+            action = "recall_mute" if (recalled and muted) else ("mute" if muted else "recall")
+            try:
+                await get_store().add_punishment(
+                    group_id=event.group_id,
+                    user_id=event.user_id,
+                    word=CATEGORY_LABEL.get(category, category),
+                    action=action,
+                    mute_minutes=mute_minutes if muted else 0,
+                    reason=reason,
+                    source="vision",
+                )
+            except Exception:
+                logger.exception("写入图片违规记录失败")
         if await _kv("vision_notify"):
             status = "已撤回" if recalled else ("跳过（发送者为管理员）" if privileged else "撤回失败")
             extra = f"，并已禁言 {mute_minutes} 分钟" if muted else ""
