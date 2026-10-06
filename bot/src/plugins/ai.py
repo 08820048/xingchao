@@ -676,6 +676,28 @@ async def _t_notice_list(bot, event, args) -> str:
     return _j({"公告": [{"内容": str(n.get("content", ""))[:100], "发布时间": n.get("publish_time", "")} for n in items[:5]]})
 
 
+async def _t_group_send(bot, event, args) -> str:
+    """超管让机器人在指定群发一条普通消息（仅限白名单群，避免误发到不受控的群）。"""
+    from src.permission import merged_whitelist
+
+    text = str(args.get("text", "")).strip()
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not text:
+        return "错误：需要 text（要发送的内容）。"
+    if not group_id:
+        return "错误：需要 group_id（目标群号）；私聊时必须指定，群聊中默认当前群。"
+    group_id = int(group_id)
+    if group_id not in merged_whitelist():
+        return f"错误：群 {group_id} 不在白名单内，为安全起见不向其发送消息。"
+    if len(text) > 500:
+        return "错误：内容过长（上限 500 字）。"
+    try:
+        await bot.call_api("send_group_msg", group_id=group_id, message=text)
+    except Exception as e:
+        return f"发送失败：{e}（常见原因：机器人不在该群、被禁言或非管理员）"
+    return f"已发送到群 {group_id}：{text[:60]}"
+
+
 async def _t_task_list(bot, event, args) -> str:
     from src.plugins.scheduler import REPEAT_LABEL, WEEKDAY_NAME
     tasks = await get_store().list_tasks()
@@ -992,6 +1014,9 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("get_group_notices", "查看当前群公告列表",
               {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": []},
               "superuser", _t_notice_list),
+        _tool("send_group_message", "让机器人在指定群发送一条普通群消息（仅限白名单群；与「群公告」不同；用户说“在群里说一句/帮我发条消息”时使用）",
+              {"type": "object", "properties": {"group_id": {"type": "integer", "description": "目标群号，群聊中默认当前群；私聊时必须指定"}, "text": {"type": "string", "description": "要发送的文本内容"}}, "required": ["text"]},
+              "superuser", _t_group_send),
         _tool("list_scheduled_tasks", "查看定时任务列表（增删改在 Web 面板）",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_task_list),
