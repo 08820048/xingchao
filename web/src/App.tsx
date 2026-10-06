@@ -197,6 +197,172 @@ function Login({ onOk }: { onOk: () => void }) {
   );
 }
 
+/* ------------------------------------------------------------------ 图片/二维码审核 */
+
+type VisionConfig = {
+  enabled: boolean;
+  mute_minutes: number;
+  notify: boolean;
+  cooldown: number;
+  daily_limit: number;
+  qrcode_enabled: boolean;
+  qrcode_types: string;
+  qrcode_mute_minutes: number;
+  qrcode_notify: boolean;
+};
+
+const QR_TYPES: [string, string][] = [
+  ["wechat_group", "微信群"],
+  ["wechat_personal", "微信个人号"],
+  ["wechat_work", "企业微信"],
+  ["qq_group", "QQ群"],
+  ["qq_personal", "QQ名片"],
+  ["url", "普通网址"],
+];
+
+function VisionCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [cfg, setCfg] = useState<VisionConfig | null>(null);
+  const [saving, setSaving] = useState(false);
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: VisionConfig }>("/panel/api/visionguard").then(
+      (r) => r.ok && setCfg(r.data),
+    );
+  }, []);
+  useEffect(() => load(), [load]);
+  if (!cfg) return <Spinner className="m-8" />;
+  const save = async (patch: Record<string, unknown>) => {
+    setSaving(true);
+    const r = await post("/panel/api/visionguard", patch);
+    setSaving(false);
+    if (r.ok) {
+      toast(r.data.message);
+      load();
+    } else toast(r.error || "保存失败", false);
+  };
+  const types = new Set(cfg.qrcode_types.split(",").filter(Boolean));
+  const toggleType = (t: string) => {
+    const next = new Set(types);
+    if (next.has(t)) next.delete(t);
+    else next.add(t);
+    save({ qrcode_types: [...next] });
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">图片与二维码审核</CardTitle>
+        <CardDescription>
+          二维码为本地解码识别（不耗 AI，AI 不可用时也能拦截）；违规图片走 AI 视觉模型。
+          命中后撤回、按下方配置禁言，并私聊通知超管
+        </CardDescription>
+      </CardHeader>
+      <CardPanel className="grid gap-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">二维码引流风控</p>
+              <p className="text-muted-foreground text-xs">识别微信群 / QQ 群等引流二维码</p>
+            </div>
+            <Switch
+              checked={cfg.qrcode_enabled}
+              onCheckedChange={(v) => save({ qrcode_enabled: v })}
+            />
+          </div>
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">二维码命中通知超管</p>
+              <p className="text-muted-foreground text-xs">私聊推送解码内容与处理结果</p>
+            </div>
+            <Switch
+              checked={cfg.qrcode_notify}
+              onCheckedChange={(v) => save({ qrcode_notify: v })}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label>拦截的二维码类型（点击切换，浅色为不拦截）</Label>
+          <div className="flex flex-wrap gap-1.5">
+            {QR_TYPES.map(([id, label]) => (
+              <Button
+                key={id}
+                size="sm"
+                variant={types.has(id) ? "default" : "outline"}
+                onClick={() => toggleType(id)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="qr-mute">二维码禁言（分钟）</Label>
+            <Input
+              id="qr-mute"
+              type="number"
+              value={cfg.qrcode_mute_minutes}
+              onChange={(e) => setCfg({ ...cfg, qrcode_mute_minutes: +e.target.value || 0 })}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="v-mute">图片禁言（分钟）</Label>
+            <Input
+              id="v-mute"
+              type="number"
+              value={cfg.mute_minutes}
+              onChange={(e) => setCfg({ ...cfg, mute_minutes: +e.target.value || 0 })}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="v-cd">每人冷却（秒）</Label>
+            <Input
+              id="v-cd"
+              type="number"
+              value={cfg.cooldown}
+              onChange={(e) => setCfg({ ...cfg, cooldown: +e.target.value || 0 })}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="v-dl">每群日限（次）</Label>
+            <Input
+              id="v-dl"
+              type="number"
+              value={cfg.daily_limit}
+              onChange={(e) => setCfg({ ...cfg, daily_limit: +e.target.value || 0 })}
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">图片命中通知超管</p>
+              <p className="text-muted-foreground text-xs">违规图片的私聊告警</p>
+            </div>
+            <Switch checked={cfg.notify} onCheckedChange={(v) => save({ notify: v })} />
+          </div>
+          <div className="flex items-end justify-end">
+            <Button
+              disabled={saving}
+              onClick={() =>
+                save({
+                  mute_minutes: cfg.mute_minutes,
+                  cooldown: cfg.cooldown,
+                  daily_limit: cfg.daily_limit,
+                  qrcode_mute_minutes: cfg.qrcode_mute_minutes,
+                })
+              }
+            >
+              {saving && <Spinner />}保存数值设置
+            </Button>
+          </div>
+        </div>
+      </CardPanel>
+    </Card>
+  );
+}
+
 /* ------------------------------------------------------------------ 仪表盘 */
 
 type Status = {
@@ -319,6 +485,8 @@ function Dashboard({
           </div>
         </CardPanel>
       </Card>
+
+      <VisionCard toast={toast} />
 
       <WelcomeCard toast={toast} />
 
@@ -1924,6 +2092,7 @@ type PunishmentsData = {
 const SOURCE_LABEL: Record<string, string> = {
   sensitive: "敏感词",
   vision: "图片",
+  qrcode: "二维码",
 };
 
 const ACTION_LABEL: Record<string, string> = {

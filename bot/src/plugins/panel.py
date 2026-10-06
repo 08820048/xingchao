@@ -749,6 +749,66 @@ def _register_routes() -> None:
                 logger.warning("申诉结果通知发送失败", exc_info=True)
         return JSONResponse({"ok": True, "data": {"message": msg}})
 
+    @app.get("/panel/api/visionguard")
+    async def panel_visionguard_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import visionguard as vg
+
+        return JSONResponse({"ok": True, "data": await vg.vision_config()})
+
+    @app.post("/panel/api/visionguard")
+    async def panel_visionguard_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import visionguard as vg
+
+        body = await request.json()
+        updates: dict[str, str] = {}
+        for key, kv_key in (
+            ("enabled", "vision_guard_enabled"),
+            ("notify", "vision_notify"),
+            ("qrcode_enabled", "qrcode_guard_enabled"),
+            ("qrcode_notify", "qrcode_notify"),
+        ):
+            if key in body:
+                if not isinstance(body[key], bool):
+                    return JSONResponse(
+                        {"ok": False, "error": f"{key} 应为布尔值"}, status_code=400
+                    )
+                updates[kv_key] = "true" if body[key] else "false"
+        for key, kv_key in (
+            ("mute_minutes", "vision_mute_minutes"),
+            ("cooldown", "vision_cooldown"),
+            ("daily_limit", "vision_daily_limit"),
+            ("qrcode_mute_minutes", "qrcode_mute_minutes"),
+        ):
+            if key in body:
+                try:
+                    num = int(body[key])
+                except (TypeError, ValueError):
+                    return JSONResponse({"ok": False, "error": f"{key} 应为整数"}, status_code=400)
+                if not 0 <= num <= 43200:
+                    return JSONResponse(
+                        {"ok": False, "error": f"{key} 应在 0-43200"}, status_code=400
+                    )
+                updates[kv_key] = str(num)
+        if "qrcode_types" in body:
+            raw = body["qrcode_types"]
+            types = [str(t).strip() for t in (raw if isinstance(raw, list) else str(raw).split(","))]
+            types = [t for t in types if t]
+            if not set(types) <= set(vg.QR_TYPE_LABEL):
+                return JSONResponse(
+                    {"ok": False, "error": "包含未知的二维码类型"}, status_code=400
+                )
+            updates["qrcode_types"] = ",".join(types)
+        if not updates:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        store = get_store()
+        for k, v in updates.items():
+            await store.set_kv(k, v)
+        return JSONResponse({"ok": True, "data": {"message": "图片/二维码审核配置已保存并生效"}})
+
     @app.get("/panel/api/report")
     async def panel_report_get(request: Request) -> JSONResponse:
         if not _authorized(request):
