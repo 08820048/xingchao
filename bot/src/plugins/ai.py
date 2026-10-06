@@ -181,9 +181,13 @@ async def generate_vision(
     prompt: str,
     *,
     model: str | None = None,
-    max_tokens: int = 400,
+    max_tokens: int = 1200,
 ) -> str | None:
-    """图片理解：image_ref 可为 http(s) URL 或 data URI；失败返回 None。"""
+    """图片理解：image_ref 可为 http(s) URL 或 data URI；失败返回 None。
+
+    注意：glm-5.3-flash 等思维链多模态模型的隐藏推理同样占用 max_tokens，
+    预算过小会出现 finish_reason=length 且 content 为空（表现为静默跳过），故给足空间。
+    """
     client = await get_client()
     if client is None:
         return None
