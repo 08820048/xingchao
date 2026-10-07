@@ -122,7 +122,8 @@ def _sender_name(event: GroupMessageEvent) -> str:
             or str(event.user_id))
 
 
-def _build_prompt(messages: list[dict[str, Any]], help_hit: bool) -> str:
+def _build_prompt(messages: list[dict[str, Any]], help_hit: bool,
+                  knowledge: str = "") -> str:
     transcript = "\n".join(
         f"{m['name']}: {m['text'][:100]}" for m in messages
     )
@@ -140,6 +141,13 @@ def _build_prompt(messages: list[dict[str, Any]], help_hit: bool) -> str:
     )
     if help_hit:
         prompt += "\n（提示：最近消息里似乎有人在求助或提问，如能给出有用回答就回答，否则 SKIP。）"
+    if knowledge:
+        prompt += (
+            "\n\n【开发者的博客/作品（如与话题相关，务必优先用它们回答或推荐）】\n"
+            f"{knowledge}\n"
+            "若上面内容正好能帮到大家，请在回复里自然推荐（包含名称和链接，"
+            "可放宽到 100 字以内，链接放在最后）；不相关则不要提，也不要硬塞广告。"
+        )
     return prompt
 
 
@@ -186,9 +194,27 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
 
     recent = buf[-3:]
     help_hit = any(m["help"] for m in recent)
+    context_n = int(await _kv("proactive_context_messages"))
+    context_msgs = buf[-context_n:]
+
+    # 博客知识召回：强命中 + 求助语气 → 门槛降为 1 条消息（积极推荐模式）
+    knowledge = ""
+    blog_strong = False
+    try:
+        from src.plugins import blog as blog_plugin
+
+        hits = await blog_plugin.recall("\n".join(m["text"] for m in context_msgs))
+        if hits:
+            knowledge = blog_plugin.format_knowledge(hits)
+            blog_strong = bool(hits.get("strong"))
+    except Exception:
+        logger.exception("博客知识召回失败")
+
     min_messages = int(await _kv("proactive_help_min_messages")) if help_hit \
         else int(await _kv("proactive_min_messages"))
     min_users = 1 if help_hit else int(await _kv("proactive_min_users"))
+    if help_hit and blog_strong:
+        min_messages = 1
     users = {m["user_id"] for m in buf}
     if len(buf) < min_messages or len(users) < min_users:
         return
@@ -197,9 +223,8 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
     _last_attempt[event.group_id] = now
     await _bump_usage(event.group_id)
 
-    context_n = int(await _kv("proactive_context_messages"))
     reply = await ai_plugin.generate_text(
-        _build_prompt(buf[-context_n:], help_hit),
+        _build_prompt(context_msgs, help_hit, knowledge),
         system="你是 QQ 群机器人星潮，聊天自然、简短、有分寸，不刷屏、不硬插话。",
         temperature=0.8,
     )
@@ -209,6 +234,8 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
 
     reply = md_to_qq(reply).strip().replace("\n", " ")
     max_chars = int(await _kv("proactive_max_reply_chars"))
+    if knowledge:
+        max_chars = max(max_chars, 200)  # 推荐博客/作品时留出链接空间
     if len(reply) > max_chars:
         reply = reply[:max_chars]
 

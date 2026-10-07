@@ -84,6 +84,7 @@
 | `/notice <内容>` / `/notice list` | `publish_group_notice` / `get_group_notices` | 超管 | 「发个公告说周五维护」 |
 | —（内置能力） | `send_group_message` | 超管 | 「在群 123 里说一句：今晚八点活动开始」 |
 | `/task list` | `list_scheduled_tasks` / `create_scheduled_task` / `delete_scheduled_task` / `toggle_scheduled_task` | 超管 | 「现在有哪些定时任务」「每天 9 点在群里提醒大家签到」「把 3 号任务停掉」 |
+| `/blog status/refresh/list/on/off` | `search_blog` / `get_blog_post`（所有人）、`refresh_blog` / `set_blog_enabled`（超管） | 见左 | 「有没有 Mac 剪贴板工具推荐」「博客里有没有讲 git 的文章」「刷新一下博客知识库」 |
 | `/通过 /approve <序号>` | `approve_join_request` | 超管 | 「通过 3 号申请」 |
 | `/拒绝 /reject <序号>` | `reject_join_request` | 超管 | 「拒绝 3 号申请，理由：不符合要求」 |
 | `/pending` | `get_pending_join_requests` | 超管 | 「有没有人申请进群」 |
@@ -102,6 +103,11 @@
 > - **群聊主动性**（`proactive.py`）：群里讨论明确话题或有人求助/提问时，AI 自然加入一句；
 >   两段式控本（活跃度门槛 + 模型自行 SKIP）+ 冷却/日限；开关 `proactive_enabled`
 >   （`/plugin proactive on|off`）。
+> - **博客知识关联推荐**（`blog.py` + `src/blog_kb.py`）：本地索引开发者博客 xuyi.dev 的
+>   文章与作品集（RSS + sitemap 全量补齐，24 小时自动刷新）。对话与主动插话时按话题
+>   相关性自动注入「博主内容·优先参考」，引导 AI 优先推荐；强相关 + 求助语气时，
+>   主动接话门槛降为 1 条消息（保留 5 分钟/群冷却与每日上限）。开关 `blog_enabled`
+>   （`/plugin blog on|off`、面板「博客」页、仪表盘模块开关）。
 
 ## 5. 消息格式规约（Markdown 处理）
 
@@ -127,3 +133,6 @@
 - 2026-10-05：敏感词支持变体归一化（全角/空格标点/繁简/可选拼音）与豁免短语；
   新增处罚记录（面板「违规记录」页）与私聊 `/申诉`（处理后自动解除禁言）；
   新增群活跃周报（面板「定时任务」页配置）。
+- 2026-10-06：新增博客知识关联推荐（xuyi.dev）：本地索引 73+ 篇文章与 12 款作品集，
+  对话/主动插话自动按相关性注入并优先推荐；新增 `/blog` 指令与 `search_blog` /
+  `get_blog_post` / `refresh_blog` / `set_blog_enabled` 工具；面板「博客」页 + 模块开关。

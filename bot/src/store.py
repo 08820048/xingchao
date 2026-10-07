@@ -57,6 +57,15 @@ CREATE TABLE IF NOT EXISTS punishments (
     appeal_text TEXT DEFAULT '',
     appeal_ts TEXT
 );
+CREATE TABLE IF NOT EXISTS blog_posts (
+    url TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    summary TEXT DEFAULT '',
+    category TEXT DEFAULT '',
+    published TEXT DEFAULT '',
+    excerpt TEXT DEFAULT '',
+    fetched_at TEXT NOT NULL
+);
 """
 
 
@@ -386,6 +395,48 @@ class Store:
             }
             for r in rows
         ]
+
+    # ------------------------------------------------------------ 博客知识库
+
+    async def replace_blog_posts(self, posts: list[dict]) -> None:
+        """全量替换文章索引；每篇保留自己的 fetched_at（无则记为当前时间）。"""
+        default_ts = datetime.now().astimezone().isoformat(timespec="seconds")
+        conn = await self._ensure()
+        await conn.execute("DELETE FROM blog_posts")
+        await conn.executemany(
+            "INSERT INTO blog_posts (url, title, summary, category, published, excerpt, fetched_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    p.get("url", ""), p.get("title", ""), p.get("summary", ""),
+                    p.get("category", ""), p.get("published", ""), p.get("excerpt", ""),
+                    p.get("fetched_at") or default_ts,
+                )
+                for p in posts
+            ],
+        )
+        await conn.commit()
+
+    async def list_blog_posts(self) -> list[dict]:
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT url, title, summary, category, published, excerpt, fetched_at"
+            " FROM blog_posts"
+        ) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "url": r[0], "title": r[1], "summary": r[2], "category": r[3],
+                "published": r[4], "excerpt": r[5], "fetched_at": r[6],
+            }
+            for r in rows
+        ]
+
+    async def count_blog_posts(self) -> int:
+        conn = await self._ensure()
+        async with conn.execute("SELECT COUNT(*) FROM blog_posts") as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
 
     async def close(self) -> None:
         if self._conn is not None:

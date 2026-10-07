@@ -133,6 +133,7 @@ async def _status_payload() -> dict[str, Any]:
     link_preview_enabled = await store.get_kv("link_preview_enabled")
     vision_guard_enabled = await store.get_kv("vision_guard_enabled")
     proactive_enabled = await store.get_kv("proactive_enabled")
+    blog_enabled = await store.get_kv("blog_enabled")
     log_dir = cfg.xingchao_log_dir
     log_files = sorted(log_dir.glob("group-*.jsonl")) if log_dir.exists() else []
     names = sorted(
@@ -151,6 +152,7 @@ async def _status_payload() -> dict[str, Any]:
         "link_preview_enabled": link_preview_enabled != "false",
         "vision_guard_enabled": vision_guard_enabled != "false",
         "proactive_enabled": proactive_enabled != "false",
+        "blog_enabled": blog_enabled != "false",
         "log_files": [f.name for f in log_files],
         "today": datetime.now().astimezone().strftime("%Y-%m-%d"),
     }
@@ -1042,9 +1044,9 @@ def _register_routes() -> None:
         body = await request.json()
         key = str(body.get("key", ""))
         enabled = body.get("enabled")
-        if key not in ("reply", "welcome", "link", "vision", "proactive") or not isinstance(enabled, bool):
+        if key not in ("reply", "welcome", "link", "vision", "proactive", "blog") or not isinstance(enabled, bool):
             return JSONResponse(
-                {"ok": False, "error": "key 应为 reply/welcome/link/vision/proactive，enabled 应为布尔值"}, status_code=400
+                {"ok": False, "error": "key 应为 reply/welcome/link/vision/proactive/blog，enabled 应为布尔值"}, status_code=400
             )
         kv_key = {
             "link": "link_preview_enabled",
@@ -1064,10 +1066,54 @@ def _register_routes() -> None:
             "link": "链接自动解读",
             "vision": "图片识别与违规处理",
             "proactive": "群聊主动性",
+            "blog": "博客知识关联推荐",
         }
         return JSONResponse(
             {"ok": True, "data": {"message": f"{labels[key]}已{'开启' if enabled else '关闭'}"}}
         )
+
+    @app.get("/panel/api/blog")
+    async def panel_blog_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import blog as blog_plugin
+
+        try:
+            return JSONResponse({"ok": True, "data": await blog_plugin.status()})
+        except Exception:
+            logger.exception("读取博客知识库状态失败")
+            return JSONResponse({"ok": False, "error": "读取失败"}, status_code=500)
+
+    @app.post("/panel/api/blog")
+    async def panel_blog_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import blog as blog_plugin
+
+        body = await request.json()
+        if "enabled" in body:
+            if not isinstance(body["enabled"], bool):
+                return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
+            await get_store().set_kv("blog_enabled", "true" if body["enabled"] else "false")
+            return JSONResponse(
+                {"ok": True,
+                 "data": {"message": f"博客知识关联推荐已{'开启' if body['enabled'] else '关闭'}"}}
+            )
+        if body.get("refresh"):
+            try:
+                result = await blog_plugin.refresh(force=True)
+            except Exception:
+                logger.exception("面板刷新博客知识库失败")
+                return JSONResponse({"ok": False, "error": "刷新失败"}, status_code=500)
+            if not result.get("ok"):
+                return JSONResponse(
+                    {"ok": False, "error": f"刷新失败：{result.get('error', '未知错误')}（沿用旧数据）"},
+                    status_code=502,
+                )
+            return JSONResponse(
+                {"ok": True, "data": {"message": f"已刷新：共 {result['count']} 篇文章（{result.get('time', '')}）"}}
+            )
+        return JSONResponse({"ok": False, "error": "需要 enabled 或 refresh 字段"}, status_code=400)
 
     @app.get("/panel/api/groups")
     async def panel_groups_get(request: Request) -> JSONResponse:

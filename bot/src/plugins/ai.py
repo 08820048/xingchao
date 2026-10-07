@@ -633,6 +633,49 @@ async def _t_about(bot, event, args) -> str:
     })
 
 
+async def _t_blog_search(bot, event, args) -> str:
+    from src.plugins import blog as blog_plugin
+    query = str(args.get("keywords", "")).strip()
+    if not query:
+        return "错误：需要 keywords（要搜索的主题关键词，如 Mac 剪贴板、git 分支、端口占用）。"
+    if not await blog_plugin.is_enabled():
+        return "博客知识关联推荐当前已关闭（超管可开启）。"
+    hits = await blog_plugin.search(query, limit=5)
+    if not hits:
+        return "博客知识库中没有找到与该主题相关的内容（可能尚未就绪，或确实没有相关文章/作品）。"
+    return _j({"结果（优先级由高到低）": hits})
+
+
+async def _t_blog_post(bot, event, args) -> str:
+    from src.plugins import blog as blog_plugin
+    target = str(args.get("url_or_title", "")).strip()
+    if not target:
+        return "错误：需要 url_or_title（文章链接或标题关键词）。"
+    post = await blog_plugin.get_post(target)
+    if not post:
+        return "错误：未找到该文章，可先用 search_blog 搜索主题。"
+    return _j({
+        "标题": post.get("title"), "分类": post.get("category"),
+        "发布日期": post.get("published"), "链接": post.get("url"),
+        "摘要": post.get("summary"), "正文节选": post.get("excerpt"),
+    })
+
+
+async def _t_blog_refresh(bot, event, args) -> str:
+    from src.plugins import blog as blog_plugin
+    result = await blog_plugin.refresh(force=True)
+    if result.get("ok"):
+        return f"博客知识库已刷新：{result['count']} 篇文章（{result.get('time', '')}）。"
+    return f"刷新失败：{result.get('error', '未知错误')}（沿用旧数据，稍后会自动重试）。"
+
+
+async def _t_blog_toggle(bot, event, args) -> str:
+    from src.plugins import blog as blog_plugin
+    enabled = bool(args.get("enabled"))
+    await blog_plugin.set_enabled(enabled)
+    return f"博客知识关联推荐已{'开启' if enabled else '关闭'}。"
+
+
 async def _t_welcome_view(bot, event, args) -> str:
     from src.plugins import groupadmin as ga
     return _j({"启用": await ga.is_welcome_enabled(), "欢迎语": await ga.get_welcome_text()})
@@ -1063,6 +1106,18 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("get_about", "获取机器人与开发者信息",
               {"type": "object", "properties": {}, "required": []},
               "all", _t_about),
+        _tool("search_blog", "搜索开发者博客（xuyi.dev）的文章与作品集。当用户求推荐软件/工具、求助技术问题、聊到编程学习（Git、Rust、Unity、AI 开发等）或可能与博主作品相关的话题时，先调用本工具查询；找到相关内容后优先推荐",
+              {"type": "object", "properties": {"keywords": {"type": "string", "description": "主题关键词，如 Mac 剪贴板、git 分支、端口占用"}}, "required": ["keywords"]},
+              "all", _t_blog_search),
+        _tool("get_blog_post", "读取某篇博客文章的摘要与正文节选（先用 search_blog 找到文章，再按标题或链接读取）",
+              {"type": "object", "properties": {"url_or_title": {"type": "string", "description": "文章链接或标题关键词"}}, "required": ["url_or_title"]},
+              "all", _t_blog_post),
+        _tool("refresh_blog", "刷新博客知识库（重新抓取 xuyi.dev 的最新文章列表）",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_blog_refresh),
+        _tool("set_blog_enabled", "开启/关闭博客知识关联推荐（关闭后 AI 不再优先推荐博客内容）",
+              {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
+              "superuser", _t_blog_toggle),
         _tool("get_welcome", "查看进群欢迎语及开关状态",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_welcome_view),
@@ -1149,13 +1204,23 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
     group_key = getattr(event, "group_id", 0) or -int(event.user_id)
     history = _get_history(group_key)
     scene = await _build_scene(bot, event)
+    blog_context = ""
+    if text != PURE_AT_PROMPT:  # 纯 @ 没有实际话题，不做博客召回
+        try:
+            from src.plugins import blog as blog_plugin
+
+            blog_context = await blog_plugin.context_for(text)
+        except Exception:
+            logger.exception("博客知识注入失败")
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": cfg["ai_system_prompt"]},
         {"role": "system", "content": _capability_prompt(all_tools, is_superuser)},
         {"role": "system", "content": scene},
-        *history,
-        {"role": "user", "content": text},
     ]
+    if blog_context:
+        messages.append({"role": "system", "content": blog_context})
+    messages.extend(history)
+    messages.append({"role": "user", "content": text})
 
     reply: str | None = None
     try:

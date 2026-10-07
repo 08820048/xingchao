@@ -553,3 +553,17 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - 修复：join_request 匹配器补上白名单规则（此前非白名单群的申请也会被处理）；
   转人工条目超 1 小时自动清理（QQ 侧凭证此时已过期）
 - AI 可按自然语言批量审批（"回答正经的通过，敷衍的拒绝"）
+
+### 17.17 博客知识关联推荐（xuyi.dev）
+
+- blog 插件（`blog.py` + `src/blog_kb.py`）：本地索引开发者博客 xuyi.dev 的文章与作品集，
+  群聊话题相关时 AI 优先推荐（如 Mac 剪贴板 → Clibo；学 Git → 《GitHub 小册》）
+- 数据源：RSS（最新 50 篇，含正文节选）+ sitemap（全量 73+ 篇；较老文章单篇抓取，30 天缓存）
+- 相关性：中文 2-4 字 n-gram + 英文词倒排索引 + IDF 打分；停用词与语气助词切分降噪；
+  作品集别名人工维护（Clibo/剪贴板、Berth/端口、Chupin/简历 等 12 款）
+- 注入：对话（ai.py chat()）与主动插话（proactive.py）自动注入「博主内容·优先参考」；
+  强相关 + 求助语气时主动接话门槛降为 1 条消息（保留 5 分钟/群冷却与每日上限）
+- 指令：`/blog status|refresh|list|on|off`（超管）；AI 工具 `search_blog` / `get_blog_post`（所有人）、
+  `refresh_blog` / `set_blog_enabled`（超管）
+- 开关 `blog_enabled`（默认开）；面板「博客」页（状态/刷新/文章/作品集）+ 仪表盘模块开关
+- 刷新：启动即检查，每 6 小时检查一次、超 24 小时重新抓取；失败保留旧索引并记录错误
