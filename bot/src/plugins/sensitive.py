@@ -7,7 +7,7 @@
 - 变体匹配（sensitive_variant_level）：basic=原样；normal=归一化（全角/空格标点/繁简）；
   pinyin=归一化+拼音（拦「加 微 信」「ＶＰＮ」「廣告」「weixin/威信」等绕过写法）
 - 命中候选默认交 AI 结合语境复核：只有确认违规才撤回/禁言，正常讨论直接放行；
-  AI 不可用时按 fallback 处理（默认仅通知超管人工判断，不自动撤回）
+  AI 不可用时按 fallback 处理（默认 recall：直接按程序规则撤回，不等人工）
 - 动作：撤回原消息；mute_minutes > 0 时追加禁言；notify 开启时通知超管
 - 撤回失败（机器人非群管理员等）会如实转述给超管
 """
@@ -54,7 +54,7 @@ DEFAULTS: dict[str, Any] = {
     "sensitive_mute_minutes": 0,  # 命中后禁言分钟数，0 = 不禁言
     "sensitive_notify": True,  # 命中后通知超管
     "sensitive_review": True,  # 命中候选后由 AI 结合语境复核
-    "sensitive_review_fallback": "notify",  # AI 不可用：notify=仅通知不撤回 / recall=照常撤回
+    "sensitive_review_fallback": "recall",  # AI 不可用：recall=按程序规则照常撤回 / notify=仅通知不撤回
     "sensitive_variant_level": "normal",  # 变体匹配：basic=原样 / normal=归一化 / pinyin=归一化+拼音
 }
 _VARIANT_LEVELS = ("basic", "normal", "pinyin")
@@ -73,6 +73,24 @@ async def _kv(key: str) -> Any:
         except (TypeError, ValueError):
             return default
     return raw
+
+
+@get_driver().on_startup
+async def _migrate_fallback_recall() -> None:
+    """一次性迁移：AI 复核不可用的兜底由「仅通知」改为「直接撤回」，覆盖旧的已保存值。"""
+    store = get_store()
+    if await store.get_kv("sensitive_fallback_recall_migrated"):
+        return
+    await store.set_kv("sensitive_review_fallback", "recall")
+    overrides = await _group_overrides()
+    changed = False
+    for fields in overrides.values():
+        if fields.get("sensitive_review_fallback") == "notify":
+            fields["sensitive_review_fallback"] = "recall"
+            changed = True
+    if changed:
+        await store.set_kv("sensitive_group_config", json.dumps(overrides, ensure_ascii=False))
+    await store.set_kv("sensitive_fallback_recall_migrated", "1")
 
 
 async def _group_overrides() -> dict[int, dict[str, Any]]:
@@ -119,7 +137,7 @@ async def sensitive_config(group_id: int | None = None) -> dict[str, Any]:
         isinstance(review, str) and review != "false"
     )
     if merged["sensitive_review_fallback"] not in ("notify", "recall"):
-        merged["sensitive_review_fallback"] = "notify"
+        merged["sensitive_review_fallback"] = "recall"
     if merged["sensitive_variant_level"] not in _VARIANT_LEVELS:
         merged["sensitive_variant_level"] = "normal"
     return merged

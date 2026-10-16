@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from nonebot import get_bot, get_driver
@@ -51,11 +51,18 @@ async def report_config() -> dict[str, Any]:
 
 def _fmt_delta(total: int, prev: int) -> str:
     if prev <= 0:
-        return "（前一周无数据）"
+        return "较上周 —"
     pct = round((total - prev) / prev * 100)
     if pct == 0:
-        return "（较前一周持平）"
-    return f"（较前一周 {'+' if pct > 0 else ''}{pct}%）"
+        return "较上周 持平"
+    return f"较上周 {'▲' if pct > 0 else '▼'} {abs(pct)}%"
+
+
+def _bar(value: int, peak: int, width: int = 8) -> str:
+    """按最大值等比的横条（至少 1 格，0 条消息为空）。"""
+    if value <= 0 or peak <= 0:
+        return ""
+    return "█" * max(1, round(value / peak * width))
 
 
 async def _member_name(bot, group_id: int, user_id: int) -> str:
@@ -88,21 +95,31 @@ async def build_report(group_id: int) -> str | None:
     top = await store.get_top_users_range(start, end, group_id, limit=3)
     busiest = max(series, key=lambda p: p[1])
 
+    peak = busiest[1]
     lines = [
-        f"📊 群活跃周报（{start[5:]} ~ {end[5:]}）",
-        f"消息 {total} 条{_fmt_delta(total, prev_total)}",
-        f"参与 {users} 人 · 最活跃：{busiest[0][5:]}（{busiest[1]} 条）",
+        "📊 群活跃周报",
+        f"🗓 {start[5:].replace('-', '/')} ~ {end[5:].replace('-', '/')}",
+        "",
+        "「📈 本周概览」",
+        f"  ◈ 消息总量：{total} 条（{_fmt_delta(total, prev_total)}）",
+        f"  ◈ 参与人数：{users} 人",
+        f"  ◈ 日均消息：{round(total / max(len(series), 1))} 条",
+        f"  ◈ 最活跃日：{WEEKDAY_NAME[date.fromisoformat(busiest[0]).weekday()]}（{busiest[1]} 条）",
+        "",
+        "「🗓 每日走势」",
     ]
+    for day, cnt in series:
+        wd = WEEKDAY_NAME[date.fromisoformat(day).weekday()]
+        lines.append(f"  {wd} {_bar(cnt, peak):<8} {cnt}")
     if top:
         try:
             bot = get_bot()
         except Exception:
             bot = None
-        names = []
-        for uid, cnt in top:
+        lines += ["", "「🏆 发言榜」"]
+        for medal, (uid, cnt) in zip(("🥇", "🥈", "🥉"), top, strict=False):
             name = await _member_name(bot, group_id, uid) if bot else str(uid)
-            names.append(f"{name} {cnt}")
-        lines.append("🏆 发言榜：" + " · ".join(names))
+            lines.append(f"  {medal} {name} · {cnt} 条")
     return "\n".join(lines)
 
 
