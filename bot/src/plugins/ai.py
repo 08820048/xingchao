@@ -937,6 +937,20 @@ def _safe_calc(expr: str) -> Any:
     return ev(_ast.parse(expr, mode="eval"))
 
 
+async def _t_send_voice(bot, event, args) -> str:
+    from src.plugins.voice import send_voice
+
+    return await send_voice(bot, event, str(args.get("text", "")))
+
+
+async def _t_voice_reply_toggle(bot, event, args) -> str:
+    from src.plugins.voice import set_voice_reply
+
+    enabled = bool(args.get("enabled"))
+    await set_voice_reply(event, enabled)
+    return "已开启：之后我在当前会话默认用语音回复" if enabled else "已关闭：之后改回文字回复"
+
+
 async def _t_calc(bot, event, args) -> str:
     expr = str(args.get("expression", ""))[:200]
     if not expr:
@@ -1049,6 +1063,12 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("get_current_time", "获取当前的日期、时间、星期与时区（回答任何与当前时间/日期/星期相关的问题前必须先调用）",
               {"type": "object", "properties": {}, "required": []},
               "all", _t_now),
+        _tool("send_voice", "在当前会话发送一条语音消息，把 text 用语音念出来（用户说“发语音/用语音说/念给我听/语音回复我”时使用；text 是要说的话，口语化、300 字内；发送成功后文字回复尽量简短，不要重复语音内容）",
+              {"type": "object", "properties": {"text": {"type": "string", "description": "要用语音说的内容"}}, "required": ["text"]},
+              "all", _t_send_voice),
+        _tool("set_voice_reply", "开启/关闭当前会话的默认语音回复（开启后我的回复默认以语音发出；用户说“以后都用语音回复/别发语音了、用文字”时使用）",
+              {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
+              "superuser", _t_voice_reply_toggle),
         _tool("calculate", "进行精确的算术计算（加减乘除、取余、幂运算）",
               {"type": "object", "properties": {"expression": {"type": "string", "description": "算术表达式，如 (3+4)*2 或 2**10"}}, "required": ["expression"]},
               "all", _t_calc),
@@ -1300,6 +1320,8 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     raw_text = event.message.extract_plain_text().strip()
     if _is_command(raw_text):
         return
+    if any(seg.type == "record" for seg in event.message):
+        return  # 语音消息由 voice 插件识别后再交给 AI
     # 纯 @（无文字）也必须响应：结合上下文回，没上下文就自由发挥，
     # 避免成员以为机器人挂了。AI 不可用时兜底固定回应。
     pure_at = not raw_text
@@ -1326,6 +1348,10 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
 
             await matcher.send(MessageSegment.at(event.user_id) + " " + random.choice(PURE_AT_FALLBACK))
         return
+    from src.plugins.voice import deliver_reply
+
+    if await deliver_reply(bot, event, reply):
+        return  # 语音回复模式：已发语音
     reply = md_to_qq(reply)  # QQ 不渲染标准 Markdown，发送前降级为可读文本
     dev_id = get_config().xingchao_developer_id
     try:

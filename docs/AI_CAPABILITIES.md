@@ -92,6 +92,8 @@
 | `/ai status` | `get_ai_status` | 超管 | 「AI 今天用了多少次」 |
 | `/ai clear` | `clear_ai_context` | 超管 | 「忘掉我们刚才聊的」 |
 | —（内置能力） | `get_group_info` / `get_member_list` / `get_member_info` | 所有人 | 「群里多少人」「他是什么身份」 |
+| `/说 <文字>` | `send_voice` | 所有人 | 「用语音说一下」「念给我听」「语音回复我」 |
+| `/语音回复 开|关` | `set_voice_reply` | 超管 | 「以后都用语音回复我」「别发语音了」 |
 | —（内置能力） | `get_current_time` / `calculate` | 所有人 | 「现在几点」「(3+4)*2 等于多少」 |
 
 > 另有三大类**自动能力**（无需指令、无需 AI 显式调用工具，直接监听群消息）：
