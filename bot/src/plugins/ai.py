@@ -951,6 +951,12 @@ async def _t_voice_reply_toggle(bot, event, args) -> str:
     return "已开启：之后我在当前会话默认用语音回复" if enabled else "已关闭：之后改回文字回复"
 
 
+async def _t_send_selfie(bot, event, args) -> str:
+    from src.plugins.selfie import send_selfie
+
+    return await send_selfie(bot, event)
+
+
 async def _t_calc(bot, event, args) -> str:
     expr = str(args.get("expression", ""))[:200]
     if not expr:
@@ -1069,6 +1075,9 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_voice_reply", "开启/关闭当前会话的默认语音回复（开启后我的回复默认以语音发出；用户说“以后都用语音回复/别发语音了、用文字”时使用）",
               {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
               "superuser", _t_voice_reply_toggle),
+        _tool("send_selfie", "发送一张星潮本人的照片/自拍到当前会话（用户说“看看你的照片/发张自拍/你长什么样/给我看看你”时使用；发送后文字回复简短自然，不要描述图片细节）",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_send_selfie),
         _tool("calculate", "进行精确的算术计算（加减乘除、取余、幂运算）",
               {"type": "object", "properties": {"expression": {"type": "string", "description": "算术表达式，如 (3+4)*2 或 2**10"}}, "required": ["expression"]},
               "all", _t_calc),
