@@ -1,12 +1,12 @@
 """语音消息：发送语音（TTS）+ 接收语音识别（ASR）。
 
-- 发送：`/说 <文字>`（别名 /tts /语音）或 AI 工具 send_voice；用 edge-tts 合成 mp3，
-  以 base64 record 段发出（NapCat 自行转码 silk），无需 API Key
+- 发送：`/说 <文字>`（别名 /tts /语音）或 AI 工具 send_voice；群聊优先用 NapCat 的
+  QQ AI 语音（send_group_ai_record），失败/私聊退回 edge-tts 合成 mp3，以 base64 record 段发出
 - 接收：对机器人说的语音（私聊超管 / 群里回复机器人消息）→ 调 OpenAI 兼容
   /audio/transcriptions 转文字 → 交给 AI 对话回复；`/转文字` 回复一条语音可单独识别
 - 默认语音回复：AI 的回复默认以语音发出（按群/私聊独立开关，超管 `/语音回复 开|关`）；
   超过 300 字、含 @ 占位符或合成失败时自动退回文字
-- 配置（kv）：voice_name（默认 zh-CN-XiaoxiaoNeural）、voice_asr_model（默认 whisper-1）
+- 配置（kv）：voice_ai_character（QQ AI 语音角色 ID，空=自动取第一个）、voice_ai_record（false 关闭 AI 语音）、voice_name（默认 zh-CN-XiaoxiaoNeural）、voice_asr_model（默认 whisper-1）
 - 限制：合成文本 ≤ MAX_TTS_CHARS；每用户冷却 COOLDOWN 秒；语音 ≤ MAX_AUDIO_BYTES
 """
 
@@ -69,18 +69,62 @@ async def deliver_reply(bot: Bot, event: MessageEvent, reply: str) -> bool:
     text = md_to_qq(reply).strip()
     if not text or len(text) > MAX_TTS_CHARS:
         return False
-    audio = await synthesize(text)
-    if audio is None:
-        return False
-    try:
-        await bot.send(event, MessageSegment.record("base64://" + base64.b64encode(audio).decode()))
-    except Exception:
-        logger.exception("语音回复发送失败，退回文字")
-        return False
-    return True
+    err = await emit_voice(bot, event, text)
+    if err:
+        logger.warning(f"语音回复失败，退回文字：{err}")
+    return err is None
 
 
 # ---------------------------------------------------------------- TTS
+
+_ai_character: str | None = None  # 缓存的 QQ AI 语音角色 ID
+
+
+async def _pick_ai_character(bot: Bot, group_id: int) -> str | None:
+    """QQ AI 语音角色：kv voice_ai_character 优先，否则取 get_ai_characters 的第一个。"""
+    global _ai_character
+    configured = await get_store().get_kv("voice_ai_character")
+    if configured:
+        return str(configured)
+    if _ai_character:
+        return _ai_character
+    res = await bot.call_api("get_ai_characters", group_id=group_id, chat_type=1)
+    groups = res if isinstance(res, list) else (res or {}).get("data", [])
+    for grp in groups:
+        for ch in grp.get("characters", []):
+            if ch.get("character_id"):
+                _ai_character = str(ch["character_id"])
+                return _ai_character
+    return None
+
+
+async def emit_voice(bot: Bot, event: MessageEvent, text: str) -> str | None:
+    """发送语音，成功返回 None，失败返回中文错误说明。
+
+    群聊优先用 NapCat 的 QQ 官方 AI 语音（send_group_ai_record，音色自然、不依赖外网）；
+    私聊或 AI 语音不可用（旧版 NapCat / 接口报错）时退回 edge-tts + record 段。
+    """
+    group_id = getattr(event, "group_id", None)
+    if group_id and await get_store().get_kv("voice_ai_record") != "false":
+        try:
+            character = await _pick_ai_character(bot, group_id)
+            if character:
+                await bot.call_api(
+                    "send_group_ai_record", group_id=group_id, character=character, text=text
+                )
+                return None
+            logger.warning("get_ai_characters 未返回可用角色，退回 edge-tts")
+        except Exception:
+            logger.warning("QQ AI 语音失败，退回 edge-tts", exc_info=True)
+    audio = await synthesize(text)
+    if audio is None:
+        return "语音合成失败（服务暂不可用），请稍后再试或改用文字回复。"
+    try:
+        await bot.send(event, MessageSegment.record("base64://" + base64.b64encode(audio).decode()))
+    except Exception as e:
+        logger.exception("语音发送失败")
+        return f"语音发送失败：{e}（常见原因：机器人被禁言或群禁止发语音）"
+    return None
 
 async def synthesize(text: str) -> bytes | None:
     """文本 → mp3 字节；失败返回 None。"""
@@ -113,15 +157,10 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str) -> str:
     wait = COOLDOWN - (now - _last_tts.get(event.user_id, 0))
     if wait > 0:
         return f"发语音太频繁了，请 {int(wait) + 1} 秒后再试。"
-    audio = await synthesize(text)
-    if audio is None:
-        return "语音合成失败（服务暂不可用），请稍后再试或改用文字回复。"
+    err = await emit_voice(bot, event, text)
+    if err:
+        return err
     _last_tts[event.user_id] = now
-    try:
-        await bot.send(event, MessageSegment.record("base64://" + base64.b64encode(audio).decode()))
-    except Exception as e:
-        logger.exception("语音发送失败")
-        return f"语音发送失败：{e}（常见原因：机器人被禁言或群禁止发语音）"
     _voiced.add(event.message_id)
     if len(_voiced) > 200:
         _voiced.clear()
