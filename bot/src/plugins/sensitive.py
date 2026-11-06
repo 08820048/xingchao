@@ -10,6 +10,9 @@
   AI 不可用时按 fallback 处理（默认 recall：直接按程序规则撤回，不等人工）
 - 动作：撤回原消息；mute_minutes > 0 时追加禁言；notify 开启时通知超管
 - 撤回失败（机器人非群管理员等）会如实转述给超管
+- 升级处罚（sensitive_escalation）：同一人在同一群窗口期（默认 30 天）内按已确认违规次数递进——
+  第 1 次=当前规则；第 2 次=禁言翻倍；第 3 次=最长禁言（30 天）；第 4 次起=踢出群聊（无需确认）。
+  AI 复核不可用时按兜底撤回的记录不计入次数；申诉通过的记录不再计数
 """
 
 from __future__ import annotations
@@ -55,6 +58,8 @@ DEFAULTS: dict[str, Any] = {
     "sensitive_notify": True,  # 命中后通知超管
     "sensitive_review": True,  # 命中候选后由 AI 结合语境复核
     "sensitive_review_fallback": "recall",  # AI 不可用：recall=按程序规则照常撤回 / notify=仅通知不撤回
+    "sensitive_escalation": True,  # 重复违规逐级加重：禁言翻倍 → 最长禁言 → 踢出
+    "sensitive_strike_days": 30,  # 违规次数统计窗口（天），窗口外的记录不再累计
     "sensitive_variant_level": "normal",  # 变体匹配：basic=原样 / normal=归一化 / pinyin=归一化+拼音
 }
 _VARIANT_LEVELS = ("basic", "normal", "pinyin")
@@ -136,6 +141,9 @@ async def sensitive_config(group_id: int | None = None) -> dict[str, Any]:
     merged["sensitive_review"] = review is True or (
         isinstance(review, str) and review != "false"
     )
+    esc = merged["sensitive_escalation"]
+    merged["sensitive_escalation"] = esc is True or (isinstance(esc, str) and esc != "false")
+    merged["sensitive_strike_days"] = max(1, int(merged["sensitive_strike_days"] or 30))
     if merged["sensitive_review_fallback"] not in ("notify", "recall"):
         merged["sensitive_review_fallback"] = "recall"
     if merged["sensitive_variant_level"] not in _VARIANT_LEVELS:
@@ -421,6 +429,26 @@ async def _ai_review(group_id: int, text: str, hit: str) -> tuple[str, str]:
     return decision, reason
 
 
+# ---------------------------------------------------------------- 升级处罚
+
+_MAX_MUTE_MINUTES = 30 * 24 * 60  # QQ 禁言上限 30 天
+_ESCALATION_BASE_MINUTES = 10  # 未配置基础禁言时，第 2 次起翻倍的基数
+
+
+def escalation_plan(strike: int, base_minutes: int) -> tuple[str, int]:
+    """第 strike 次（从 1 起）违规的处理，返回 (kind, mute_minutes)。
+
+    kind：base=沿用当前规则 / mute=禁言 / kick=踢出群聊
+    """
+    if strike <= 1:
+        return "base", base_minutes
+    if strike == 2:
+        return "mute", min(max(base_minutes, _ESCALATION_BASE_MINUTES) * 2, _MAX_MUTE_MINUTES)
+    if strike == 3:
+        return "mute", _MAX_MUTE_MINUTES
+    return "kick", 0
+
+
 # ---------------------------------------------------------------- 处理
 
 sensitive_matcher = on_message(rule=GROUP_WHITELIST, priority=3, block=False)
@@ -487,6 +515,21 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
         f"group={event.group_id} user={event.user_id} 词={hit}"
     )
 
+    # 升级处罚：只有确认违规（非兜底撤回）才计数与升级
+    counted = decision == "violation"
+    kind, mute_minutes = "base", cfg["sensitive_mute_minutes"]
+    strike = 0
+    if cfg["sensitive_escalation"] and counted:
+        try:
+            prior = await get_store().count_strikes(
+                event.group_id, event.user_id, days=cfg["sensitive_strike_days"]
+            )
+        except Exception:
+            logger.exception("统计违规次数失败，本次按首次处理")
+            prior = 0
+        strike = prior + 1
+        kind, mute_minutes = escalation_plan(strike, cfg["sensitive_mute_minutes"])
+
     # 撤回
     recalled, recall_err = False, ""
     try:
@@ -496,56 +539,86 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
         recall_err = str(e)
         logger.warning(f"敏感词撤回失败：{e}")
 
+    # 踢出（第 4 次起）
+    kicked, kick_err = False, ""
+    if kind == "kick":
+        try:
+            await bot.call_api(
+                "set_group_kick",
+                group_id=event.group_id,
+                user_id=event.user_id,
+                reject_add_request=False,
+            )
+            kicked = True
+        except Exception as e:
+            kick_err = str(e)
+            logger.exception("敏感词踢出失败")
+            # 踢人失败退化为最长禁言，避免惯犯毫无处理
+            kind, mute_minutes = "mute", _MAX_MUTE_MINUTES
+
     # 禁言（可选）
     muted = False
-    if cfg["sensitive_mute_minutes"] > 0:
+    if not kicked and mute_minutes > 0:
         try:
             await bot.call_api(
                 "set_group_ban",
                 group_id=event.group_id,
                 user_id=event.user_id,
-                duration=min(cfg["sensitive_mute_minutes"] * 60, 30 * 24 * 3600),
+                duration=min(mute_minutes * 60, 30 * 24 * 3600),
             )
             muted = True
         except Exception:
             logger.exception("敏感词禁言失败")
 
     # 群内 @ 被处罚者并说明原因，避免莫名其妙被禁言
-    if recalled or muted:
-        reason = (
-            "你因发送了敏感违禁词被禁言，请记得阅读并遵守群规！"
-            if muted
-            else "你因发送了敏感违禁词，消息已被撤回，请记得阅读并遵守群规！"
-        )
+    if recalled or muted or kicked:
+        strike_note = f"（{cfg['sensitive_strike_days']} 天内第 {strike} 次违规）" if strike > 1 else ""
+        if kicked:
+            reason = f"{event.user_id} 多次发送敏感违禁词{strike_note}，已被移出群聊。"
+        elif muted:
+            reason = f"你因发送了敏感违禁词被禁言{strike_note}，请记得阅读并遵守群规！"
+        else:
+            reason = "你因发送了敏感违禁词，消息已被撤回，请记得阅读并遵守群规！"
         try:
+            tail = "\n（如认为误判，可私聊机器人发送 /申诉 说明理由）"
             await bot.call_api(
                 "send_group_msg",
                 group_id=event.group_id,
                 message=(
-                    MessageSegment.at(event.user_id)
-                    + " " + reason
-                    + "\n（如认为误判，可私聊机器人发送 /申诉 说明理由）"
+                    reason
+                    if kicked
+                    else MessageSegment.at(event.user_id) + " " + reason + tail
                 ),
             )
         except Exception:
             logger.exception(f"发送敏感词处罚提示失败：group={event.group_id}")
         # 结构化记录（不存聊天内容），供面板查询与申诉
-        action = "recall_mute" if (recalled and muted) else ("mute" if muted else "recall")
+        if kicked:
+            action = "kick"
+        else:
+            action = "recall_mute" if (recalled and muted) else ("mute" if muted else "recall")
         try:
             await get_store().add_punishment(
                 group_id=event.group_id,
                 user_id=event.user_id,
                 word=hit,
                 action=action,
-                mute_minutes=cfg["sensitive_mute_minutes"] if muted else 0,
+                mute_minutes=mute_minutes if muted else 0,
                 reason=review_reason,
+                counted=counted,
             )
         except Exception:
             logger.exception("写入违规记录失败")
 
     if cfg["sensitive_notify"]:
         status = "已撤回" if recalled else f"撤回失败：{recall_err}"
-        extra = "，并已禁言" if muted else ""
+        extra = f"，并已禁言 {mute_minutes} 分钟" if muted else ""
+        if kicked:
+            extra = "，并已踢出群聊"
+        elif kick_err:
+            extra += f"（踢出失败：{kick_err}，已改为最长禁言）"
+        if strike:
+            extra += f"\n本群 {cfg['sensitive_strike_days']} 天内第 {strike} 次违规"
         review_line = (
             f"AI 复核: {review_reason}\n"
             if cfg["sensitive_review"] and decision == "violation" and review_reason

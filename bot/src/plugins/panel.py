@@ -737,6 +737,8 @@ def _register_routes() -> None:
             if record["action"] in ("mute", "recall_mute"):
                 ok, err = await _try_unmute(record["group_id"], record["user_id"])
                 msg += "，并已解除禁言" if ok else f"，但解除禁言失败：{err}"
+            elif record["action"] == "kick":
+                msg += "（原处罚为踢出群聊，无法自动恢复，请手动邀请其回群）"
             else:
                 msg += "（原处罚为撤回，无需解除禁言）"
         bot = _panel_bot()

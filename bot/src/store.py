@@ -83,6 +83,12 @@ class Store:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 conn = await aiosqlite.connect(self._path)
                 await conn.executescript(_SCHEMA)
+                async with conn.execute("PRAGMA table_info(punishments)") as cur:
+                    cols = {r[1] for r in await cur.fetchall()}
+                if "counted" not in cols:  # 迁移：是否计入升级处罚次数
+                    await conn.execute(
+                        "ALTER TABLE punishments ADD COLUMN counted INTEGER DEFAULT 1"
+                    )
                 await conn.commit()
                 self._conn = conn
                 logger.debug(f"SQLite 已连接：{self._path}")
@@ -275,19 +281,35 @@ class Store:
         mute_minutes: int = 0,
         reason: str = "",
         source: str = "sensitive",
+        counted: bool = True,
     ) -> int:
         """记录一次处罚（不存聊天内容，只存命中词与处理结果）。"""
         conn = await self._ensure()
         cur = await conn.execute(
             "INSERT INTO punishments (ts, group_id, user_id, word, action, mute_minutes,"
-            " reason, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " reason, source, counted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now().astimezone().isoformat(timespec="seconds"),
                 group_id, user_id, word, action, mute_minutes, reason[:200], source,
+                1 if counted else 0,
             ),
         )
         await conn.commit()
         return int(cur.lastrowid)
+
+    async def count_strikes(
+        self, group_id: int, user_id: int, days: int = 30, source: str = "sensitive"
+    ) -> int:
+        """窗口期内该用户在该群已计入升级的违规次数（不含未计入与申诉通过的记录）。"""
+        since = (datetime.now().astimezone() - timedelta(days=days)).isoformat(timespec="seconds")
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT COUNT(*) FROM punishments WHERE group_id = ? AND user_id = ?"
+            " AND source = ? AND ts >= ? AND counted = 1 AND appeal_status != 'accepted'",
+            (group_id, user_id, source, since),
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
 
     async def list_punishments(
         self, limit: int = 100, group_id: int | None = None
