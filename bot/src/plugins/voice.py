@@ -6,6 +6,8 @@
   /audio/transcriptions 转文字 → 交给 AI 对话回复；`/转文字` 回复一条语音可单独识别
 - 默认语音回复：AI 的回复默认以语音发出（按群/私聊独立开关，超管 `/语音回复 开|关`）；
   超过 300 字、含 @ 占位符或合成失败时自动退回文字
+- 换音色（超管）：/音色 查看当前与可选列表；/音色 <序号|名称|ID> 切换 QQ AI 语音角色并试听；
+  /音色 edge <名称> 切换 edge-tts 音色（私聊 / 兜底用）；/音色 试听；/音色 重置
 - 配置（kv）：voice_ai_character（QQ AI 语音角色 ID，空=自动取第一个）、voice_ai_record（false 关闭 AI 语音）、voice_name（默认 zh-CN-XiaoxiaoNeural）、voice_asr_model（默认 whisper-1）
 - 限制：合成文本 ≤ MAX_TTS_CHARS；每用户冷却 COOLDOWN 秒；语音 ≤ MAX_AUDIO_BYTES
 """
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import re
 import time
 
 import httpx
@@ -30,7 +33,7 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src.markdown import md_to_qq
-from src.permission import BASIC, SUPERUSER
+from src.permission import BASIC, SUPERUSER, merged_whitelist
 from src.store import get_store
 
 DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural"
@@ -165,6 +168,134 @@ async def send_voice(bot: Bot, event: MessageEvent, text: str) -> str:
     if len(_voiced) > 200:
         _voiced.clear()
     return f"已发送语音：{text[:60]}"
+
+
+# ---------------------------------------------------------------- 换音色
+
+EDGE_VOICES = [
+    ("zh-CN-XiaoxiaoNeural", "晓晓·女·温暖自然（默认）"),
+    ("zh-CN-XiaoyiNeural", "晓伊·女·活泼"),
+    ("zh-CN-YunxiNeural", "云希·男·阳光少年"),
+    ("zh-CN-YunjianNeural", "云健·男·激昂沉稳"),
+    ("zh-CN-YunyangNeural", "云扬·男·新闻播报"),
+    ("zh-CN-YunxiaNeural", "云夏·男·可爱少年"),
+    ("zh-CN-liaoning-XiaobeiNeural", "晓北·女·东北话"),
+    ("zh-CN-shaanxi-XiaoniNeural", "晓妮·女·陕西话"),
+    ("zh-HK-HiuMaanNeural", "曉曼·女·粤语"),
+]
+_EDGE_NAME_RE = re.compile(r"^[a-z]{2}-[A-Z]{2}(-[a-z]+)?-[A-Za-z]+Neural$")
+SAMPLE_TEXT = "你好呀，我是星潮，这是我现在的声音，你觉得好听吗？"
+
+
+async def list_ai_characters(bot: Bot, group_id: int) -> list[tuple[str, str]]:
+    """QQ AI 语音可用角色 [(character_id, 名称)]，去重保序。"""
+    res = await bot.call_api("get_ai_characters", group_id=group_id, chat_type=1)
+    groups = res if isinstance(res, list) else (res or {}).get("data", [])
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for grp in groups:
+        for ch in grp.get("characters", []):
+            cid = str(ch.get("character_id") or "")
+            if cid and cid not in seen:
+                seen.add(cid)
+                out.append((cid, str(ch.get("character_name") or cid)))
+    return out
+
+
+def pick_character(arg: str, chars: list[tuple[str, str]]) -> tuple[str, str] | None:
+    """按序号（从 1 起）/ ID / 名称（精确优先，其次包含）匹配角色。"""
+    arg = arg.strip()
+    if arg.isdigit() and 1 <= int(arg) <= len(chars):
+        return chars[int(arg) - 1]
+    for cid, name in chars:
+        if arg == cid or arg == name:
+            return cid, name
+    hits = [(cid, name) for cid, name in chars if arg and arg in name]
+    return hits[0] if len(hits) == 1 else None
+
+
+voice_cmd = on_command("音色", aliases={"voice"}, rule=SUPERUSER, priority=5, block=True)
+
+
+def _api_group(event: MessageEvent) -> int | None:
+    gid = getattr(event, "group_id", None)
+    if gid:
+        return gid
+    groups = sorted(merged_whitelist())
+    return groups[0] if groups else None
+
+
+@voice_cmd.handle()
+async def handle_voice_cmd(
+    bot: Bot, event: MessageEvent, matcher: Matcher, args: Message = CommandArg()
+) -> None:
+    global _ai_character
+    store = get_store()
+    arg = args.extract_plain_text().strip()
+    gid = _api_group(event)
+
+    if arg in ("试听", "test"):
+        err = await emit_voice(bot, event, SAMPLE_TEXT)
+        if err:
+            await matcher.finish(err)
+        return
+
+    if arg in ("重置", "reset"):
+        await store.set_kv("voice_ai_character", "")
+        await store.set_kv("voice_name", "")
+        _ai_character = None
+        await matcher.finish("已恢复默认音色（QQ AI 语音取第一个角色，edge-tts 用晓晓）")
+
+    if arg.lower().startswith("edge"):
+        name = arg[4:].strip()
+        if not name:
+            cur = await store.get_kv("voice_name") or DEFAULT_VOICE
+            lines = [f"edge-tts 音色（私聊 / AI 语音不可用时使用），当前：{cur}"]
+            lines += [f"• {n}  {d}" for n, d in EDGE_VOICES]
+            lines.append("切换：/音色 edge <名称>")
+            await matcher.finish("\n".join(lines))
+        if not _EDGE_NAME_RE.match(name):
+            await matcher.finish("音色名称格式不对，例如 zh-CN-YunxiNeural，发 /音色 edge 查看可选项")
+        await store.set_kv("voice_name", name)
+        await matcher.send(f"已切换 edge-tts 音色为 {name}，试听中……")
+        audio = await synthesize(SAMPLE_TEXT)
+        if audio is None:
+            await matcher.finish("合成失败：该音色可能不存在，请换一个，或 /音色 重置")
+        await bot.send(event, MessageSegment.record("base64://" + base64.b64encode(audio).decode()))
+        return
+
+    if gid is None:
+        await matcher.finish("没有可用的群来查询 QQ AI 语音角色，请先在白名单群里使用此指令。")
+    try:
+        chars = await list_ai_characters(bot, gid)
+    except Exception as e:
+        logger.warning("get_ai_characters 失败", exc_info=True)
+        await matcher.finish(f"获取 QQ AI 语音角色失败：{e}（NapCat 版本过旧或不支持）。可用 /音色 edge 切换 edge-tts 音色")
+    if not chars:
+        await matcher.finish("NapCat 没有返回任何 QQ AI 语音角色。可用 /音色 edge 切换 edge-tts 音色")
+
+    current = str(await store.get_kv("voice_ai_character") or _ai_character or chars[0][0])
+    if not arg:
+        lines = ["QQ AI 语音角色（群聊使用）："]
+        for i, (cid, name) in enumerate(chars[:40], 1):
+            mark = " ◀ 当前" if cid == current else ""
+            lines.append(f"{i}. {name}{mark}")
+        if len(chars) > 40:
+            lines.append(f"……共 {len(chars)} 个，只显示前 40 个，可直接用名称或 ID 选择")
+        lines.append("切换：/音色 <序号或名称>（会自动试听）；/音色 edge 查看私聊音色；/音色 试听；/音色 重置")
+        await matcher.finish("\n".join(lines))
+
+    chosen = pick_character(arg, chars)
+    if chosen is None:
+        await matcher.finish("没找到唯一匹配的角色，请用 /音色 查看列表后按序号选择。")
+    cid, name = chosen
+    await store.set_kv("voice_ai_character", cid)
+    if getattr(event, "group_id", None):
+        err = await emit_voice(bot, event, SAMPLE_TEXT)
+        if err:
+            await matcher.finish(f"已切换为「{name}」，但试听失败：{err}")
+        return
+    await matcher.finish(f"已切换为「{name}」。在群里发 /音色 试听 可听效果。")
 
 
 # ---------------------------------------------------------------- ASR

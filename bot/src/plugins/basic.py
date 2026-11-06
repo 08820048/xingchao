@@ -72,6 +72,7 @@ ADMIN_TEXT = (
     "  ◈ /reply reload|list — 关键词词库\n"
     "  ◈ /敏感词 add|del|list — 敏感词批量增删\n"
     "  ◈ /清理群员 <群号> [确认] — 群满员时按活跃度清理不活跃成员\n"
+    "  ◈ /音色 — 查看 / 切换机器人语音音色（自动试听）\n"
     "  ◈ /group list|add|del — 白名单管理\n"
     "  ◈ /superuser list|add|del — 超管管理\n"
     "  ◈ /ai on|off|status|clear|vision — AI 问答管理\n"
