@@ -441,13 +441,21 @@ def _register_routes() -> None:
             return _unauthorized()
         from src.plugins import ai as ai_plugin
 
-        cfg = await ai_plugin.ai_config()
+        cfg = await ai_plugin.ai_config(raw=True)
         base_url, api_key = await ai_plugin._ai_creds()
+        ds = await ai_plugin.deepseek_settings()
         return JSONResponse(
             {
                 "ok": True,
                 "data": {
                     "configured": await ai_plugin.is_configured(),
+                    "provider": await get_store().get_kv("ai_provider") or "default",
+                    "active_provider": await ai_plugin.active_provider(),
+                    "deepseek": {
+                        "api_key_masked": ai_plugin.mask_key(ds["api_key"]),
+                        "model": ds["model"],
+                        "base_url": ds["base_url"],
+                    },
                     "base_url": base_url,
                     "api_key_masked": ai_plugin.mask_key(api_key),
                     "enabled": await ai_plugin.is_ai_enabled(),
@@ -484,6 +492,26 @@ def _register_routes() -> None:
                 if len(key) < 8 or any(c.isspace() for c in key):
                     return JSONResponse({"ok": False, "error": "API Key 格式不合法"}, status_code=400)
                 updates["ai_api_key"] = key
+        # 文本提供商：default（上面的 API 连接）/ deepseek
+        if "provider" in body:
+            if body["provider"] not in ("default", "deepseek"):
+                return JSONResponse({"ok": False, "error": "provider 应为 default 或 deepseek"}, status_code=400)
+            if body["provider"] == "deepseek" and not (
+                (await ai_plugin.deepseek_settings())["api_key"] or str(body.get("deepseek_api_key", "")).strip()
+            ):
+                return JSONResponse({"ok": False, "error": "请先填写 DeepSeek API Key"}, status_code=400)
+            updates["ai_provider"] = body["provider"]
+        if "deepseek_api_key" in body:
+            key = str(body["deepseek_api_key"]).strip()
+            if key:
+                if len(key) < 8 or any(c.isspace() for c in key):
+                    return JSONResponse({"ok": False, "error": "DeepSeek API Key 格式不合法"}, status_code=400)
+                updates["ai_deepseek_api_key"] = key
+        if "deepseek_model" in body:
+            val = str(body["deepseek_model"]).strip()
+            if not val or len(val) > 100 or any(c.isspace() for c in val):
+                return JSONResponse({"ok": False, "error": "deepseek_model 不合法"}, status_code=400)
+            updates["ai_deepseek_model"] = val
         if "enabled" in body and not isinstance(body["enabled"], bool):
             return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
         for key in ("model", "system_prompt", "vision_model"):
@@ -530,7 +558,12 @@ def _register_routes() -> None:
                 body = await request.json()
         except Exception:
             body = {}
-        base, key = await ai_plugin._ai_creds()
+        if body.get("provider") == "deepseek":
+            ds = await ai_plugin.deepseek_settings()
+            base, key = ds["base_url"], ds["api_key"]
+            body = {"api_key": body.get("api_key")}  # base_url 固定为 DeepSeek 官方地址
+        else:
+            base, key = await ai_plugin._ai_creds()
         base = str(body.get("base_url") or base or "").strip().rstrip("/")
         key = str(body.get("api_key") or key or "").strip()
         if not (base and key):

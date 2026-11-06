@@ -1400,6 +1400,9 @@ type AiConfig = {
   configured: boolean;
   base_url: string;
   api_key_masked: string;
+  provider: string;
+  active_provider: string;
+  deepseek: { api_key_masked: string; model: string; base_url: string };
   enabled: boolean;
   model: string;
   vision_model: string;
@@ -1415,6 +1418,8 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   const [saving, setSaving] = useState(false);
   const [connBase, setConnBase] = useState("");
   const [connKey, setConnKey] = useState("");
+  const [dsKey, setDsKey] = useState("");
+  const [dsModel, setDsModel] = useState("");
   const [models, setModels] = useState<string[] | null>(null);
   const [loadingModels, setLoadingModels] = useState(false);
   const load = useCallback(() => {
@@ -1426,6 +1431,9 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   useEffect(() => {
     if (cfg) setConnBase(cfg.base_url);
   }, [cfg?.base_url]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (cfg) setDsModel(cfg.deepseek.model);
+  }, [cfg?.deepseek.model]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!cfg) return <Spinner className="m-8" />;
 
   const save = async (patch: Record<string, unknown>) => {
@@ -1539,6 +1547,72 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
               </select>
             </div>
           )}
+        </CardPanel>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">DeepSeek 提供商</CardTitle>
+          <CardDescription>
+            启用后问答、链接解读、加群审批等文本任务改用 DeepSeek（官方地址{" "}
+            <code>{cfg.deepseek.base_url}</code>）；图片识别与语音识别仍使用上方默认连接。
+            Key 留空表示保持不变
+          </CardDescription>
+        </CardHeader>
+        <CardPanel className="grid gap-3">
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">使用 DeepSeek</p>
+              <p className="text-muted-foreground text-xs">
+                当前生效：{cfg.active_provider === "deepseek" ? "DeepSeek" : "默认连接"}
+                （需先保存 DeepSeek Key）
+              </p>
+            </div>
+            <Switch
+              checked={cfg.provider === "deepseek"}
+              onCheckedChange={(v) =>
+                save({
+                  provider: v ? "deepseek" : "default",
+                  ...(dsKey ? { deepseek_api_key: dsKey } : {}),
+                })
+              }
+            />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="dskey">DeepSeek API Key</Label>
+              <Input
+                id="dskey"
+                type="password"
+                value={dsKey}
+                onChange={(e) => setDsKey(e.target.value)}
+                placeholder={cfg.deepseek.api_key_masked || "尚未设置"}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="dsmodel">DeepSeek 模型</Label>
+              <Input
+                id="dsmodel"
+                value={dsModel}
+                onChange={(e) => setDsModel(e.target.value)}
+                placeholder="deepseek-chat"
+              />
+            </div>
+            <Button
+              className="self-end"
+              disabled={saving}
+              onClick={async () => {
+                const patch: Record<string, unknown> = {};
+                if (dsKey) patch.deepseek_api_key = dsKey;
+                if (dsModel !== cfg.deepseek.model) patch.deepseek_model = dsModel;
+                if (!Object.keys(patch).length) return toast("没有需要保存的修改");
+                await save(patch);
+                setDsKey("");
+              }}
+            >
+              {saving && <Spinner />}保存 DeepSeek
+            </Button>
+          </div>
         </CardPanel>
       </Card>
 

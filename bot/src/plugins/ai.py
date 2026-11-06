@@ -59,8 +59,11 @@ DEFAULTS: dict[str, Any] = {
     "ai_limit_user": 20,
 }
 
-_client: Any = None
-_client_sig: tuple[str, str] | None = None
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_DEFAULT_MODEL = "deepseek-chat"
+_PROVIDERS = ("default", "deepseek")
+
+_clients: dict[tuple[str, str], Any] = {}  # (base, key) → 客户端；凭据变更时自然新建
 
 
 async def _ai_creds() -> tuple[str, str]:
@@ -70,6 +73,24 @@ async def _ai_creds() -> tuple[str, str]:
     key = await store.get_kv("ai_api_key")
     cfg = get_config()
     return (base or cfg.xingchao_ai_base_url, key or cfg.xingchao_ai_api_key)
+
+
+async def deepseek_settings() -> dict[str, str]:
+    """DeepSeek 提供商配置（面板可改）：密钥、模型、地址（默认官方地址）。"""
+    store = get_store()
+    return {
+        "api_key": (await store.get_kv("ai_deepseek_api_key")) or "",
+        "model": (await store.get_kv("ai_deepseek_model")) or DEEPSEEK_DEFAULT_MODEL,
+        "base_url": (await store.get_kv("ai_deepseek_base_url")) or DEEPSEEK_BASE_URL,
+    }
+
+
+async def active_provider() -> str:
+    """当前生效的文本提供商：选了 deepseek 且已填密钥才生效，否则回落到默认。"""
+    if await get_store().get_kv("ai_provider") == "deepseek":
+        if (await deepseek_settings())["api_key"]:
+            return "deepseek"
+    return "default"
 
 
 async def _kv(key: str) -> Any:
@@ -87,11 +108,18 @@ async def _kv(key: str) -> Any:
     return raw
 
 
-async def ai_config() -> dict[str, Any]:
-    return {k: await _kv(k) for k in _KV_KEYS}
+async def ai_config(raw: bool = False) -> dict[str, Any]:
+    """AI 配置。默认返回「生效」配置：选用 DeepSeek 时 ai_model 为 DeepSeek 的模型；
+    raw=True 返回默认提供商自己的模型（面板编辑用）。"""
+    cfg = {k: await _kv(k) for k in _KV_KEYS}
+    if not raw and await active_provider() == "deepseek":
+        cfg["ai_model"] = (await deepseek_settings())["model"]
+    return cfg
 
 
 async def is_configured() -> bool:
+    if await active_provider() == "deepseek":
+        return True
     base, key = await _ai_creds()
     return bool(base) and bool(key)
 
@@ -104,25 +132,33 @@ def mask_key(key: str) -> str:
     return f"{key[:5]}****{key[-4:]}"
 
 
-async def get_client() -> Any | None:
-    """按当前凭据返回客户端；凭据变更（面板更新密钥/地址）时自动重建。"""
-    global _client, _client_sig
-    base, key = await _ai_creds()
+async def get_client(kind: str = "text") -> Any | None:
+    """按当前凭据返回客户端；凭据变更（面板更新密钥/地址）时自动重建。
+
+    kind="text"（默认）跟随当前提供商；"vision"/"audio" 始终用默认提供商
+    （DeepSeek 不支持图片与语音输入）。
+    """
+    if kind == "text" and await active_provider() == "deepseek":
+        ds = await deepseek_settings()
+        base, key = ds["base_url"], ds["api_key"]
+    else:
+        base, key = await _ai_creds()
     if not base or not key:
         return None
-    sig = (base, key)
-    if _client is None or _client_sig != sig:
+    client = _clients.get((base, key))
+    if client is None:
         try:
             from openai import AsyncOpenAI
 
-            _client = AsyncOpenAI(api_key=key, base_url=base)
-            _client_sig = sig
-            logger.info(f"AI 客户端已就绪：{base}")
+            client = AsyncOpenAI(api_key=key, base_url=base)
         except Exception:
             logger.exception("初始化 OpenAI 客户端失败，AI 功能禁用")
-            _client = None
             return None
-    return _client
+        if len(_clients) >= 4:  # 凭据反复变更时清掉旧客户端，避免残留
+            _clients.clear()
+        _clients[(base, key)] = client
+        logger.info(f"AI 客户端已就绪：{base}")
+    return client
 
 
 async def is_ai_enabled() -> bool:
@@ -189,7 +225,7 @@ async def generate_vision(
     注意：glm-5.3-flash 等思维链多模态模型的隐藏推理同样占用 max_tokens，
     预算过小会出现 finish_reason=length 且 content 为空（表现为静默跳过），故给足空间。
     """
-    client = await get_client()
+    client = await get_client("vision")
     if client is None:
         return None
     last_err: Exception | None = None

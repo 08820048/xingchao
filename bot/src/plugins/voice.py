@@ -196,7 +196,7 @@ async def transcribe(bot: Bot, seg: MessageSegment) -> str | None:
     """语音段 → 文字；失败返回 None。"""
     from src.plugins.ai import get_client
 
-    client = await get_client()
+    client = await get_client("audio")
     if client is None:
         return None
     data = await _record_bytes(bot, seg)
