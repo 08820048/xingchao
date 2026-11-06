@@ -776,14 +776,16 @@ def _register_routes() -> None:
                 msg += "（原处罚为撤回，无需解除禁言）"
         bot = _panel_bot()
         if bot is not None:
-            try:
-                await bot.call_api(
-                    "send_private_msg",
-                    user_id=record["user_id"],
-                    message=f"你关于「{record['word']}」的申诉已{'通过' if approve else '被驳回'}。",
-                )
-            except Exception:
-                logger.warning("申诉结果通知发送失败", exc_info=True)
+            from src.plugins.sensitive import send_private
+
+            sent = await send_private(
+                bot,
+                record["user_id"],
+                f"你关于「{record['word']}」的申诉已{'通过' if approve else '被驳回'}。",
+                record["group_id"],
+            )
+            if not sent:
+                msg += "（但未能通知申诉人，请手动联系）"
         return JSONResponse({"ok": True, "data": {"message": msg}})
 
     @app.get("/panel/api/visionguard")

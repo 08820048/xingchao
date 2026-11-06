@@ -580,7 +580,7 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
         else:
             reason = "你因发送了敏感违禁词，消息已被撤回，请记得阅读并遵守群规！"
         try:
-            tail = "\n（如认为误判，可私聊机器人发送 /申诉 说明理由）"
+            tail = "\n（如认为误判，可私聊机器人直接发送申诉理由，7 天内有效）"
             await bot.call_api(
                 "send_group_msg",
                 group_id=event.group_id,
@@ -730,39 +730,119 @@ async def handle_sensitive_admin(args: Message = CommandArg()) -> None:
     await _send(sensitive_admin, _USAGE)
 
 
-# ---------------------------------------------------------------- 指令：/申诉
+# ---------------------------------------------------------------- 申诉（私聊 / 群临时会话）
+#
+# 被处罚者多数不是机器人好友，只能通过「群临时会话」私聊；且很少会按格式写 `/申诉`。
+# 所以：1) 任何非超管私聊消息，只要近期有可申诉的处罚，就整条当作申诉理由；
+#      2) 回复一律带上被处罚的群号走临时会话通道（失败再退回普通私聊）；
+#      3) 记录每条非超管私聊，便于排查「机器人没反应」。
+
+APPEAL_WINDOW_HOURS = 24 * 7  # 处罚后 7 天内可申诉
+_HINT_COOLDOWN = 6 * 3600  # 同一人的非申诉提示最多每 6 小时一次，防刷屏/与其他机器人对聊
+_hint_sent: dict[int, float] = {}
 
 
 async def _is_private(event: MessageEvent) -> bool:
     return isinstance(event, PrivateMessageEvent)
 
 
-appeal_cmd = on_command(
-    "申诉", aliases={"appeal"}, rule=Rule(_is_private), priority=1, block=True
-)
+async def _is_private_non_super(event: MessageEvent) -> bool:
+    return isinstance(event, PrivateMessageEvent) and event.user_id not in _superuser_ids()
 
 
-@appeal_cmd.handle()
-async def handle_appeal(bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None:
-    text = args.extract_plain_text().strip()
-    if not text:
-        await _send(appeal_cmd, "用法：/申诉 <说明理由>（针对你最近 24 小时内的一次撤回/禁言）")
-        return
+async def send_private(
+    bot: Bot, user_id: int, text: str, group_id: int | None = None
+) -> bool:
+    """发私聊；给出 group_id 时先走群临时会话（非好友必需），失败退回普通私聊。"""
+    attempts: list[dict[str, Any]] = []
+    if group_id:
+        attempts.append({"user_id": user_id, "group_id": group_id})
+    attempts.append({"user_id": user_id})
+    last: Exception | None = None
+    for params in attempts:
+        try:
+            await bot.call_api("send_private_msg", message=text, **params)
+            return True
+        except Exception as e:
+            last = e
+    logger.warning(f"私聊发送失败：user={user_id} group={group_id} {type(last).__name__}: {last}")
+    return False
+
+
+def _hint_allowed(user_id: int) -> bool:
+    now = time.monotonic()
+    if now - _hint_sent.get(user_id, -_HINT_COOLDOWN) < _HINT_COOLDOWN:
+        return False
+    if len(_hint_sent) > 2000:
+        _hint_sent.clear()
+    _hint_sent[user_id] = now
+    return True
+
+
+async def _handle_appeal(bot: Bot, event: PrivateMessageEvent, text: str) -> None:
+    """处理一条申诉文本：落库、回复申诉人、通知超管。"""
     store = get_store()
-    latest = await store.latest_punishment_for(event.user_id, hours=24)
+    latest = await store.latest_punishment_for(event.user_id, hours=APPEAL_WINDOW_HOURS)
+    group_id = (latest or {}).get("group_id") or getattr(event, "group_id", None)
+
+    async def reply(msg: str) -> None:
+        if not await send_private(bot, event.user_id, msg, group_id) and latest is not None:
+            await _notify(bot, f"⚠️ 无法回复申诉人 QQ {event.user_id}（临时会话发送失败），请手动联系。")
+
     if latest is None:
-        await _send(appeal_cmd, "近 24 小时内没有你的违规记录，如有疑问请联系群管理员。")
+        if _hint_allowed(event.user_id):
+            await reply(
+                "我是群助手机器人。近 7 天内没有查到你的违规记录，"
+                "如有疑问请在群里联系管理员。若被处罚后想申诉，请直接发送你的申诉理由。"
+            )
         return
     if latest["appeal_status"] != "none":
-        await _send(appeal_cmd, "你已提交过申诉，请等待管理员处理。")
+        if _hint_allowed(event.user_id):
+            status = {"pending": "正在等待管理员处理", "accepted": "已通过", "rejected": "已被驳回"}.get(
+                latest["appeal_status"], "已处理"
+            )
+            await reply(f"你最近一次处罚的申诉{status}，请勿重复提交。")
         return
     if not await store.appeal_punishment(latest["id"], text):
-        await _send(appeal_cmd, "申诉提交失败，请稍后重试或联系管理员。")
+        await reply("申诉提交失败，请稍后重试或联系管理员。")
         return
-    await _send(appeal_cmd, "已收到你的申诉，管理员会尽快复核，请留意机器人通知。")
+    await reply("已收到你的申诉，管理员会尽快复核，处理结果会通过机器人通知你，请留意消息。")
     await _notify(
         bot,
         f"📮 违规申诉\nQQ: {event.user_id}\n群号: {latest['group_id']}\n"
         f"命中词: {latest['word']}\n处罚时间: {latest['ts']}\n"
         f"申诉理由: {text[:200]}\n请在 Web 面板「违规记录」页处理",
     )
+
+
+appeal_cmd = on_command(
+    "申诉", aliases={"appeal"}, rule=Rule(_is_private_non_super), priority=1, block=True
+)
+# 兜底：没写 /申诉 的普通私聊（含群临时会话）也当作申诉；不阻断超管与其他功能
+appeal_free = on_message(rule=Rule(_is_private_non_super), priority=2, block=False)
+
+
+@appeal_cmd.handle()
+async def handle_appeal_cmd(bot: Bot, event: PrivateMessageEvent, args: Message = CommandArg()) -> None:
+    text = args.extract_plain_text().strip()
+    logger.info(f"收到私聊申诉指令：user={event.user_id} sub_type={event.sub_type}")
+    if not text:
+        await send_private(
+            bot, event.user_id, "请在 /申诉 后面写上你的理由，例如：/申诉 我只是在讨论技术，没有发广告",
+            getattr(event, "group_id", None),
+        )
+        return
+    await _handle_appeal(bot, event, text)
+
+
+@appeal_free.handle()
+async def handle_appeal_free(bot: Bot, event: PrivateMessageEvent, matcher: Matcher) -> None:
+    text = event.message.extract_plain_text().strip()
+    logger.info(
+        f"收到非超管私聊：user={event.user_id} sub_type={event.sub_type}"
+        f" 内容前 30 字={text[:30]!r}"
+    )
+    matcher.stop_propagation()  # 非超管私聊没有其他功能，不再触发 AI / 回复等后续处理
+    if not text:
+        return  # 纯图片/表情/语音等不当作申诉理由
+    await _handle_appeal(bot, event, text)
