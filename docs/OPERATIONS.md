@@ -266,3 +266,41 @@ npx wrangler pages deploy dist --project-name=xingchao --branch=main
   （同时代替「已上线」通知）；推送成功后记录版本，不会重复发
 - 不想打扰群友的小改动：该条记录加 `"notify": false`，只记录不推送
 - 临时关闭公告：kv `update_notify` 设为 `false`；群内 `/更新日志` 可随时查看最近一次更新
+
+---
+
+## 12. 数据库备份与恢复
+
+- 每天本地时间 03:30，机器人会对 `data/xingchao.db` 做在线备份（不锁库）并 gzip，
+  存到 `data/backups/xingchao-YYYYMMDD-HHMMSS.db.gz`，默认保留最近 7 份；启动时若最近一份超过 24 小时也会补做
+- 超管发 `/备份` 可立即备份并查看现有备份；kv `backup_enabled=false` 关闭，`backup_keep=N` 调整份数
+- 恢复：`docker compose stop bot` → 解压需要的备份覆盖 `data/xingchao.db`（`gunzip -c xxx.db.gz > data/xingchao.db`）→ `docker compose start bot`
+- 备份与数据库在同一块盘上，**不能防整机故障**：建议再定期把 `data/backups/` 同步到另一台机器或对象存储
+
+## 13. 敏感词升级处罚的踢人防线
+
+同一人在同一群 30 天内：第 1 次沿用规则，第 2 次禁言翻倍，第 3 次禁言 30 天，第 4 次起移出群聊。
+踢出不可撤销，所以自动踢人前会过这些防线，任一不通过就改判「最长禁言」并私聊超管说明原因：
+
+| 防线 | 默认 | 调整 |
+|---|---|---|
+| 群主 / 管理员 / 超管永不自动踢 | 固定 | — |
+| 踢人豁免名单（仍会撤回、禁言） | 空 | `/敏感词 豁免 <QQ…>` · `取消豁免` · `豁免列表` |
+| 每群每日自动踢出上限 | 3 人 | kv `sensitive_kick_daily_cap`（0 = 不限） |
+| 试运行期：升级处罚首次生效起只禁言不踢，只通知「本应踢出」 | 7 天 | kv `sensitive_trial_days`（0 = 无试运行） |
+
+试运行期内请观察面板「敏感词」页底部的词条命中统计与「违规记录」，确认误判率可接受后再放开。
+
+## 14. 自动化测试
+
+`bot/tests/` 覆盖升级处罚与踢人防线、词库匹配、数据库迁移与计数、满员清理选人、备份与恢复、更新公告。
+本地运行（只装被测逻辑的依赖，不需要第三方插件）：
+
+```bash
+cd bot
+uv run --no-project --python 3.12 --with "nonebot2[fastapi]" --with nonebot-adapter-onebot \
+  --with aiosqlite --with httpx --with openai --with pypinyin --with opencc-python-reimplemented \
+  --with pydantic --with pytest --with pytest-asyncio python -m pytest -q
+```
+
+推送到 main 或提 PR 时，GitHub Actions 会自动跑同样的测试。改动处罚规则、选人逻辑或数据库结构前后都请先跑一遍。

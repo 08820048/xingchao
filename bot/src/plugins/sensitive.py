@@ -13,6 +13,8 @@
 - 升级处罚（sensitive_escalation）：同一人在同一群窗口期（默认 30 天）内按已确认违规次数递进——
   第 1 次=当前规则；第 2 次=禁言翻倍；第 3 次=最长禁言（30 天）；第 4 次起=踢出群聊（无需确认）。
   AI 复核不可用时按兜底撤回的记录不计入次数；申诉通过的记录不再计数
+- 踢人防线：群主/管理员/超管/豁免名单永不自动踢；每群每日踢出上限（默认 3）；
+  升级处罚首次启用后有试运行期（默认 7 天）只禁言不踢，期间只通知超管「本应踢出」
 """
 
 from __future__ import annotations
@@ -60,6 +62,9 @@ DEFAULTS: dict[str, Any] = {
     "sensitive_review_fallback": "recall",  # AI 不可用：recall=按程序规则照常撤回 / notify=仅通知不撤回
     "sensitive_escalation": True,  # 重复违规逐级加重：禁言翻倍 → 最长禁言 → 踢出
     "sensitive_strike_days": 30,  # 违规次数统计窗口（天），窗口外的记录不再累计
+    "sensitive_kick_daily_cap": 3,  # 每群每日自动踢出人数上限，0 = 不限
+    "sensitive_trial_days": 7,  # 升级处罚试运行天数：期间「第 4 次」只最长禁言不踢，0 = 无试运行
+    "sensitive_exempt_users": "",  # 踢人豁免名单（QQ，逗号分隔），仍会撤回/禁言
     "sensitive_variant_level": "normal",  # 变体匹配：basic=原样 / normal=归一化 / pinyin=归一化+拼音
 }
 _VARIANT_LEVELS = ("basic", "normal", "pinyin")
@@ -144,6 +149,8 @@ async def sensitive_config(group_id: int | None = None) -> dict[str, Any]:
     esc = merged["sensitive_escalation"]
     merged["sensitive_escalation"] = esc is True or (isinstance(esc, str) and esc != "false")
     merged["sensitive_strike_days"] = max(1, int(merged["sensitive_strike_days"] or 30))
+    merged["sensitive_kick_daily_cap"] = max(0, int(merged["sensitive_kick_daily_cap"] or 0))
+    merged["sensitive_trial_days"] = max(0, int(merged["sensitive_trial_days"] or 0))
     if merged["sensitive_review_fallback"] not in ("notify", "recall"):
         merged["sensitive_review_fallback"] = "recall"
     if merged["sensitive_variant_level"] not in _VARIANT_LEVELS:
@@ -461,6 +468,53 @@ def escalation_plan(strike: int, base_minutes: int) -> tuple[str, int]:
     return "kick", 0
 
 
+def trial_remaining(started_ts: float, now_ts: float, trial_days: int) -> int:
+    """试运行还剩几天（向上取整）；0 表示已结束或无试运行。"""
+    if trial_days <= 0:
+        return 0
+    left = trial_days * 86400 - (now_ts - started_ts)
+    return max(0, int(-(-left // 86400)))
+
+
+def parse_ids(raw: str) -> set[int]:
+    """解析逗号/空白分隔的 QQ 号，忽略非数字。"""
+    return {int(x) for x in re.split(r"[\s,，、;；]+", str(raw or "")) if x.strip().isdigit()}
+
+
+def kick_decision(
+    *,
+    role: str | None,
+    user_id: int,
+    superusers: set[int],
+    exempt_ids: set[int],
+    kicks_today: int,
+    daily_cap: int,
+    trial_left_days: int,
+) -> tuple[bool, str]:
+    """是否允许自动踢出；不允许时返回原因（用于改判最长禁言并告知超管）。"""
+    if user_id in superusers:
+        return False, "对方是超管"
+    if role in ("owner", "admin"):
+        return False, "对方是群主/管理员"
+    if user_id in exempt_ids:
+        return False, "对方在踢人豁免名单中"
+    if trial_left_days > 0:
+        return False, f"升级处罚试运行期（还剩 {trial_left_days} 天）"
+    if daily_cap > 0 and kicks_today >= daily_cap:
+        return False, f"本群今日已自动踢出 {kicks_today} 人，达到每日上限"
+    return True, ""
+
+
+async def _trial_left(trial_days: int) -> int:
+    """首次用到时记下起点，之后按天数递减。"""
+    store = get_store()
+    raw = await store.get_kv("sensitive_escalation_started")
+    if not raw or not raw.isdigit():
+        await store.set_kv("sensitive_escalation_started", str(int(time.time())))
+        return trial_days
+    return trial_remaining(int(raw), time.time(), trial_days)
+
+
 # ---------------------------------------------------------------- 处理
 
 sensitive_matcher = on_message(rule=GROUP_WHITELIST, priority=3, block=False)
@@ -557,8 +611,24 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
         recall_err = str(e)
         logger.warning(f"敏感词撤回失败：{e}")
 
-    # 踢出（第 4 次起）
-    kicked, kick_err = False, ""
+    # 踢出（第 4 次起）——先过防线，不通过则改判最长禁言
+    kicked, kick_err, kick_held = False, "", ""
+    if kind == "kick":
+        try:
+            allowed, kick_held = kick_decision(
+                role=getattr(event.sender, "role", None),
+                user_id=event.user_id,
+                superusers=_superuser_ids(),
+                exempt_ids=parse_ids(str(cfg["sensitive_exempt_users"])),
+                kicks_today=await get_store().count_actions_today(event.group_id, "kick"),
+                daily_cap=cfg["sensitive_kick_daily_cap"],
+                trial_left_days=await _trial_left(cfg["sensitive_trial_days"]),
+            )
+        except Exception:
+            logger.exception("踢人防线检查失败，保守起见不踢")
+            allowed, kick_held = False, "防线检查出错"
+        if not allowed:
+            kind, mute_minutes = "mute", _MAX_MUTE_MINUTES
     if kind == "kick":
         try:
             await bot.call_api(
@@ -635,6 +705,8 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
             extra = "，并已踢出群聊"
         elif kick_err:
             extra += f"（踢出失败：{kick_err}，已改为最长禁言）"
+        elif kick_held:
+            extra += f"\n⚠️ 按规则本应踢出，但{kick_held}，已改为最长禁言"
         if strike:
             extra += f"\n本群 {cfg['sensitive_strike_days']} 天内第 {strike} 次违规"
         review_line = (
@@ -662,11 +734,15 @@ _USAGE = (
     "/敏感词 add <词1> [词2] … — 批量添加（空格 / 逗号分隔）\n"
     "/敏感词 del <词1> [词2] … — 批量移除\n"
     "/敏感词 list — 查看词库\n"
+    "/敏感词 豁免 <QQ…> | 取消豁免 <QQ…> | 豁免列表 — 管理「不会被自动踢出」的名单\n"
     "词条以 ~ 开头为豁免短语（如 ~机场大巴），正常讨论不被误伤"
 )
 _ADD_ACTIONS = {"add", "添加", "增加"}
 _DEL_ACTIONS = {"del", "delete", "remove", "删除", "移除"}
 _LIST_ACTIONS = {"list", "列表", "查看"}
+_EXEMPT_ADD = {"豁免", "exempt"}
+_EXEMPT_DEL = {"取消豁免", "unexempt"}
+_EXEMPT_LIST = {"豁免列表"}
 
 
 async def _send(matcher: Matcher, text: str) -> None:
@@ -707,6 +783,22 @@ async def handle_sensitive_admin(args: Message = CommandArg()) -> None:
             sensitive_admin,
             f"敏感词词库（全局，共 {len(current)} 个，监控：{state}）：\n{_brief(current)}",
         )
+        return
+
+    if action in _EXEMPT_LIST:
+        ids = sorted(parse_ids(str(await _kv("sensitive_exempt_users"))))
+        await _send(sensitive_admin, f"踢人豁免名单（{len(ids)} 人）：{'、'.join(map(str, ids)) or '空'}")
+        return
+    if action in _EXEMPT_ADD | _EXEMPT_DEL:
+        targets = parse_ids(rest)
+        if not targets:
+            await _send(sensitive_admin, "请在指令后写 QQ 号，如：/敏感词 豁免 10001 10002")
+            return
+        current = parse_ids(str(await _kv("sensitive_exempt_users")))
+        current = current | targets if action in _EXEMPT_ADD else current - targets
+        await get_store().set_kv("sensitive_exempt_users", ",".join(map(str, sorted(current))))
+        verb = "加入" if action in _EXEMPT_ADD else "移出"
+        await _send(sensitive_admin, f"已{verb} {len(targets)} 人，当前豁免名单共 {len(current)} 人。")
         return
 
     if action in _ADD_ACTIONS:

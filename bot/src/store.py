@@ -362,6 +362,18 @@ class Store:
             for r in rows
         ]
 
+    async def count_actions_today(self, group_id: int, action: str, source: str = "sensitive") -> int:
+        """某群今日（本地时区自然日）某类处罚已执行的次数，如 kick。"""
+        midnight = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT COUNT(*) FROM punishments WHERE group_id = ? AND action = ? AND source = ?"
+            " AND ts >= ?",
+            (group_id, action, source, midnight.isoformat(timespec="seconds")),
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
     async def list_punishments(
         self, limit: int = 100, group_id: int | None = None
     ) -> list[dict]:

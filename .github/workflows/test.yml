@@ -1,0 +1,26 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+    paths: ["bot/**", ".github/workflows/test.yml"]
+  pull_request:
+    paths: ["bot/**", ".github/workflows/test.yml"]
+
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: pytest（只装被测逻辑需要的依赖，不装第三方插件）
+        run: >
+          uv run --no-project --python 3.12
+          --with "nonebot2[fastapi]" --with nonebot-adapter-onebot
+          --with aiosqlite --with httpx --with openai --with pypinyin
+          --with opencc-python-reimplemented --with pydantic
+          --with pytest --with pytest-asyncio
+          python -m pytest -q
