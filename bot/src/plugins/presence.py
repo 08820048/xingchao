@@ -89,6 +89,10 @@ async def _announce_online(bot: Bot) -> None:
     await _touch()
     if not should or not await _enabled():
         return
+    from src.plugins.updates import pending_entry
+
+    if await pending_entry() is not None:
+        return  # 本次部署带有更新公告，由更新公告一并告知已上线
     suffix = f"（离线约 {format_duration(gap)}）" if gap > STALE_SECONDS else ""
     sent = await _broadcast(bot, f"✅ 星潮已上线{suffix}，可以继续使用啦～")
     logger.info(f"上线通知已发送：{sent}/{len(_targets())} 个群")

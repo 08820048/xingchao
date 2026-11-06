@@ -222,7 +222,7 @@ async def check_group(bot: Bot, group_id: int) -> None:
             "send_group_msg",
             group_id=group_id,
             message=f"📢 本群成员已满（{count}/{limit}），新朋友暂时无法加入。"
-            "将按活跃度清理长期不发言的成员，腾出名额，请大家保持活跃～",
+            "管理员将按活跃度清理长期不发言的成员，腾出名额，请大家保持活跃～",
         )
     except Exception:
         logger.exception(f"发送满员提醒失败：group={group_id}")

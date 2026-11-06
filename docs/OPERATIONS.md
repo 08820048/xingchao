@@ -255,3 +255,14 @@ npx wrangler pages deploy dist --project-name=xingchao --branch=main
   （webui.json 的 autoLoginAccount 已设为小号 QQ）；会话彻底失效时才需要重新扫码
 - WebUI 会话会过期自动退出：用带 token 参数的完整网址打开即可免输入
   （`http://127.0.0.1:6099/webui?token=<token>`），建议保存为书签
+
+---
+
+## 11. 版本更新公告
+
+- 每次发版（部署）前，在 `bot/src/changelog.json` **最前面**追加一条记录：
+  `version`、`date`、`added` / `improved` / `fixed`（用户能感知的改动，写人话，别写内部实现）
+- 部署后机器人连上 NapCat 时，若最新版本与上次已公告版本不同，会自动向白名单群推送一条规范公告
+  （同时代替「已上线」通知）；推送成功后记录版本，不会重复发
+- 不想打扰群友的小改动：该条记录加 `"notify": false`，只记录不推送
+- 临时关闭公告：kv `update_notify` 设为 `false`；群内 `/更新日志` 可随时查看最近一次更新
