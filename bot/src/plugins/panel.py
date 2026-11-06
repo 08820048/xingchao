@@ -655,6 +655,17 @@ def _register_routes() -> None:
             }
         )
 
+    @app.get("/panel/api/sensitive/stats")
+    async def panel_sensitive_stats(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins.sensitive import suggest_for_word
+
+        rows = await get_store().word_stats()
+        for r in rows:
+            r["suggestion"] = suggest_for_word(r)
+        return JSONResponse({"ok": True, "data": {"words": rows}})
+
     @app.post("/panel/api/sensitive")
     async def panel_sensitive_post(request: Request) -> JSONResponse:
         if not _authorized(request):

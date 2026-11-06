@@ -2140,7 +2140,75 @@ function SensitiveTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
           </Button>
         </CardPanel>
       </Card>
+      <WordStatsCard />
     </div>
+  );
+}
+
+type WordStat = {
+  word: string;
+  candidates: number;
+  released: number;
+  punished: number;
+  fallback: number;
+  appeal_accepted: number;
+  appeals: number;
+  suggestion: string;
+};
+
+function WordStatsCard() {
+  const [rows, setRows] = useState<WordStat[] | null>(null);
+  useEffect(() => {
+    api<{ ok: boolean; data: { words: WordStat[] } }>("/panel/api/sensitive/stats").then((r) => {
+      if (r.ok) setRows(r.data.words);
+    });
+  }, []);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">词条命中统计（排查误判）</CardTitle>
+        <CardDescription>
+          放行 = AI 复核判定为正常讨论；处罚 = 确认违规；申诉通过次数来自违规记录。
+          放行占比高或有申诉通过的词，建议改具体或加豁免短语（~前缀）
+        </CardDescription>
+      </CardHeader>
+      <CardPanel>
+        {!rows ? (
+          <Spinner />
+        ) : rows.length === 0 ? (
+          <p className="text-muted-foreground text-sm">暂无命中数据（从本版本部署后开始统计）</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>词</TableHead>
+                <TableHead>命中</TableHead>
+                <TableHead>放行</TableHead>
+                <TableHead>处罚</TableHead>
+                <TableHead>未复核</TableHead>
+                <TableHead>申诉通过</TableHead>
+                <TableHead>建议</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.word}>
+                  <TableCell className="font-mono">{r.word}</TableCell>
+                  <TableCell>{r.candidates}</TableCell>
+                  <TableCell>{r.released}</TableCell>
+                  <TableCell>{r.punished}</TableCell>
+                  <TableCell>{r.fallback}</TableCell>
+                  <TableCell>{r.appeal_accepted}/{r.appeals}</TableCell>
+                  <TableCell className="text-xs">
+                    {r.suggestion ? <Badge variant="secondary">{r.suggestion}</Badge> : "—"}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardPanel>
+    </Card>
   );
 }
 

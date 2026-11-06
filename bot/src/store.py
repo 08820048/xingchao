@@ -57,6 +57,14 @@ CREATE TABLE IF NOT EXISTS punishments (
     appeal_text TEXT DEFAULT '',
     appeal_ts TEXT
 );
+CREATE TABLE IF NOT EXISTS word_stat (
+    word TEXT PRIMARY KEY,
+    candidates INTEGER DEFAULT 0,
+    released INTEGER DEFAULT 0,
+    punished INTEGER DEFAULT 0,
+    fallback INTEGER DEFAULT 0,
+    last_ts TEXT
+);
 CREATE TABLE IF NOT EXISTS blog_posts (
     url TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -310,6 +318,39 @@ class Store:
         ) as cur:
             row = await cur.fetchone()
         return int(row[0]) if row else 0
+
+    async def incr_word_stat(self, word: str, outcome: str) -> None:
+        """敏感词命中统计。outcome：released=AI 复核放行 / punished=确认违规 / fallback=复核不可用兜底。"""
+        if outcome not in ("released", "punished", "fallback"):
+            return
+        conn = await self._ensure()
+        await conn.execute(
+            f"INSERT INTO word_stat (word, candidates, {outcome}, last_ts) VALUES (?, 1, 1, ?)"
+            f" ON CONFLICT(word) DO UPDATE SET candidates = candidates + 1,"
+            f" {outcome} = {outcome} + 1, last_ts = excluded.last_ts",
+            (word, datetime.now().astimezone().isoformat(timespec="seconds")),
+        )
+        await conn.commit()
+
+    async def word_stats(self) -> list[dict]:
+        """每个词的命中情况 + 申诉通过次数（来自违规记录）。"""
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT w.word, w.candidates, w.released, w.punished, w.fallback, w.last_ts,"
+            " (SELECT COUNT(*) FROM punishments p WHERE p.word = w.word"
+            "  AND p.source = 'sensitive' AND p.appeal_status = 'accepted'),"
+            " (SELECT COUNT(*) FROM punishments p WHERE p.word = w.word"
+            "  AND p.source = 'sensitive' AND p.appeal_status != 'none')"
+            " FROM word_stat w ORDER BY w.candidates DESC, w.word"
+        ) as cur:
+            rows = await cur.fetchall()
+        return [
+            {
+                "word": r[0], "candidates": r[1], "released": r[2], "punished": r[3],
+                "fallback": r[4], "last_ts": r[5], "appeal_accepted": r[6], "appeals": r[7],
+            }
+            for r in rows
+        ]
 
     async def list_punishments(
         self, limit: int = 100, group_id: int | None = None

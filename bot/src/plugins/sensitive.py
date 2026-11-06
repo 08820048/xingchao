@@ -168,6 +168,18 @@ def clean_words(items: list[str]) -> list[str]:
     return words
 
 
+def suggest_for_word(row: dict) -> str:
+    """根据命中统计给出处理建议（仅提示，不自动改词库）。"""
+    cand, released = row["candidates"], row["released"]
+    if row["appeal_accepted"] >= 1:
+        return "有申诉通过：建议加豁免短语或移除该词"
+    if cand >= 5 and released / cand >= 0.8:
+        return "AI 复核多数放行：词太宽，建议改为更具体的词或加豁免短语"
+    if cand >= 5 and row["fallback"] / cand >= 0.5:
+        return "多数未经 AI 复核：请检查 AI 配置"
+    return ""
+
+
 async def get_words() -> list[str]:
     """当前全局敏感词列表。"""
     raw = str(await _kv("sensitive_words") or "")
@@ -486,6 +498,12 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
     decision, review_reason = "violation", ""
     if cfg["sensitive_review"]:
         decision, review_reason = await _ai_review(event.group_id, text, hit)
+    try:
+        await get_store().incr_word_stat(
+            hit, {"safe": "released", "violation": "punished"}.get(decision, "fallback")
+        )
+    except Exception:
+        logger.exception("写入敏感词命中统计失败")
     if decision == "safe":
         logger.info(
             f"敏感词候选放行（AI 复核 normal）：group={event.group_id} 词={hit}"

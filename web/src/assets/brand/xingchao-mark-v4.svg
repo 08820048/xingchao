@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">星潮 Xingchao</title>
+  <desc id="desc">星的下方尖角自然延展为一道潮汐。</desc>
+  <rect width="1024" height="1024" fill="#082B35"/>
+  <path fill="#78E3D2" d="M512 176c17 120 65 168 185 185-103 15-152 53-176 139 39 38 90 59 150 54 65-5 119-39 177-106-34 170-153 294-315 308-151 13-285-65-357-194 96 61 208 62 291-5 28-22 48-46 59-70-26-76-76-111-199-126 120-17 168-65 185-185Z"/>
+</svg>
