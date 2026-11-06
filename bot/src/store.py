@@ -158,6 +158,16 @@ class Store:
         ) as cur:
             return [(int(r[0]), int(r[1])) for r in await cur.fetchall()]
 
+    async def get_activity_since(self, group_id: int, since_day: str) -> dict[int, int]:
+        """某群自 since_day（YYYY-MM-DD，含）起各成员的发言总数。"""
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT user_id, SUM(count) FROM msg_stat_user WHERE group_id = ? AND day >= ?"
+            " GROUP BY user_id",
+            (group_id, since_day),
+        ) as cur:
+            return {int(r[0]): int(r[1]) for r in await cur.fetchall()}
+
     async def add_task(self, group_id: int, time_: str, message: str, at_all: bool,
                        repeat: str, weekday: int | None, date_: str | None) -> int:
         conn = await self._ensure()
