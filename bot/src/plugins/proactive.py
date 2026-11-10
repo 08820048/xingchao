@@ -397,6 +397,14 @@ async def decide_and_act(
     except Exception:
         logger.debug("加载表情包库失败", exc_info=True)
     prompt = build_prompt(transcript, situation, name, knowledge, sticker_menu)
+    try:
+        from src.plugins import feedback
+
+        fb_line = feedback.prompt_line(group_id)
+        if fb_line:
+            prompt += f"\n【反馈】{fb_line}\n"
+    except Exception:
+        logger.debug("注入反馈失败", exc_info=True)
     if mem_text:
         prompt = mem_text + "\n\n" + prompt
     raw = await ai_plugin.generate_text(
@@ -516,14 +524,20 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
             await decide_and_act(bot, gid, uid, "attention", sender, burst=burst)
             return
 
-        # 2) 夜间静默：只保留接话窗口
+        # 2) 负面反馈收敛：被连续点了"踩/？"之后暂停主动发言一阵（接话窗口不受影响）
+        from src.plugins import feedback
+
+        if feedback.dampened(gid):
+            return
+
+        # 3) 夜间静默：只保留接话窗口
         if in_quiet_hours(datetime.now(), str(await _kv("proactive_quiet_start")),
                           str(await _kv("proactive_quiet_end"))):
             return
 
         entries = awareness.recent_entries(gid, int(await _kv("proactive_window")))
 
-        # 3) 复读：不调用模型
+        # 4) 复读：不调用模型
         rep = repeat_candidate(awareness.recent_entries(gid, 120))
         if rep and burst_allowed(gid, burst):
             repeat_prob = await _param(gid, "repeat_prob", mode)
@@ -533,7 +547,7 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
                 _mark_sent(gid)
                 return
 
-        # 4) 其余触发：冷却 + 每日上限
+        # 5) 其余触发：冷却 + 每日上限
         if now - _last_attempt.get(gid, 0.0) < await _param(gid, "cooldown", mode):
             return
         if await _daily_count(gid) >= await _param(gid, "daily_limit", mode):

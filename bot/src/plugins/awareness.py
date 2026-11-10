@@ -25,16 +25,17 @@ from collections import OrderedDict, deque
 from datetime import datetime
 from typing import Any
 
-from nonebot import on_message, on_notice
+from nonebot import get_driver, on_message, on_notice
 from nonebot.adapters.onebot.v11 import (
     Bot,
     GroupMessageEvent,
     GroupRecallNoticeEvent,
     Message,
+    MessageSegment,
 )
 from nonebot.log import logger
 
-from src.permission import GROUP_WHITELIST
+from src.permission import GROUP_WHITELIST, merged_whitelist
 from src.store import get_store
 
 DEFAULTS: dict[str, Any] = {
@@ -425,6 +426,8 @@ recorder = on_message(rule=GROUP_WHITELIST, priority=0, block=False)
 async def handle_record(bot: Bot, event: GroupMessageEvent) -> None:
     if event.user_id == int(bot.self_id):
         return  # 机器人自己的发言走 API 钩子
+    if event.group_id not in _backfilled:
+        await backfill(bot, event.group_id)  # 重启后第一次见到该群消息时补齐历史
     sender = event.sender
     name = getattr(sender, "card", None) or getattr(sender, "nickname", None) or str(event.user_id)
     reply = None
@@ -484,5 +487,90 @@ async def _record_bot_sends(bot, exception, api, data, result) -> None:
         got = extract_bot_text(api, data)
         if got and (await config())["awareness_enabled"]:
             record_bot(got[0], got[1])
+        if got and isinstance(result, dict):  # 登记发出的消息，用于识别别人给它贴的表情
+            from src.plugins import feedback
+
+            feedback.track_bot_message(result.get("message_id"), got[0], got[1])
     except Exception:
         logger.debug("记录机器人发言失败", exc_info=True)
+
+
+# ---------------------------------------------------------------- 历史回填（重启后不失忆）
+
+_backfilled: set[int] = set()
+BACKFILL_COUNT = 40
+
+
+def _history_to_message(raw: Any) -> Message:
+    if isinstance(raw, str):
+        return Message(raw)
+    segs = []
+    for seg in raw if isinstance(raw, list) else []:
+        if isinstance(seg, dict) and seg.get("type"):
+            segs.append(MessageSegment(seg["type"], seg.get("data") or {}))
+    return Message(segs)
+
+
+def parse_history(result: Any, self_id: int, now: float, ttl_seconds: float) -> list[dict]:
+    """把 get_group_msg_history 的返回转成 (按时间升序的) 可入缓冲的条目；已过期的丢弃。"""
+    rows = result.get("messages") if isinstance(result, dict) else result
+    out: list[dict] = []
+    for m in rows if isinstance(rows, list) else []:
+        try:
+            ts = float(m.get("time") or 0)
+            uid = int(m.get("user_id") or (m.get("sender") or {}).get("user_id") or 0)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if not ts or now - ts > ttl_seconds:
+            continue
+        message = _history_to_message(m.get("message"))
+        text, images, extras = summarize_message(message)
+        if not (text or images or extras):
+            continue
+        sender = m.get("sender") or {}
+        out.append({
+            "ts": ts, "user_id": 0 if uid == self_id else uid,
+            "name": BOT_NAME if uid == self_id else (sender.get("card") or sender.get("nickname") or str(uid)),
+            "message_id": m.get("message_id"), "text": text, "images": images, "extras": extras,
+            "reply": None, "bot": uid == self_id,
+        })
+    out.sort(key=lambda e: e["ts"])
+    return out
+
+
+async def backfill(bot, group_id: int, now: float | None = None) -> int:
+    """用群历史消息补满缓冲（每群每次启动只做一次）；返回补入条数。"""
+    if group_id in _backfilled:
+        return 0
+    _backfilled.add(group_id)
+    cfg = await config()
+    if not cfg["awareness_enabled"]:
+        return 0
+    try:
+        result = await bot.call_api("get_group_msg_history", group_id=group_id, count=BACKFILL_COUNT)
+    except Exception:
+        logger.debug("回填群历史消息失败（接口不支持或无权限）", exc_info=True)
+        return 0
+    now = now if now is not None else time.time()
+    history = parse_history(result, int(bot.self_id), now, cfg["awareness_ttl_minutes"] * 60)
+    buf = _buffers.get(group_id)
+    have = {e["message_id"] for e in (buf or ()) if e["message_id"] is not None}
+    fresh = [e for e in history if e["message_id"] not in have]
+    if not fresh:
+        return 0
+    merged = sorted([*fresh, *(buf or ())], key=lambda e: e["ts"])
+    size = cfg["awareness_buffer_size"]
+    _buffers[group_id] = deque(merged[-size:], maxlen=size)
+    return len(fresh)
+
+
+@get_driver().on_bot_connect
+async def _backfill_on_connect(bot: Bot) -> None:
+    await asyncio.sleep(3)  # 等连接稳定
+    for gid in sorted(merged_whitelist()):
+        try:
+            n = await backfill(bot, gid)
+            if n:
+                logger.info(f"群 {gid} 已回填 {n} 条历史消息")
+        except Exception:
+            logger.debug("回填异常", exc_info=True)
