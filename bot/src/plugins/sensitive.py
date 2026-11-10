@@ -694,6 +694,7 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
                 mute_minutes=mute_minutes if muted else 0,
                 reason=review_reason,
                 counted=counted,
+                message_id=event.message_id,
             )
         except Exception:
             logger.exception("写入违规记录失败")
@@ -917,12 +918,11 @@ async def _handle_appeal(bot: Bot, event: PrivateMessageEvent, text: str) -> Non
         await reply("申诉提交失败，请稍后重试或联系管理员。")
         return
     await reply("已收到你的申诉，管理员会尽快复核，处理结果会通过机器人通知你，请留意消息。")
-    await _notify(
-        bot,
-        f"📮 违规申诉\nQQ: {event.user_id}\n群号: {latest['group_id']}\n"
-        f"命中词: {latest['word']}\n处罚时间: {latest['ts']}\n"
-        f"申诉理由: {text[:200]}\n请在 Web 面板「违规记录」页处理",
-    )
+    from src.plugins import appeals
+
+    full = await store.get_punishment(latest["id"])
+    await _notify(bot, await appeals.format_notice(full or {**latest, "user_id": event.user_id,
+                                                             "reason": "", "source": "sensitive"}, text))
 
 
 appeal_cmd = on_command(

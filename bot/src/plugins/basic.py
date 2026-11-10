@@ -79,6 +79,7 @@ ADMIN_TEXT = (
     "  ◈ /blog status|refresh|list|on|off — 博客知识关联推荐（xuyi.dev）\n"
     "  ◈ /通过|拒绝 <序号> — 入群申请审批\n"
     "  ◈ /pending — 待审批列表\n"
+    "  ◈ /申诉列表|查看|通过|驳回 <编号> — 违规申诉处理\n"
     "  ◈ /welcome on|off|set — 欢迎语配置\n"
     "  ◈ /task list — 定时任务列表\n"
     "  ◈ /notice <内容> — 发布群公告\n"

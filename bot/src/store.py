@@ -105,10 +105,17 @@ class Store:
                 await conn.executescript(_SCHEMA)
                 async with conn.execute("PRAGMA table_info(punishments)") as cur:
                     cols = {r[1] for r in await cur.fetchall()}
-                if "counted" not in cols:  # 迁移：是否计入升级处罚次数
-                    await conn.execute(
-                        "ALTER TABLE punishments ADD COLUMN counted INTEGER DEFAULT 1"
-                    )
+                # 迁移：新增列（counted=是否计入升级；message_id=被处罚消息，用于申诉时读日志原文；
+                # appeal_note/resolved_by=处理备注与处理人；appeal_reminded=是否已催办）
+                for col, ddl in (
+                    ("counted", "INTEGER DEFAULT 1"),
+                    ("message_id", "INTEGER"),
+                    ("appeal_note", "TEXT DEFAULT ''"),
+                    ("resolved_by", "TEXT DEFAULT ''"),
+                    ("appeal_reminded", "INTEGER DEFAULT 0"),
+                ):
+                    if col not in cols:
+                        await conn.execute(f"ALTER TABLE punishments ADD COLUMN {col} {ddl}")
                 await conn.commit()
                 self._conn = conn
                 logger.debug(f"SQLite 已连接：{self._path}")
@@ -358,16 +365,17 @@ class Store:
         reason: str = "",
         source: str = "sensitive",
         counted: bool = True,
+        message_id: int | None = None,
     ) -> int:
-        """记录一次处罚（不存聊天内容，只存命中词与处理结果）。"""
+        """记录一次处罚（不存聊天内容，只存命中词与处理结果；message_id 仅用于申诉时回读日志）。"""
         conn = await self._ensure()
         cur = await conn.execute(
             "INSERT INTO punishments (ts, group_id, user_id, word, action, mute_minutes,"
-            " reason, source, counted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " reason, source, counted, message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now().astimezone().isoformat(timespec="seconds"),
                 group_id, user_id, word, action, mute_minutes, reason[:200], source,
-                1 if counted else 0,
+                1 if counted else 0, message_id,
             ),
         )
         await conn.commit()
@@ -473,8 +481,8 @@ class Store:
         since = (datetime.now().astimezone() - timedelta(hours=hours)).isoformat(timespec="seconds")
         conn = await self._ensure()
         async with conn.execute(
-            "SELECT id, ts, group_id, word, action, appeal_status FROM punishments"
-            " WHERE user_id = ? AND ts >= ? ORDER BY id DESC LIMIT 1",
+            "SELECT id, ts, group_id, word, action, appeal_status, message_id, mute_minutes,"
+            " source FROM punishments WHERE user_id = ? AND ts >= ? ORDER BY id DESC LIMIT 1",
             (user_id, since),
         ) as cur:
             row = await cur.fetchone()
@@ -482,7 +490,8 @@ class Store:
             return None
         return {
             "id": row[0], "ts": row[1], "group_id": row[2], "word": row[3],
-            "action": row[4], "appeal_status": row[5],
+            "action": row[4], "appeal_status": row[5], "message_id": row[6],
+            "mute_minutes": row[7], "source": row[8],
         }
 
     async def appeal_punishment(self, punishment_id: int, text: str) -> bool:
@@ -500,13 +509,16 @@ class Store:
         await conn.commit()
         return cur.rowcount > 0
 
-    async def resolve_appeal(self, punishment_id: int, accept: bool) -> dict | None:
+    async def resolve_appeal(
+        self, punishment_id: int, accept: bool, note: str = "", operator: str = ""
+    ) -> dict | None:
         """处理申诉，返回该记录（含群/用户，便于撤销禁言）；非待处理记录返回 None。"""
         conn = await self._ensure()
         status = "accepted" if accept else "rejected"
         cur = await conn.execute(
-            "UPDATE punishments SET appeal_status = ? WHERE id = ? AND appeal_status = 'pending'",
-            (status, punishment_id),
+            "UPDATE punishments SET appeal_status = ?, appeal_note = ?, resolved_by = ?"
+            " WHERE id = ? AND appeal_status = 'pending'",
+            (status, note[:200], operator[:40], punishment_id),
         )
         await conn.commit()
         if cur.rowcount == 0:
@@ -524,17 +536,41 @@ class Store:
             "word": row[3], "action": row[4], "mute_minutes": row[5],
         }
 
+    async def get_punishment(self, punishment_id: int) -> dict | None:
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT id, ts, group_id, user_id, word, action, mute_minutes, reason, source,"
+            " appeal_status, appeal_text, appeal_ts, message_id, appeal_note, resolved_by"
+            " FROM punishments WHERE id = ?",
+            (punishment_id,),
+        ) as cur:
+            r = await cur.fetchone()
+        if not r:
+            return None
+        keys = ("id", "ts", "group_id", "user_id", "word", "action", "mute_minutes", "reason",
+                "source", "appeal_status", "appeal_text", "appeal_ts", "message_id",
+                "appeal_note", "resolved_by")
+        return dict(zip(keys, r, strict=True))
+
+    async def mark_appeal_reminded(self, punishment_id: int) -> None:
+        conn = await self._ensure()
+        await conn.execute(
+            "UPDATE punishments SET appeal_reminded = 1 WHERE id = ?", (punishment_id,)
+        )
+        await conn.commit()
+
     async def pending_appeals(self) -> list[dict]:
         conn = await self._ensure()
         async with conn.execute(
-            "SELECT id, ts, group_id, user_id, word, action, appeal_text, appeal_ts, source"
-            " FROM punishments WHERE appeal_status = 'pending' ORDER BY appeal_ts",
+            "SELECT id, ts, group_id, user_id, word, action, appeal_text, appeal_ts, source,"
+            " appeal_reminded FROM punishments WHERE appeal_status = 'pending' ORDER BY appeal_ts",
         ) as cur:
             rows = await cur.fetchall()
         return [
             {
                 "id": r[0], "ts": r[1], "group_id": r[2], "user_id": r[3], "word": r[4],
                 "action": r[5], "appeal_text": r[6], "appeal_ts": r[7], "source": r[8],
+                "reminded": bool(r[9]),
             }
             for r in rows
         ]

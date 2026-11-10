@@ -631,6 +631,35 @@ async def _t_reject_request(bot, event, args) -> str:
     return f"已拒绝申请 #{seq}（QQ {r['user_id']}），理由：{reason}"
 
 
+async def _t_appeal_list(bot, event, args) -> str:
+    from src.plugins import appeals
+    pending = await get_store().pending_appeals()
+    if not pending:
+        return "当前没有待处理的违规申诉。"
+    items = []
+    for a in pending:
+        rec = await get_store().get_punishment(a["id"])
+        items.append({
+            "编号": a["id"], "QQ": a["user_id"], "群号": a["group_id"], "命中": a["word"],
+            "处罚": appeals.action_desc(rec) if rec else a["action"],
+            "原文": await appeals.original_block(rec) if rec else "",
+            "申诉理由": a["appeal_text"], "申诉时间": a["appeal_ts"],
+        })
+    return _j({"待处理申诉": items, "提示": "用 resolve_appeal 通过/驳回；通过会自动解除禁言并通知申诉人"})
+
+
+async def _t_appeal_resolve(bot, event, args) -> str:
+    from src.plugins import appeals
+    pid, approve = args.get("appeal_id"), args.get("approve")
+    if not isinstance(pid, int) or not isinstance(approve, bool):
+        return "错误：需要 appeal_id（整数，可先用 list_appeals 查看）与 approve（布尔值）。"
+    ok, msg = await appeals.resolve_appeal(
+        bot, pid, approve, str(args.get("note", "")).strip()[:200],
+        operator=f"QQ {event.user_id} (AI)", operator_uid=event.user_id,
+    )
+    return msg if ok else f"错误：{msg}"
+
+
 async def _t_recall(bot, event, args) -> str:
     message_id = args.get("message_id")
     if not message_id and getattr(event, "reply", None) is not None:
@@ -1126,6 +1155,12 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("reject_join_request", "拒绝入群申请",
               {"type": "object", "properties": {"seq": {"type": "integer"}, "reason": {"type": "string"}}, "required": ["seq"]},
               "superuser", _t_reject_request),
+        _tool("list_appeals", "查看待处理的违规申诉（编号、申诉人、被处罚原文、申诉理由）",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_appeal_list),
+        _tool("resolve_appeal", "通过或驳回违规申诉（通过会自动解除禁言并私聊通知申诉人；先用 list_appeals 获取编号）",
+              {"type": "object", "properties": {"appeal_id": {"type": "integer", "description": "申诉编号"}, "approve": {"type": "boolean", "description": "true=通过，false=驳回"}, "note": {"type": "string", "description": "给申诉人的备注/驳回理由（可空）"}}, "required": ["appeal_id", "approve"]},
+              "superuser", _t_appeal_resolve),
         _tool("list_replies", "查看关键词词库",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_reply_list),

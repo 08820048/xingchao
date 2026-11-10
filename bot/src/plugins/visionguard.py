@@ -312,6 +312,7 @@ async def _handle_qr_hit(
                 mute_minutes=mute_minutes if muted else 0,
                 reason=f"二维码内容：{payload[:120]}",
                 source="qrcode",
+                message_id=event.message_id,
             )
         except Exception:
             logger.exception("写入二维码违规记录失败")
@@ -475,6 +476,7 @@ async def handle_vision(bot: Bot, event: GroupMessageEvent, matcher: Matcher) ->
                     mute_minutes=mute_minutes if muted else 0,
                     reason=reason,
                     source="vision",
+                    message_id=event.message_id,
                 )
             except Exception:
                 logger.exception("写入图片违规记录失败")

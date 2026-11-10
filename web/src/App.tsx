@@ -2270,6 +2270,7 @@ const shortTime = (ts: string) => ts.slice(5, 16).replace("T", " ");
 function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   const [data, setData] = useState<PunishmentsData | null>(null);
   const [gid, setGid] = useState("all");
+  const [note, setNote] = useState("");
   const load = useCallback((g: string) => {
     const q = g !== "all" ? `?group_id=${g}` : "";
     api<{ ok: boolean; data: PunishmentsData }>(`/panel/api/punishments${q}`).then(
@@ -2279,9 +2280,10 @@ function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void })
   useEffect(() => load(gid), [gid, load]);
   if (!data) return <Spinner className="m-8" />;
   const resolve = async (id: number, approve: boolean) => {
-    const r = await post("/panel/api/punishments", { action: "resolve", id, approve });
+    const r = await post("/panel/api/punishments", { action: "resolve", id, approve, note });
     if (r.ok) {
       toast(r.data.message);
+      setNote("");
       load(gid);
     } else toast(r.error, false);
   };
@@ -2292,10 +2294,16 @@ function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void })
           <CardHeader>
             <CardTitle className="text-base">待处理申诉（{data.appeals.length}）</CardTitle>
             <CardDescription>
-              通过后会自动解除对应禁言，并私聊通知申诉人；申诉来自用户私聊 /申诉
+              通过后会自动解除对应禁言，并私聊通知申诉人；也可在 QQ 里用 /申诉通过|驳回 &lt;编号&gt; 处理
             </CardDescription>
           </CardHeader>
           <CardPanel className="grid gap-2">
+            <Input
+              value={note}
+              maxLength={200}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="处理备注（可选，会随结果一起发给申诉人）"
+            />
             {data.appeals.map((a) => (
               <div
                 key={a.id}

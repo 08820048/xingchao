@@ -84,17 +84,6 @@ def _panel_bot():
     return next(iter(get_bots().values()), None)
 
 
-async def _try_unmute(group_id: int, user_id: int) -> tuple[bool, str]:
-    bot = _panel_bot()
-    if bot is None:
-        return False, "机器人未连接"
-    try:
-        await bot.call_api("set_group_ban", group_id=group_id, user_id=user_id, duration=0)
-        return True, ""
-    except Exception as e:
-        return False, str(e)
-
-
 def _scan_hourly(log_dir: Path, day: str, group_id: int | None) -> list[int]:
     """扫描当天 jsonl 日志，按小时统计消息数（在线程中执行，避免阻塞事件循环）。"""
     hours = [0] * 24
@@ -772,31 +761,12 @@ def _register_routes() -> None:
             return JSONResponse(
                 {"ok": False, "error": "id 应为整数，approve 应为布尔值"}, status_code=400
             )
-        store = get_store()
-        record = await store.resolve_appeal(pid, approve)
-        if record is None:
-            return JSONResponse({"ok": False, "error": "该申诉不存在或已处理"}, status_code=404)
-        msg = "已通过申诉" if approve else "已驳回申诉"
-        if approve:
-            if record["action"] in ("mute", "recall_mute"):
-                ok, err = await _try_unmute(record["group_id"], record["user_id"])
-                msg += "，并已解除禁言" if ok else f"，但解除禁言失败：{err}"
-            elif record["action"] == "kick":
-                msg += "（原处罚为踢出群聊，无法自动恢复，请手动邀请其回群）"
-            else:
-                msg += "（原处罚为撤回，无需解除禁言）"
-        bot = _panel_bot()
-        if bot is not None:
-            from src.plugins.sensitive import send_private
+        from src.plugins.appeals import resolve_appeal
 
-            sent = await send_private(
-                bot,
-                record["user_id"],
-                f"你关于「{record['word']}」的申诉已{'通过' if approve else '被驳回'}。",
-                record["group_id"],
-            )
-            if not sent:
-                msg += "（但未能通知申诉人，请手动联系）"
+        note = str(body.get("note", "")).strip()[:200]
+        ok, msg = await resolve_appeal(_panel_bot(), pid, approve, note, operator="面板")
+        if not ok:
+            return JSONResponse({"ok": False, "error": msg}, status_code=404)
         return JSONResponse({"ok": True, "data": {"message": msg}})
 
     @app.get("/panel/api/visionguard")

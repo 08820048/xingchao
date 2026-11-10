@@ -79,7 +79,8 @@
 | `/ai vision <模型>` | `set_vision_model` | 超管 | 「把视觉模型换成 glm-4v-flash」 |
 | `/reply list/reload` | `list_replies` / `reload_replies` | 超管 | 「看看词库里有什么」 |
 | `/敏感词 add/del/list` | `add_sensitive_words` / `remove_sensitive_words` / `list_sensitive_words` | 超管 | 「把“代刷”加入敏感词」「删掉敏感词 代刷」 |
-| `/申诉 <理由>` | —（私聊指令：AI 私聊仅超管可用，被处罚者多为普通成员，故未接入 AI 工具；面板「违规记录」页可处理） | 被处罚者 | 对敏感词处罚有异议时私聊说明理由 |
+| `/申诉 <理由>` | —（私聊指令：AI 私聊仅超管可用，被处罚者多为普通成员，故未接入 AI 工具；处理见下一行） | 被处罚者 | 对敏感词处罚有异议时私聊说明理由 |
+| `/申诉列表` `/申诉查看 <编号>` `/申诉通过 <编号> [备注]` `/申诉驳回 <编号> [理由]` | `list_appeals` / `resolve_appeal` | 超管 | 「有没有待处理的申诉」「通过 5 号申诉」「驳回 5 号，理由：确实是广告」 |
 | `/welcome view/set/on/off` | `get_welcome` / `set_welcome` / `set_welcome_enabled` | 超管 | 「把欢迎语改成……」 |
 | `/notice <内容>` / `/notice list` | `publish_group_notice` / `get_group_notices` | 超管 | 「发个公告说周五维护」 |
 | —（内置能力） | `send_group_message` | 超管 | 「在群 123 里说一句：今晚八点活动开始」 |
