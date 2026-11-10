@@ -945,6 +945,27 @@ async def _t_vision_guard_toggle(bot, event, args) -> str:
     return f"图片 AI 识别与违规处理已{'开启' if enable else '关闭'}。"
 
 
+async def _t_proactive_mode(bot, event, args) -> str:
+    from src.permission import merged_whitelist
+    from src.plugins import proactive
+
+    mode = proactive.MODE_ALIASES.get(str(args.get("mode", "")).strip().lower())
+    if mode is None:
+        return "错误：mode 只能是 安静 / 正常 / 话痨（quiet/normal/chatty）。"
+    scope = args.get("group_id")
+    if scope in (None, "", 0):
+        scope = getattr(event, "group_id", None)
+    if str(scope) in ("global", "全局"):
+        await proactive.set_mode(mode)
+        return f"全局默认主动程度已设为「{proactive.MODE_LABEL[mode]}」。"
+    if not scope:
+        return "错误：私聊中请提供 group_id，或说“全局”。"
+    if int(scope) not in merged_whitelist():
+        return f"错误：群 {scope} 不在白名单内。"
+    await proactive.set_mode(mode, int(scope))
+    return f"群 {scope} 的主动程度已设为「{proactive.MODE_LABEL[mode]}」。"
+
+
 async def _t_proactive_toggle(bot, event, args) -> str:
     enable = bool(args.get("enabled", True))
     await get_store().set_kv("proactive_enabled", "true" if enable else "false")
@@ -1179,6 +1200,9 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_vision_model", "设置图片识别用的视觉模型（需支持图片输入）",
               {"type": "object", "properties": {"model": {"type": "string", "description": "如 glm-4v-flash"}}, "required": ["model"]},
               "superuser", _t_vision_model_set),
+        _tool("set_proactive_mode", "设置机器人在群里的主动程度档位：安静（很少插话）/ 正常 / 话痨（更爱接话、评论图片、复读）；默认设置当前群，group_id 填“全局”则改全局默认（用户说“话痨一点/安静点/少说话”时使用）",
+              {"type": "object", "properties": {"mode": {"type": "string", "enum": ["安静", "正常", "话痨"]}, "group_id": {"type": "string", "description": "群号或“全局”，默认当前群"}}, "required": ["mode"]},
+              "superuser", _t_proactive_mode),
         _tool("set_proactive_enabled", "开启/关闭群聊主动性（话题明确或有人求助时 AI 自动参与讨论）",
               {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
               "superuser", _t_proactive_toggle),
@@ -1402,6 +1426,17 @@ PURE_AT_FALLBACK = (
 )
 
 
+def _note_engaged(event: MessageEvent) -> None:
+    """回复群友后开启接话窗口：对方接着说不用再 @（由 proactive 判断是否在继续跟机器人说）。"""
+    if isinstance(event, GroupMessageEvent):
+        try:
+            from src.plugins import proactive
+
+            proactive.note_engaged(event.group_id, event.user_id)
+        except Exception:
+            logger.debug("开启接话窗口失败", exc_info=True)
+
+
 async def _attached_images_note(event: MessageEvent) -> str:
     """识别用户 @ 时附带的图片与所引用消息里的图片，生成给模型看的说明（没有图返回空串）。"""
     try:
@@ -1476,6 +1511,7 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     from src.plugins.voice import deliver_reply
 
     if await deliver_reply(bot, event, reply):
+        _note_engaged(event)
         return  # 语音回复模式：已发语音
     reply = md_to_qq(reply)  # QQ 不渲染标准 Markdown，发送前降级为可读文本
     dev_id = get_config().xingchao_developer_id
@@ -1491,6 +1527,7 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
             if part:
                 message += part
         await matcher.send(message)
+        _note_engaged(event)
     except MatcherException:
         raise
     except Exception:

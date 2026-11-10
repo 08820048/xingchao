@@ -311,13 +311,13 @@ async def describe_message_images(message: Message, limit: int = 3) -> list[str]
 
 # ---------------------------------------------------------------- 渲染
 
-def render_transcript(
-    group_id: int, *, limit: int | None = None, exclude_message_id: int | None = None,
-    now: float | None = None, ttl_minutes: int | None = None,
-) -> str:
+def _render_lines(
+    group_id: int, limit: int | None, exclude_message_id: int | None, now: float | None,
+    ttl_minutes: int | None,
+) -> list[tuple[dict, str]]:
     buf = _buffers.get(group_id)
     if not buf:
-        return ""
+        return []
     now = now if now is not None else time.time()
     ttl = (ttl_minutes or DEFAULTS["awareness_ttl_minutes"]) * 60
     entries = [
@@ -330,7 +330,7 @@ def render_transcript(
     def nm(qq: str) -> str:
         return "@" + names.get(int(qq), qq)
 
-    lines: list[str] = []
+    out: list[tuple[dict, str]] = []
     for e in entries:
         text = _AT_TOKEN.sub(lambda m: nm(m.group(1)), e["text"])
         if len(text) > TEXT_CAP:
@@ -345,11 +345,51 @@ def render_transcript(
             who = BOT_NAME if ruid == 0 else names.get(ruid, str(ruid))
             bits.append(f"↩回复「{who}: {rtext[:30]}」")
         hhmm = datetime.fromtimestamp(e["ts"]).strftime("%H:%M")
-        lines.append(f"[{hhmm}] {e['name']}: {' '.join(bits)}")
+        out.append((e, f"[{hhmm}] {e['name']}: {' '.join(bits)}"))
     # 总字数超限时从最早的开始丢
-    while lines and sum(len(x) + 1 for x in lines) > CONTEXT_CHARS:
-        lines.pop(0)
-    return "\n".join(lines)
+    while out and sum(len(x[1]) + 1 for x in out) > CONTEXT_CHARS:
+        out.pop(0)
+    return out
+
+
+def render_transcript(
+    group_id: int, *, limit: int | None = None, exclude_message_id: int | None = None,
+    now: float | None = None, ttl_minutes: int | None = None,
+) -> str:
+    return "\n".join(
+        line for _, line in _render_lines(group_id, limit, exclude_message_id, now, ttl_minutes)
+    )
+
+
+def render_indexed(
+    group_id: int, *, limit: int | None = None, now: float | None = None,
+    ttl_minutes: int | None = None,
+) -> tuple[str, list[int | None]]:
+    """带编号的渲染（#1 #2 …），供模型用编号指定要回复/回应的消息；
+    返回 (文本, 编号→message_id 列表；机器人自己的发言为 None，不可作为目标)。"""
+    rows = _render_lines(group_id, limit, None, now, ttl_minutes)
+    text = "\n".join(f"#{i} {line}" for i, (_, line) in enumerate(rows, 1))
+    return text, [e["message_id"] for e, _ in rows]
+
+
+async def indexed_context(group_id: int) -> tuple[str, list[int | None]]:
+    """主动发言用：必要时先补图片说明，再返回带编号的聊天。"""
+    cfg = await config()
+    if not cfg["awareness_enabled"] or not _buffers.get(group_id):
+        return "", []
+    try:
+        await ensure_captions(group_id)
+    except Exception:
+        logger.exception("生成图片说明失败")
+    return render_indexed(
+        group_id, limit=cfg["awareness_context_messages"], ttl_minutes=cfg["awareness_ttl_minutes"]
+    )
+
+
+def recent_entries(group_id: int, seconds: float, now: float | None = None) -> list[dict]:
+    """最近 N 秒内的消息（含机器人自己的）。"""
+    now = now if now is not None else time.time()
+    return [e for e in _buffers.get(group_id, ()) if now - e["ts"] <= seconds]
 
 
 CONTEXT_HEADER = (

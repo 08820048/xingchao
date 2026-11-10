@@ -935,6 +935,64 @@ def _register_routes() -> None:
                                           date_ if repeat == "once" else None)
         return JSONResponse({"ok": True, "data": {"message": f"定时任务 #{tid} 已创建", "id": tid}})
 
+    @app.get("/panel/api/proactive")
+    async def panel_proactive_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.permission import merged_whitelist
+        from src.plugins import proactive as pa
+
+        groups = {str(g): await pa.group_mode(g) for g in sorted(merged_whitelist())}
+        return JSONResponse({"ok": True, "data": {
+            "default_mode": await pa._default_mode(),
+            "groups": groups,
+            "overrides": {str(g): (await get_store().get_kv(f"proactive_mode_{g}")) in pa.PRESETS
+                          for g in sorted(merged_whitelist())},
+            "quiet_start": str(await pa._kv("proactive_quiet_start")),
+            "quiet_end": str(await pa._kv("proactive_quiet_end")),
+            "modes": pa.MODE_LABEL,
+        }})
+
+    @app.post("/panel/api/proactive")
+    async def panel_proactive_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.permission import merged_whitelist
+        from src.plugins import proactive as pa
+
+        body = await request.json()
+        store = get_store()
+        msgs: list[str] = []
+        if "mode" in body:
+            mode = str(body["mode"])
+            if mode not in pa.PRESETS:
+                return JSONResponse({"ok": False, "error": "mode 应为 quiet/normal/chatty"}, status_code=400)
+            scope = body.get("group_id", "default")
+            if scope == "default":
+                await pa.set_mode(mode)
+                msgs.append("全局默认档位已保存")
+            else:
+                if not isinstance(scope, int) or scope not in merged_whitelist():
+                    return JSONResponse({"ok": False, "error": "群必须在白名单内"}, status_code=400)
+                await pa.set_mode(mode, scope)
+                msgs.append(f"群 {scope} 档位已保存")
+        for key in ("quiet_start", "quiet_end"):
+            if key in body:
+                t = str(body[key]).strip()
+                if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", t):
+                    return JSONResponse({"ok": False, "error": "时间格式应为 HH:MM"}, status_code=400)
+                await store.set_kv(f"proactive_{key}", t)
+                msgs.append("静默时段已保存")
+        if body.get("clear_group") is not None:
+            gid = body["clear_group"]
+            if not isinstance(gid, int):
+                return JSONResponse({"ok": False, "error": "clear_group 应为群号"}, status_code=400)
+            await store.set_kv(f"proactive_mode_{gid}", "")
+            msgs.append(f"群 {gid} 已恢复为全局默认档位")
+        if not msgs:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        return JSONResponse({"ok": True, "data": {"message": "；".join(dict.fromkeys(msgs))}})
+
     @app.get("/panel/api/feeds")
     async def panel_feeds_get(request: Request) -> JSONResponse:
         if not _authorized(request):

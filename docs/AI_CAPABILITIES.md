@@ -76,6 +76,7 @@
 | `/plugin link on/off` | `set_link_preview_enabled` | 超管 | 「关闭链接自动解读」 |
 | `/plugin vision on/off` | `set_vision_guard_enabled` | 超管 | 「关闭图片违规检测」 |
 | `/plugin proactive on/off` | `set_proactive_enabled` | 超管 | 「关闭群聊主动性」 |
+| `/活跃度 安静\|正常\|话痨 [群号\|全局]` | `set_proactive_mode` | 超管 | 「话痨一点」「这个群安静点」「全局调成正常」 |
 | `/ai vision <模型>` | `set_vision_model` | 超管 | 「把视觉模型换成 glm-4v-flash」 |
 | `/reply list/reload` | `list_replies` / `reload_replies` | 超管 | 「看看词库里有什么」 |
 | `/敏感词 add/del/list` | `add_sensitive_words` / `remove_sensitive_words` / `list_sensitive_words` | 超管 | 「把“代刷”加入敏感词」「删掉敏感词 代刷」 |
@@ -104,9 +105,13 @@
 > - **图片识别与违规处理**（`visionguard.py`）：白名单群图片经视觉模型识别，**仅正常图片完全静默**，
 >   只有命中翻墙/VPN、色情、血腥暴力时才自动撤回并禁言发送者（默认 15 分钟）；开关
 >   `vision_guard_enabled`（`/plugin vision on|off`），视觉模型由 `/ai vision <模型>` 配置。
-> - **群聊主动性**（`proactive.py`）：群里讨论明确话题或有人求助/提问时，AI 自然加入一句；
->   两段式控本（活跃度门槛 + 模型自行 SKIP）+ 冷却/日限；开关 `proactive_enabled`
->   （`/plugin proactive on|off`）。
+> - **群聊主动性**（`proactive.py`）：基于群聊感知缓冲，像群友一样参与聊天。触发（先过规则门槛，
+>   过了才调一次模型）：求助/讨论、有人发图（按档位小概率看图）、接话窗口（机器人刚回复某人后，
+>   对方继续说不用再 @）、复读（不调模型）。一次决策返回 skip / react（只贴表情）/ reply（可引用某条、
+>   拆成最多 3 条短消息，回复前有拟人延迟）。档位 安静/正常/话痨 可按群设置（`/活跃度`、面板「AI」页、
+>   AI 工具 `set_proactive_mode`），决定冷却/日限/门槛/看图与复读概率；夜间静默时段（默认
+>   23:30–07:30）只保留接话；所有主动发送共用滚动频率上限。被认真问到是不是 AI 时承认是机器人。
+>   依赖「群聊感知」开启；开关 `proactive_enabled`（`/plugin proactive on|off`）。
 > - **群聊感知**（`awareness.py`）：每个白名单群在**内存**里保留最近一段聊天（文字、引用、@、
 >   表情包、语音/视频/文件标记、机器人自己的发言），被 @ 时作为"群里最近的聊天"注入 AI，
 >   于是能回答"刚才大家在聊什么""上面那张图是什么"。图片说明按需生成并缓存（违规审查已识别的

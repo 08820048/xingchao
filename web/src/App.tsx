@@ -1414,6 +1414,86 @@ type AiConfig = {
   usage: { day: string; groups: Record<string, number>; users: Record<string, number> };
 };
 
+type ActivityData = {
+  default_mode: string;
+  groups: Record<string, string>;
+  overrides: Record<string, boolean>;
+  quiet_start: string;
+  quiet_end: string;
+  modes: Record<string, string>;
+};
+
+function ActivityCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [d, setD] = useState<ActivityData | null>(null);
+  const [quiet, setQuiet] = useState({ start: "23:30", end: "07:30" });
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: ActivityData }>("/panel/api/proactive").then((r) => {
+      if (r.ok) {
+        setD(r.data);
+        setQuiet({ start: r.data.quiet_start, end: r.data.quiet_end });
+      }
+    });
+  }, []);
+  useEffect(() => load(), [load]);
+  if (!d) return <Spinner className="m-8" />;
+  const save = async (patch: Record<string, unknown>) => {
+    const r = await post("/panel/api/proactive", patch);
+    if (r.ok) { toast(r.data.message); load(); } else toast(r.error || "保存失败", false);
+  };
+  const sel = "border-input bg-background flex h-8 items-center rounded-lg border px-2 text-sm";
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">主动程度</CardTitle>
+        <CardDescription>
+          安静：很少插话；正常：有话题或求助时参与，偶尔看图、复读；话痨：更爱接话、评论图片、贴表情。
+          机器人回复后，对方接着说不用再 @ 也会继续聊。需先在仪表盘开启「群聊主动性」
+        </CardDescription>
+      </CardHeader>
+      <CardPanel className="grid gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Label>全局默认</Label>
+          <select value={d.default_mode} className={sel}
+            onChange={(e) => save({ mode: e.target.value, group_id: "default" })}>
+            {Object.entries(d.modes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </div>
+        <div className="grid gap-2">
+          {Object.entries(d.groups).map(([gid, mode]) => (
+            <div key={gid} className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+              <span className="text-sm">
+                群 {gid}
+                {!d.overrides[gid] && <Badge variant="secondary" className="ml-1">跟随默认</Badge>}
+              </span>
+              <div className="flex items-center gap-2">
+                <select value={mode} className={sel}
+                  onChange={(e) => save({ mode: e.target.value, group_id: +gid })}>
+                  {Object.entries(d.modes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                {d.overrides[gid] && (
+                  <Button size="sm" variant="outline" onClick={() => save({ clear_group: +gid })}>恢复默认</Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="q-s">夜间静默开始</Label>
+            <Input id="q-s" type="time" value={quiet.start} onChange={(e) => setQuiet({ ...quiet, start: e.target.value })} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="q-e">结束</Label>
+            <Input id="q-e" type="time" value={quiet.end} onChange={(e) => setQuiet({ ...quiet, end: e.target.value })} />
+          </div>
+          <Button onClick={() => save({ quiet_start: quiet.start, quiet_end: quiet.end })}>保存静默时段</Button>
+        </div>
+        <p className="text-muted-foreground text-xs">静默时段内机器人不会主动插话，只会继续回应正在和它聊天的人</p>
+      </CardPanel>
+    </Card>
+  );
+}
+
 function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   const [cfg, setCfg] = useState<AiConfig | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1451,6 +1531,8 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
 
   return (
     <div className="grid gap-4">
+      <ActivityCard toast={toast} />
+
       {!cfg.configured && (
         <Card>
           <CardPanel className="border-amber-500/40 rounded-lg border bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
