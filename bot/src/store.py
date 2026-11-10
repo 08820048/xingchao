@@ -36,6 +36,18 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
     enabled INTEGER DEFAULT 1,
     created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS feed_subs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    time TEXT NOT NULL,
+    repeat TEXT DEFAULT 'daily',
+    weekday INTEGER,
+    params TEXT DEFAULT '{}',
+    ai_summary INTEGER DEFAULT 0,
+    enabled INTEGER DEFAULT 1,
+    created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS msg_stat_user (
     group_id INTEGER,
     day TEXT,
@@ -211,6 +223,52 @@ class Store:
     async def delete_task(self, task_id: int) -> bool:
         conn = await self._ensure()
         cur = await conn.execute("DELETE FROM scheduled_tasks WHERE id = ?", (task_id,))
+        await conn.commit()
+        return cur.rowcount > 0
+
+    async def add_feed_sub(self, group_id: int, source: str, time_: str, repeat: str,
+                           weekday: int | None, params: str, ai_summary: bool) -> int:
+        conn = await self._ensure()
+        cur = await conn.execute(
+            "INSERT INTO feed_subs (group_id, source, time, repeat, weekday, params, ai_summary,"
+            " enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)",
+            (group_id, source, time_, repeat, weekday, params, int(ai_summary),
+             datetime.now().astimezone().isoformat(timespec="seconds")),
+        )
+        await conn.commit()
+        return int(cur.lastrowid)
+
+    async def list_feed_subs(self, enabled_only: bool = False) -> list[dict]:
+        conn = await self._ensure()
+        sql = ("SELECT id, group_id, source, time, repeat, weekday, params, ai_summary, enabled"
+               " FROM feed_subs")
+        if enabled_only:
+            sql += " WHERE enabled = 1"
+        async with conn.execute(sql + " ORDER BY id") as cur:
+            rows = await cur.fetchall()
+        return [
+            {"id": r[0], "group_id": r[1], "source": r[2], "time": r[3], "repeat": r[4],
+             "weekday": r[5], "params": r[6], "ai_summary": bool(r[7]), "enabled": bool(r[8])}
+            for r in rows
+        ]
+
+    async def update_feed_sub(self, sub_id: int, **fields) -> None:
+        allowed = {"group_id", "time", "repeat", "weekday", "params", "ai_summary", "enabled"}
+        sets, vals = [], []
+        for k, v in fields.items():
+            if k in allowed:
+                sets.append(f"{k} = ?")
+                vals.append(int(v) if isinstance(v, bool) else v)
+        if not sets:
+            return
+        vals.append(sub_id)
+        conn = await self._ensure()
+        await conn.execute(f"UPDATE feed_subs SET {', '.join(sets)} WHERE id = ?", vals)
+        await conn.commit()
+
+    async def delete_feed_sub(self, sub_id: int) -> bool:
+        conn = await self._ensure()
+        cur = await conn.execute("DELETE FROM feed_subs WHERE id = ?", (sub_id,))
         await conn.commit()
         return cur.rowcount > 0
 

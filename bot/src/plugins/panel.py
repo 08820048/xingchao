@@ -965,6 +965,92 @@ def _register_routes() -> None:
                                           date_ if repeat == "once" else None)
         return JSONResponse({"ok": True, "data": {"message": f"定时任务 #{tid} 已创建", "id": tid}})
 
+    @app.get("/panel/api/feeds")
+    async def panel_feeds_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.permission import merged_whitelist
+        from src.plugins import feeds as feeds_plugin
+
+        return JSONResponse({"ok": True, "data": {
+            "subs": await get_store().list_feed_subs(),
+            "groups": sorted(merged_whitelist()),
+            "sources": {k: v[0] for k, v in feeds_plugin.SOURCES.items()},
+        }})
+
+    @app.post("/panel/api/feeds")
+    async def panel_feeds_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        import json as _json
+
+        from nonebot import get_bot
+        from src.permission import merged_whitelist
+        from src.plugins import feeds as feeds_plugin
+
+        body = await request.json()
+        action = str(body.get("action", "create"))
+        store = get_store()
+
+        def bad(msg: str) -> JSONResponse:
+            return JSONResponse({"ok": False, "error": msg}, status_code=400)
+
+        if action in ("delete", "update", "push_now"):
+            sid = body.get("id")
+            if not isinstance(sid, int):
+                return bad("id 应为整数")
+            if action == "delete":
+                ok = await store.delete_feed_sub(sid)
+                return JSONResponse({"ok": True, "data": {"message": "已删除" if ok else "订阅不存在"}})
+            if action == "update":
+                fields = {k: v for k, v in (body.get("fields") or {}).items()
+                          if k in ("enabled", "time", "ai_summary")}
+                if "time" in fields and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", str(fields["time"])):
+                    return bad("时间格式应为 HH:MM")
+                await store.update_feed_sub(sid, **fields)
+                return JSONResponse({"ok": True, "data": {"message": f"订阅 #{sid} 已更新"}})
+            sub = next((s for s in await store.list_feed_subs() if s["id"] == sid), None)
+            if sub is None or sub["source"] not in feeds_plugin.SOURCES:
+                return bad("订阅不存在")
+            try:
+                bot = get_bot()
+            except Exception:
+                return bad("机器人当前未连接")
+            sent, msg = await feeds_plugin.run_sub(bot, sub)
+            return JSONResponse({"ok": sent, "data": {"message": f"#{sid}：{msg}"}, "error": msg})
+
+        group_id = body.get("group_id")
+        source = str(body.get("source", ""))
+        time_ = str(body.get("time", ""))
+        repeat = str(body.get("repeat", "daily"))
+        weekday = body.get("weekday")
+        params = body.get("params") or {}
+        if group_id not in merged_whitelist():
+            return bad("目标群必须在白名单内")
+        if source not in feeds_plugin.SOURCES:
+            return bad("内容源不合法")
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", time_):
+            return bad("时间格式应为 HH:MM")
+        if repeat not in feeds_plugin.REPEATS:
+            return bad("repeat 不合法")
+        if repeat == "weekly" and (not isinstance(weekday, int) or not 0 <= weekday <= 6):
+            return bad("weekly 需要有效 weekday（0=周一）")
+        if source == "github":
+            since = params.get("since", "daily")
+            language = str(params.get("language", "")).strip()
+            if since not in ("daily", "weekly", "monthly"):
+                return bad("since 应为 daily/weekly/monthly")
+            if not re.fullmatch(r"[A-Za-z0-9+#._-]{0,30}", language):
+                return bad("语言参数不合法")
+            params = {"since": since, "language": language}
+        else:
+            params = {}
+        sid = await store.add_feed_sub(group_id, source, time_, repeat,
+                                       weekday if repeat == "weekly" else None,
+                                       _json.dumps(params, ensure_ascii=False),
+                                       bool(body.get("ai_summary", False)))
+        return JSONResponse({"ok": True, "data": {"message": f"内容推送 #{sid} 已创建", "id": sid}})
+
     @app.get("/panel/api/join")
     async def panel_join_get(request: Request, group_id: int | None = None) -> JSONResponse:
         if not _authorized(request):
