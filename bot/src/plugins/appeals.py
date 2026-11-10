@@ -74,6 +74,9 @@ async def original_block(rec: dict) -> str:
     text = await asyncio.to_thread(
         read_original_text, get_config().xingchao_log_dir, rec["group_id"], rec.get("message_id"), rec["ts"]
     )
+    if not text and "图片文字:" in (rec.get("reason") or ""):
+        ocr = rec["reason"].split("图片文字:", 1)[1].split(" | ")[0].strip()
+        return f"（图片，识别出的文字：{ocr}）"
     if text is None:
         return "（未找到原文：旧记录未保存消息编号，或日志已被清理）"
     return text[:ORIGINAL_MAX] + ("…" if len(text) > ORIGINAL_MAX else "") if text else "（消息无文本内容）"

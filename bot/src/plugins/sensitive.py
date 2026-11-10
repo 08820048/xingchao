@@ -540,18 +540,30 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
     if not cfg["sensitive_enabled"] or not str(cfg["sensitive_words"]).strip():
         return
     text = event.message.extract_plain_text().strip()
-    if not text:
+    images = [s for s in event.message if s.type == "image" and str(s.data.get("sub_type", "0")) != "1"]
+    if not text and not images:
         return
 
     words, exempts = split_word_lists(str(cfg["sensitive_words"]))
-    hit = find_hit(text, words, exempts, cfg["sensitive_variant_level"])
+    hit = find_hit(text, words, exempts, cfg["sensitive_variant_level"]) if text else None
+    from_ocr = False
+    if not hit and images:
+        # 文字里没有命中时，再识别图片里的字（NapCat 本地 OCR，不耗模型额度）
+        from src.plugins import ocr
+
+        if await ocr.ocr_enabled():
+            ocr_text = await ocr.images_text(bot, images)
+            hit = find_hit(ocr_text, words, exempts, cfg["sensitive_variant_level"]) if ocr_text else None
+            if hit:
+                from_ocr, text = True, ocr_text
     if not hit:
         return
 
     # 命中候选先交 AI 结合语境复核（关闭复核时直接按违规处理）
     decision, review_reason = "violation", ""
     if cfg["sensitive_review"]:
-        decision, review_reason = await _ai_review(event.group_id, text, hit)
+        decision, review_reason = await _ai_review(
+            event.group_id, ("（以下是图片里识别出的文字）" if from_ocr else "") + text, hit)
     try:
         await get_store().incr_word_stat(
             hit, {"safe": "released", "violation": "punished"}.get(decision, "fallback")
@@ -692,7 +704,7 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
                 word=hit,
                 action=action,
                 mute_minutes=mute_minutes if muted else 0,
-                reason=review_reason,
+                reason=(f"图片文字: {text[:80]} | " if from_ocr else "") + review_reason,
                 counted=counted,
                 message_id=event.message_id,
             )

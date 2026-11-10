@@ -84,7 +84,7 @@ ADMIN_TEXT = (
     "  ◈ /welcome on|off|set — 欢迎语配置\n"
     "  ◈ /task list — 定时任务列表\n"
     "  ◈ /notice <内容> — 发布群公告\n"
-    "  ◈ /plugin reply|link|vision|proactive|blog|awareness on|off — 模块开关\n"
+    "  ◈ /plugin reply|link|vision|proactive|blog|awareness|ocr on|off — 模块开关\n"
     "  ◈ /活跃度 安静|正常|话痨 [群号|全局] — 机器人主动程度\n"
     "  ◈ /精华 /取消精华 /精华列表 — 回复消息设为/取消精华（机器人需是管理员）\n"
     "  ◈ /能力自检 — 探测当前 NapCat 支持哪些 QQ 能力（只读）\n"
