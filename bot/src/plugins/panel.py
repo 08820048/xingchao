@@ -84,6 +84,27 @@ def _panel_bot():
     return next(iter(get_bots().values()), None)
 
 
+_GROUP_NAMES: dict = {"ts": 0.0, "map": {}}
+_GROUP_NAMES_TTL = 300
+
+
+async def group_names(force: bool = False) -> dict[int, str]:
+    """群号 → 群名称（机器人所在的全部群，5 分钟缓存；机器人未连接时返回上次的结果）。"""
+    now = time.time()
+    if not force and _GROUP_NAMES["map"] and now - _GROUP_NAMES["ts"] < _GROUP_NAMES_TTL:
+        return _GROUP_NAMES["map"]
+    bot = _panel_bot()
+    if bot is None:
+        return _GROUP_NAMES["map"]
+    try:
+        rows = await bot.call_api("get_group_list")
+    except Exception:
+        return _GROUP_NAMES["map"]
+    names = {int(g["group_id"]): str(g.get("group_name") or "") for g in rows if g.get("group_id")}
+    _GROUP_NAMES.update(ts=now, map=names)
+    return names
+
+
 def _scan_hourly(log_dir: Path, day: str, group_id: int | None) -> list[int]:
     """扫描当天 jsonl 日志，按小时统计消息数（在线程中执行，避免阻塞事件循环）。"""
     hours = [0] * 24
@@ -1360,6 +1381,15 @@ def _register_routes() -> None:
                 {"ok": True, "data": {"message": f"已刷新：共 {result['count']} 篇文章（{result.get('time', '')}）"}}
             )
         return JSONResponse({"ok": False, "error": "需要 enabled 或 refresh 字段"}, status_code=400)
+
+    @app.get("/panel/api/group-names")
+    async def panel_group_names(request: Request, refresh: bool = False) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        names = await group_names(force=refresh)
+        return JSONResponse({"ok": True, "data": {
+            "names": {str(k): v for k, v in names.items()}, "connected": _panel_bot() is not None,
+        }})
 
     @app.get("/panel/api/groups")
     async def panel_groups_get(request: Request) -> JSONResponse:

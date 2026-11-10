@@ -77,6 +77,13 @@ async function api<T = any>(path: string, opt: RequestInit = {}): Promise<T> {
   }
   return r.json();
 }
+/* 群名称：群号 → 群名（面板启动后从机器人拉取；未取到时只显示群号） */
+let groupNameMap: Record<string, string> = {};
+const groupLabel = (id: number | string) => {
+  const n = groupNameMap[String(id)];
+  return n ? `${n}（${id}）` : `群 ${id}`;
+};
+
 const post = (p: string, body?: unknown) =>
   api(p, {
     method: "POST",
@@ -747,7 +754,7 @@ function StatsTab() {
   };
 
   const groupData: ChartData = {
-    labels: groups.map((g) => `群 ${g.group_id}`),
+    labels: groups.map((g) => groupLabel(g.group_id)),
     datasets: [
       {
         label: "消息数",
@@ -835,7 +842,7 @@ function StatsTab() {
               <option value="all">全部群</option>
               {groups.map((g) => (
                 <option key={g.group_id} value={g.group_id}>
-                  群 {g.group_id}
+                  {groupLabel(g.group_id)}
                 </option>
               ))}
             </select>
@@ -1270,6 +1277,7 @@ function GroupsTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>群名称</TableHead>
                 <TableHead>群号</TableHead>
                 <TableHead>来源</TableHead>
                 <TableHead>业务开关</TableHead>
@@ -1279,6 +1287,7 @@ function GroupsTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
             <TableBody>
               {groups.map((g) => (
                 <TableRow key={g.group_id} className={g.disabled ? "opacity-60" : ""}>
+                  <TableCell>{groupNameMap[String(g.group_id)] || "—"}</TableCell>
                   <TableCell className="font-mono">{g.group_id}</TableCell>
                   <TableCell>
                     <Badge variant={g.source === "env" ? "secondary" : "info"}>
@@ -1462,7 +1471,7 @@ function ActivityCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
           {Object.entries(d.groups).map(([gid, mode]) => (
             <div key={gid} className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
               <span className="text-sm">
-                群 {gid}
+                {groupLabel(gid)}
                 {!d.overrides[gid] && <Badge variant="secondary" className="ml-1">跟随默认</Badge>}
               </span>
               <div className="flex items-center gap-2">
@@ -1595,7 +1604,7 @@ function MemoryCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
         <div className="flex items-center gap-2">
           <Label>群</Label>
           <select value={gid ?? ""} className={sel} onChange={(e) => load(+e.target.value)}>
-            {d.groups.map((g) => <option key={g} value={g}>群 {g}</option>)}
+            {d.groups.map((g) => <option key={g} value={g}>{groupLabel(g)}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1.5">
@@ -1964,7 +1973,7 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
                 {Object.entries(cfg.usage.groups).map(([gid, n]) => (
                   <TableRow key={"g" + gid}>
                     <TableCell>群</TableCell>
-                    <TableCell className="font-mono">{gid}</TableCell>
+                    <TableCell>{groupLabel(gid)}</TableCell>
                     <TableCell>{n}</TableCell>
                   </TableRow>
                 ))}
@@ -2055,7 +2064,7 @@ function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
           >
             <option value="global">🌐 全局默认</option>
             {cfg.groups.map((g) => (
-              <option key={g} value={g}>群 {g}</option>
+              <option key={g} value={g}>{groupLabel(g)}</option>
             ))}
           </select>
           {isGroup &&
@@ -2100,7 +2109,7 @@ function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
                   className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"
                 >
                   <div className="text-sm">
-                    <b>#{p.seq}</b> 群 {p.group_id} · QQ {p.user_id}
+                    <b>#{p.seq}</b> {groupLabel(p.group_id)} · QQ {p.user_id}
                     <p className="text-muted-foreground text-xs">
                       回答：{p.comment || "（无）"}
                     </p>
@@ -2246,7 +2255,7 @@ function SensitiveTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
           >
             <option value="global">🌐 全局默认</option>
             {cfg.groups.map((g) => (
-              <option key={g} value={g}>群 {g}</option>
+              <option key={g} value={g}>{groupLabel(g)}</option>
             ))}
           </select>
           {isGroup &&
@@ -2530,7 +2539,7 @@ function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void })
                 className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3"
               >
                 <div className="text-sm">
-                  <b>#{a.id}</b> QQ {a.user_id} · 群 {a.group_id} · 命中「{a.word}」 ·{" "}
+                  <b>#{a.id}</b> QQ {a.user_id} · {groupLabel(a.group_id)} · 命中「{a.word}」 ·{" "}
                   {ACTION_LABEL[a.action] ?? a.action}
                   <Badge variant="secondary" className="ml-1">
                     {SOURCE_LABEL[a.source] ?? a.source}
@@ -2608,7 +2617,7 @@ function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void })
                 <option value="all">全部群</option>
                 {data.groups.map((g) => (
                   <option key={g} value={g}>
-                    群 {g}
+                    {groupLabel(g)}
                   </option>
                 ))}
               </select>
@@ -2636,7 +2645,7 @@ function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => void })
                     <TableCell className="text-muted-foreground text-xs">
                       {shortTime(p.ts)}
                     </TableCell>
-                    <TableCell className="font-mono">{p.group_id}</TableCell>
+                    <TableCell>{groupLabel(p.group_id)}</TableCell>
                     <TableCell className="font-mono">{p.user_id}</TableCell>
                     <TableCell>{p.word}</TableCell>
                     <TableCell>
@@ -2749,7 +2758,7 @@ function ReportCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
               <option value="all">全部白名单群</option>
               {cfg.groups.map((g) => (
                 <option key={g} value={g}>
-                  群 {g}
+                  {groupLabel(g)}
                 </option>
               ))}
             </select>
@@ -2828,7 +2837,7 @@ function TasksTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
                 onChange={(e) => setForm({ ...form, group_id: +e.target.value })}
                 className="border-input bg-background flex h-8 items-center rounded-lg border px-2 text-sm"
               >
-                {groups.map((g) => <option key={g} value={g}>群 {g}</option>)}
+                {groups.map((g) => <option key={g} value={g}>{groupLabel(g)}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
@@ -2898,7 +2907,7 @@ function TasksTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
                 <div key={t.id}
                   className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
                   <div className="text-sm">
-                    <b>#{t.id}</b> [{t.time}] {repeatLabel[t.repeat] ?? t.repeat} → 群 {t.group_id}
+                    <b>#{t.id}</b> [{t.time}] {repeatLabel[t.repeat] ?? t.repeat} → {groupLabel(t.group_id)}
                     {t.at_all && <Badge className="ml-1">@全体</Badge>}
                     {!t.enabled && <Badge variant="destructive" className="ml-1">已停用</Badge>}
                     <p className="text-muted-foreground text-xs">{t.message.slice(0, 60)}</p>
@@ -3007,7 +3016,7 @@ function FeedsTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
               <Label>目标群</Label>
               <select value={form.group_id} className={sel}
                 onChange={(e) => setForm({ ...form, group_id: +e.target.value })}>
-                {groups.map((g) => <option key={g} value={g}>群 {g}</option>)}
+                {groups.map((g) => <option key={g} value={g}>{groupLabel(g)}</option>)}
               </select>
             </div>
           </div>
@@ -3084,7 +3093,7 @@ function FeedsTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
                   className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
                   <div className="text-sm">
                     <b>#{s.id}</b> [{s.time}] {repeatLabel(s)} · {sources[s.source] ?? s.source}
-                    {paramLabel(s)} → 群 {s.group_id}
+                    {paramLabel(s)} → {groupLabel(s.group_id)}
                     {s.ai_summary && <Badge className="ml-1">AI</Badge>}
                     {!s.enabled && <Badge variant="destructive" className="ml-1">已停用</Badge>}
                   </div>
@@ -3313,6 +3322,16 @@ function PanelApp() {
       .then(() => setAuthed(true))
       .catch(() => setAuthed(false));
   }, []);
+  const [, setNamesVer] = useState(0);
+  useEffect(() => {
+    if (!authed) return;
+    api<{ ok: boolean; data: { names: Record<string, string> } }>("/panel/api/group-names").then((r) => {
+      if (r.ok) {
+        groupNameMap = r.data.names;
+        setNamesVer((v) => v + 1);
+      }
+    });
+  }, [authed]);
   useEffect(() => {
     check();
     const h = () => setAuthed(false);
