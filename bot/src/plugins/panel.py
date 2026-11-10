@@ -993,6 +993,90 @@ def _register_routes() -> None:
             return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
         return JSONResponse({"ok": True, "data": {"message": "；".join(dict.fromkeys(msgs))}})
 
+    @app.get("/panel/api/persona")
+    async def panel_persona_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import persona
+
+        return JSONResponse({"ok": True, "data": {
+            "card": await persona.get_persona(), "labels": persona.LABELS,
+            "defaults": persona.DEFAULT_PERSONA, "fields": list(persona.FIELDS),
+        }})
+
+    @app.post("/panel/api/persona")
+    async def panel_persona_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import persona
+
+        body = await request.json()
+        if body.get("action") == "reset":
+            await persona.reset_persona()
+            return JSONResponse({"ok": True, "data": {"message": "人设已恢复默认"}})
+        patch = persona.sanitize(body.get("card") or {})
+        if not patch:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        await persona.save_persona(patch)
+        return JSONResponse({"ok": True, "data": {"message": "人设已保存，下一条消息起生效"}})
+
+    @app.get("/panel/api/memory")
+    async def panel_memory_get(request: Request, group_id: int | None = None) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.permission import merged_whitelist
+        from src.plugins import memory
+
+        groups = sorted(merged_whitelist())
+        gid = group_id if group_id in groups else (groups[0] if groups else None)
+        rows = await get_store().list_memories(gid) if gid is not None else []
+        cfg = await memory.config()
+        return JSONResponse({"ok": True, "data": {
+            "enabled": cfg["memory_enabled"], "groups": groups, "group_id": gid,
+            "group_facts": next((r["facts"] for r in rows if r["scope"] == "group"), []),
+            "members": [r for r in rows if r["scope"] == "user"],
+            "optouts": sorted(await get_store().memory_optouts()),
+        }})
+
+    @app.post("/panel/api/memory")
+    async def panel_memory_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.permission import merged_whitelist
+        from src.plugins import memory
+
+        body = await request.json()
+        store = get_store()
+        action = str(body.get("action", ""))
+        if action == "set_enabled":
+            if not isinstance(body.get("enabled"), bool):
+                return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
+            await store.set_kv("memory_enabled", "true" if body["enabled"] else "false")
+            return JSONResponse({"ok": True, "data": {"message": "长期记忆已" + ("开启" if body["enabled"] else "关闭")}})
+        gid = body.get("group_id")
+        if not isinstance(gid, int) or gid not in merged_whitelist():
+            return JSONResponse({"ok": False, "error": "群必须在白名单内"}, status_code=400)
+        if action == "delete_user":
+            uid = body.get("user_id")
+            if not isinstance(uid, int):
+                return JSONResponse({"ok": False, "error": "user_id 应为整数"}, status_code=400)
+            ok = await store.delete_memory("user", gid, uid)
+            return JSONResponse({"ok": True, "data": {"message": "已删除" if ok else "没有这条记忆"}})
+        if action == "delete_group":
+            ok = await store.delete_memory("group", gid)
+            return JSONResponse({"ok": True, "data": {"message": "已清除群记忆" if ok else "没有群记忆"}})
+        if action in ("set_user_facts", "set_group_facts"):
+            facts = memory.clean_facts(body.get("facts"), memory.USER_FACTS_MAX if action == "set_user_facts" else memory.GROUP_FACTS_MAX)
+            if action == "set_user_facts":
+                uid = body.get("user_id")
+                if not isinstance(uid, int):
+                    return JSONResponse({"ok": False, "error": "user_id 应为整数"}, status_code=400)
+                await store.set_memory_facts("user", gid, uid, facts)
+            else:
+                await store.set_memory_facts("group", gid, 0, facts)
+            return JSONResponse({"ok": True, "data": {"message": f"已保存 {len(facts)} 条（敏感或过长的内容会被自动过滤）"}})
+        return JSONResponse({"ok": False, "error": "未知 action"}, status_code=400)
+
     @app.get("/panel/api/feeds")
     async def panel_feeds_get(request: Request) -> JSONResponse:
         if not _authorized(request):

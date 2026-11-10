@@ -1494,6 +1494,142 @@ function ActivityCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   );
 }
 
+type PersonaData = {
+  card: Record<string, string>;
+  labels: Record<string, string>;
+  defaults: Record<string, string>;
+  fields: string[];
+};
+
+function PersonaCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [d, setD] = useState<PersonaData | null>(null);
+  const [form, setForm] = useState<Record<string, string>>({});
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: PersonaData }>("/panel/api/persona").then((r) => {
+      if (r.ok) { setD(r.data); setForm(r.data.card); }
+    });
+  }, []);
+  useEffect(() => load(), [load]);
+  if (!d) return <Spinner className="m-8" />;
+  const save = async () => {
+    const r = await post("/panel/api/persona", { card: form });
+    if (r.ok) { toast(r.data.message); load(); } else toast(r.error || "保存失败", false);
+  };
+  const reset = async () => {
+    const r = await post("/panel/api/persona", { action: "reset" });
+    if (r.ok) { toast(r.data.message); load(); } else toast(r.error || "操作失败", false);
+  };
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">人设卡</CardTitle>
+        <CardDescription>
+          机器人的性格与说话方式，@ 对话和主动发言共用，保存后下一条消息起生效。
+          「底线」里的“不冒充真人”会被自动保留，无法删除
+        </CardDescription>
+      </CardHeader>
+      <CardPanel className="grid gap-3">
+        {d.fields.map((k) => (
+          <div key={k} className="flex flex-col gap-1.5">
+            <Label htmlFor={`persona-${k}`}>{d.labels[k]}</Label>
+            <Textarea id={`persona-${k}`} rows={k === "name" ? 1 : 2} maxLength={300}
+              value={form[k] ?? ""} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
+          </div>
+        ))}
+        <div className="flex gap-2">
+          <Button onClick={save}>保存人设</Button>
+          <Button variant="outline" onClick={reset}>恢复默认</Button>
+        </div>
+      </CardPanel>
+    </Card>
+  );
+}
+
+type MemoryData = {
+  enabled: boolean;
+  groups: number[];
+  group_id: number | null;
+  group_facts: string[];
+  members: { user_id: number; facts: string[]; interactions: number; updated_at: string | null }[];
+  optouts: number[];
+};
+
+function MemoryCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [d, setD] = useState<MemoryData | null>(null);
+  const [gid, setGid] = useState<number | null>(null);
+  const [groupText, setGroupText] = useState("");
+  const load = useCallback((g: number | null) => {
+    const q = g ? `?group_id=${g}` : "";
+    api<{ ok: boolean; data: MemoryData }>(`/panel/api/memory${q}`).then((r) => {
+      if (r.ok) {
+        setD(r.data);
+        setGid(r.data.group_id);
+        setGroupText(r.data.group_facts.join("\n"));
+      }
+    });
+  }, []);
+  useEffect(() => load(null), [load]);
+  if (!d) return <Spinner className="m-8" />;
+  const act = async (body: Record<string, unknown>) => {
+    const r = await post("/panel/api/memory", { group_id: gid, ...body });
+    if (r.ok) { toast(r.data.message); load(gid); } else toast(r.error || "操作失败", false);
+  };
+  const sel = "border-input bg-background flex h-8 items-center rounded-lg border px-2 text-sm";
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">长期记忆</CardTitle>
+        <CardDescription>
+          机器人对群友的印象与群记忆（模型从聊天里提炼的短事实，不存原话，按群隔离）。
+          成员可发送 /忘记我 自行清除并停止被记录；这里可以查看、改写、删除
+        </CardDescription>
+      </CardHeader>
+      <CardPanel className="grid gap-3">
+        <div className="border-input flex items-center justify-between rounded-lg border p-3">
+          <div>
+            <p className="text-sm font-medium">记忆功能</p>
+            <p className="text-muted-foreground text-xs">关闭后不再提炼新记忆，也不再注入已有记忆</p>
+          </div>
+          <Switch checked={d.enabled} onCheckedChange={(v) => act({ action: "set_enabled", enabled: v })} />
+        </div>
+        <div className="flex items-center gap-2">
+          <Label>群</Label>
+          <select value={gid ?? ""} className={sel} onChange={(e) => load(+e.target.value)}>
+            {d.groups.map((g) => <option key={g} value={g}>群 {g}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="mem-group">群记忆（每行一条）</Label>
+          <Textarea id="mem-group" rows={3} value={groupText} onChange={(e) => setGroupText(e.target.value)} />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => act({ action: "set_group_facts", facts: groupText.split("\n") })}>保存</Button>
+            <Button size="sm" variant="outline" onClick={() => act({ action: "delete_group" })}>清空</Button>
+          </div>
+        </div>
+        <div className="grid gap-2">
+          {d.members.length === 0 && <p className="text-muted-foreground text-sm">这个群还没有成员印象</p>}
+          {d.members.map((m) => (
+            <div key={m.user_id}
+              className="border-input flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3">
+              <div className="text-sm">
+                <b>QQ {m.user_id}</b>
+                <Badge variant="secondary" className="ml-1">互动 {m.interactions} 次</Badge>
+                <p className="text-muted-foreground text-xs">{m.facts.length ? m.facts.join("；") : "（暂无特别印象）"}</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => act({ action: "delete_user", user_id: m.user_id })}>
+                删除
+              </Button>
+            </div>
+          ))}
+        </div>
+        {d.optouts.length > 0 && (
+          <p className="text-muted-foreground text-xs">已选择不被记录的成员：{d.optouts.join("、")}</p>
+        )}
+      </CardPanel>
+    </Card>
+  );
+}
+
 function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   const [cfg, setCfg] = useState<AiConfig | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1532,6 +1668,8 @@ function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   return (
     <div className="grid gap-4">
       <ActivityCard toast={toast} />
+      <PersonaCard toast={toast} />
+      <MemoryCard toast={toast} />
 
       {!cfg.configured && (
         <Card>

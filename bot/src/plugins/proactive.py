@@ -354,9 +354,24 @@ async def decide_and_act(
     if not transcript:
         return "skip"
     cfg = await ai_plugin.ai_config()
+    persona_text, mem_text = "", ""
+    try:
+        from src.plugins import memory, persona
+
+        persona_text = await persona.persona_block(len(awareness.recent_entries(group_id, 300)))
+        uids, names = memory.participants(group_id, user_id)
+        mem_text = await memory.memory_block(group_id, uids, names)
+    except Exception:
+        logger.exception("主动发言注入人设/记忆失败")
+    prompt = build_prompt(transcript, situation, name, knowledge)
+    if mem_text:
+        prompt = mem_text + "\n\n" + prompt
     raw = await ai_plugin.generate_text(
-        build_prompt(transcript, situation, name, knowledge),
-        system=str(cfg["ai_system_prompt"]) + "\n（你正在群里自然聊天，保持人设，简短有分寸，不刷屏。）",
+        prompt,
+        system="\n".join(filter(None, [
+            str(cfg["ai_system_prompt"]), persona_text,
+            "（你正在群里自然聊天，保持人设，简短有分寸，不刷屏。）",
+        ])),
         temperature=0.8,
         max_tokens=1500,
     )
@@ -387,6 +402,12 @@ async def decide_and_act(
         return "skip"
     _mark_sent(group_id)
     note_engaged(group_id, user_id, seconds=int(await _kv("proactive_attention_seconds")), new=situation != "attention")
+    try:
+        from src.plugins import memory
+
+        await memory.note_interaction(group_id, user_id)
+    except Exception:
+        logger.debug("记录互动失败", exc_info=True)
     return "reply"
 
 

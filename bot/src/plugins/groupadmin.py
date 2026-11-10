@@ -248,7 +248,10 @@ async def handle_welcome(matcher: Matcher, args: Message = CommandArg()) -> None
         )
 
 
-DEFAULT_WELCOME_TEXT = "欢迎进群～发送 /help 查看我能做什么。"
+DEFAULT_WELCOME_TEXT = (
+    "欢迎进群～发送 /help 查看我能做什么。\n"
+    "我会记住大家聊过的兴趣爱好来更好地聊天，发送 /记忆 可查看、/忘记我 可清除并停止记录。"
+)
 
 
 async def is_welcome_enabled() -> bool:

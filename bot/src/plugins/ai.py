@@ -966,6 +966,24 @@ async def _t_proactive_mode(bot, event, args) -> str:
     return f"群 {scope} 的主动程度已设为「{proactive.MODE_LABEL[mode]}」。"
 
 
+async def _t_memory_get(bot, event, args) -> str:
+    from src.plugins import memory
+    gid = event.group_id if isinstance(event, GroupMessageEvent) else None
+    return await memory.describe_memory(event.user_id, gid)
+
+
+async def _t_memory_forget(bot, event, args) -> str:
+    store = get_store()
+    removed = await store.delete_user_memories(event.user_id)
+    await store.set_memory_optout(event.user_id, True)
+    return f"已清除对该用户的全部印象（{removed} 个群），并停止记录其发言；对方可说“记住我”恢复。"
+
+
+async def _t_memory_resume(bot, event, args) -> str:
+    await get_store().set_memory_optout(event.user_id, False)
+    return "已恢复记录，之后会重新慢慢了解对方。"
+
+
 async def _t_proactive_toggle(bot, event, args) -> str:
     enable = bool(args.get("enabled", True))
     await get_store().set_kv("proactive_enabled", "true" if enable else "false")
@@ -1200,6 +1218,15 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_vision_model", "设置图片识别用的视觉模型（需支持图片输入）",
               {"type": "object", "properties": {"model": {"type": "string", "description": "如 glm-4v-flash"}}, "required": ["model"]},
               "superuser", _t_vision_model_set),
+        _tool("get_my_memory", "查看你（机器人）对当前提问者记住了什么（长期记忆里关于 TA 的印象与熟悉度；用户问“你记得我什么/你了解我吗”时使用）",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_memory_get),
+        _tool("forget_my_memory", "清除对当前提问者的全部印象并停止记录 TA 的发言（用户说“忘了我/别记我/清除我的记忆”时使用，执行前简短确认）",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_memory_forget),
+        _tool("resume_my_memory", "恢复记录当前提问者（用户说“可以记住我了/重新记我”时使用）",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_memory_resume),
         _tool("set_proactive_mode", "设置机器人在群里的主动程度档位：安静（很少插话）/ 正常 / 话痨（更爱接话、评论图片、复读）；默认设置当前群，group_id 填“全局”则改全局默认（用户说“话痨一点/安静点/少说话”时使用）",
               {"type": "object", "properties": {"mode": {"type": "string", "enum": ["安静", "正常", "话痨"]}, "group_id": {"type": "string", "description": "群号或“全局”，默认当前群"}}, "required": ["mode"]},
               "superuser", _t_proactive_mode),
@@ -1336,8 +1363,18 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
             blog_context = await blog_plugin.context_for(text)
         except Exception:
             logger.exception("博客知识注入失败")
+    persona_text = ""
+    try:
+        from src.plugins import awareness as _aw
+        from src.plugins import persona
+
+        recent_n = len(_aw.recent_entries(event.group_id, 300)) if isinstance(event, GroupMessageEvent) else 0
+        persona_text = await persona.persona_block(recent_n)
+    except Exception:
+        logger.exception("人设注入失败")
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": cfg["ai_system_prompt"]},
+        *([{"role": "system", "content": persona_text}] if persona_text else []),
         {"role": "system", "content": _capability_prompt(all_tools, is_superuser)},
         {"role": "system", "content": scene},
     ]
@@ -1352,6 +1389,17 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
                 messages.append({"role": "system", "content": scene_chat})
         except Exception:
             logger.exception("群聊上下文注入失败")
+        try:
+            from src.plugins import memory
+
+            uids, names = memory.participants(event.group_id, event.user_id)
+            names.setdefault(event.user_id, getattr(event.sender, "card", None)
+                             or getattr(event.sender, "nickname", None) or str(event.user_id))
+            mem_text = await memory.memory_block(event.group_id, uids, names)
+            if mem_text:
+                messages.append({"role": "system", "content": mem_text})
+        except Exception:
+            logger.exception("长期记忆注入失败")
     messages.extend(history)
     messages.append({"role": "user", "content": text})
 
@@ -1427,12 +1475,14 @@ PURE_AT_FALLBACK = (
 
 
 def _note_engaged(event: MessageEvent) -> None:
-    """回复群友后开启接话窗口：对方接着说不用再 @（由 proactive 判断是否在继续跟机器人说）。"""
+    """回复群友后：开启接话窗口（对方接着说不用再 @，由 proactive 判断是否在继续跟机器人说），
+    并记一次互动（熟悉度）。"""
     if isinstance(event, GroupMessageEvent):
         try:
-            from src.plugins import proactive
+            from src.plugins import memory, proactive
 
             proactive.note_engaged(event.group_id, event.user_id)
+            asyncio.get_event_loop().create_task(memory.note_interaction(event.group_id, event.user_id))
         except Exception:
             logger.debug("开启接话窗口失败", exc_info=True)
 
