@@ -46,7 +46,17 @@ def _matches_today(task: dict, now) -> bool:
 
 
 async def _fire(bot, task: dict) -> None:
-    message = MessageSegment.at("all") + " " + task["message"] if task["at_all"] \
+    at_all = task["at_all"]
+    if at_all:
+        from src.plugins import nctools
+        from src.plugins.appeals import notify_superusers
+
+        allowed, why = await nctools.at_all_allowed(bot, task["group_id"])
+        if not allowed:  # @全体 用不了时照常发消息（不带 @），并告知超管，避免整条提醒发不出去
+            at_all = False
+            await notify_superusers(
+                bot, f"⚠️ 定时任务 #{task['id']}（群 {task['group_id']}）无法 @全体：{why}，已改为普通消息发送")
+    message = MessageSegment.at("all") + " " + task["message"] if at_all \
         else MessageSegment.text(task["message"])
     try:
         await bot.call_api("send_group_msg", group_id=task["group_id"], message=message)

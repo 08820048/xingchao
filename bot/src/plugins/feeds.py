@@ -125,6 +125,16 @@ async def fetch_github(params: dict, ai: bool, now: datetime) -> FeedContent:
             "把下列 GitHub 仓库简介翻译成简洁自然的中文（不超过 40 字），专有名词保持原样。",
             [it["desc"] or "（无简介）" for it in items],
         )
+        if zh is None:  # 模型翻译失败：用 NapCat 自带的免费英译中兜底
+            try:
+                from nonebot import get_bots
+
+                from src.plugins import nctools
+
+                bot = next(iter(get_bots().values()), None)
+                zh = await nctools.translate_zh(bot, [it["desc"] or "（无简介）" for it in items]) if bot else None
+            except Exception:
+                zh = None
         if zh:
             items = [{**it, "desc": zh[i] if zh[i] != "（无简介）" else it["desc"]} for i, it in enumerate(items)]
     return FeedContent(head=format_trending(items, since, language))

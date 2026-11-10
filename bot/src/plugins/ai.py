@@ -1070,6 +1070,34 @@ async def _t_send_selfie(bot, event, args) -> str:
     return await send_selfie(bot, event)
 
 
+async def _t_group_honor(bot, event, args) -> str:
+    from src.plugins import groupextras
+    gid = args.get("group_id") or getattr(event, "group_id", None)
+    if not gid:
+        return "错误：需要 group_id（群聊中默认当前群）。"
+    return await groupextras.honor_text(bot, int(gid))
+
+
+async def _t_member_card(bot, event, args) -> str:
+    from src.plugins import groupextras
+    gid = args.get("group_id") or getattr(event, "group_id", None)
+    uid = args.get("user_id")
+    if not gid or not isinstance(uid, int):
+        return "错误：需要 user_id（整数）；群聊中 group_id 默认当前群。"
+    ok, msg = await groupextras.set_card(bot, int(gid), uid, str(args.get("card", "")))
+    return msg if ok else f"执行失败：{msg}"
+
+
+async def _t_member_title(bot, event, args) -> str:
+    from src.plugins import groupextras
+    gid = args.get("group_id") or getattr(event, "group_id", None)
+    uid = args.get("user_id")
+    if not gid or not isinstance(uid, int):
+        return "错误：需要 user_id（整数）；群聊中 group_id 默认当前群。"
+    ok, msg = await groupextras.set_title(bot, int(gid), uid, str(args.get("title", "")))
+    return msg if ok else f"执行失败：{msg}"
+
+
 async def _t_invites_list(bot, event, args) -> str:
     from src.plugins import invites
     return invites.list_text()
@@ -1285,6 +1313,15 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_vision_model", "设置图片识别用的视觉模型（需支持图片输入）",
               {"type": "object", "properties": {"model": {"type": "string", "description": "如 glm-4v-flash"}}, "required": ["model"]},
               "superuser", _t_vision_model_set),
+        _tool("get_group_honor", "查看本群（或指定群）的龙王、群聊之火等荣誉成员（用户问“谁是龙王/群里谁最活跃有荣誉”时使用）",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": []},
+              "all", _t_group_honor),
+        _tool("set_member_card", "修改某成员的群名片（机器人需是群管理员；card 留空则清除）",
+              {"type": "object", "properties": {"user_id": {"type": "integer"}, "card": {"type": "string"}, "group_id": {"type": "integer"}}, "required": ["user_id"]},
+              "superuser", _t_member_card),
+        _tool("set_member_title", "给某成员设置专属头衔（最多 6 个字，机器人需是群主；title 留空则清除）",
+              {"type": "object", "properties": {"user_id": {"type": "integer"}, "title": {"type": "string"}, "group_id": {"type": "integer"}}, "required": ["user_id"]},
+              "superuser", _t_member_title),
         _tool("list_pending_invites", "查看待处理的好友申请和拉群邀请（有人加机器人好友、或把机器人拉进新群时会进入这里）",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_invites_list),
@@ -1575,22 +1612,41 @@ def _note_engaged(event: MessageEvent) -> None:
             logger.debug("开启接话窗口失败", exc_info=True)
 
 
-async def _attached_images_note(event: MessageEvent) -> str:
-    """识别用户 @ 时附带的图片与所引用消息里的图片，生成给模型看的说明（没有图返回空串）。"""
+async def _attached_images_note(event: MessageEvent, bot=None) -> str:
+    """识别用户 @ 时附带/引用的图片，并读取附带/引用的合并转发内容，生成给模型看的说明（没有则空串）。"""
     try:
-        from src.plugins import awareness
+        from src.plugins import awareness, nctools
 
         parts: list[str] = []
+
+        def _join(caps: list[str]) -> str:
+            return "；".join(f"{i}) {c}" for i, c in enumerate(caps, 1))
+
+        async def _forwards(message) -> str:
+            texts = []
+            for seg in message:
+                if seg.type == "forward" and seg.data.get("id") and bot is not None:
+                    t = await nctools.read_forward(bot, str(seg.data["id"]))
+                    if t:
+                        texts.append(t)
+            return "\n".join(texts[:2])
+
         own = await awareness.describe_message_images(event.message)
         if own:
-            parts.append("（用户附带的图片内容：" + "；".join(f"{i}) {c}" for i, c in enumerate(own, 1)) + "）")
+            parts.append("（用户附带的图片内容：" + _join(own) + "）")
+        fwd = await _forwards(event.message)
+        if fwd:
+            parts.append("（用户转发的聊天记录内容：\n" + fwd + "\n）")
         if event.reply is not None:
             quoted = await awareness.describe_message_images(event.reply.message)
             if quoted:
-                parts.append("（用户引用的消息里的图片内容：" + "；".join(f"{i}) {c}" for i, c in enumerate(quoted, 1)) + "）")
+                parts.append("（用户引用的消息里的图片内容：" + _join(quoted) + "）")
+            qfwd = await _forwards(event.reply.message)
+            if qfwd:
+                parts.append("（用户引用的合并转发里的聊天记录：\n" + qfwd + "\n）")
         return ("\n" + "\n".join(parts)) if parts else ""
     except Exception:
-        logger.exception("识别用户附图失败")
+        logger.exception("识别用户附图/转发失败")
         return ""
 
 
@@ -1605,8 +1661,8 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         return  # 语音消息由 voice 插件识别后再交给 AI
     # 纯 @（无文字）也必须响应：结合上下文回，没上下文就自由发挥，
     # 避免成员以为机器人挂了。AI 不可用时兜底固定回应。
-    has_images = any(seg.type == "image" for seg in event.message) or (
-        event.reply is not None and any(seg.type == "image" for seg in event.reply.message)
+    has_images = any(seg.type in ("image", "forward") for seg in event.message) or (
+        event.reply is not None and any(seg.type in ("image", "forward") for seg in event.reply.message)
     )
     pure_at = not raw_text and not has_images
     if not await is_ai_enabled():
@@ -1623,7 +1679,7 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     }:
         return
 
-    img_note = await _attached_images_note(event) if has_images else ""
+    img_note = await _attached_images_note(event, bot) if has_images else ""
     if not raw_text and not img_note:
         pure_at = True  # 附图全部识别失败且没写文字：当作纯 @
     if pure_at:

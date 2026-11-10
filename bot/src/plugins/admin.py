@@ -148,6 +148,9 @@ _PLUGIN_KEYS = {
     "visionguard": ("vision_guard_enabled", "图片识别与违规处理"),
     "proactive": ("proactive_enabled", "群聊主动性"),
     "blog": ("blog_enabled", "博客知识关联推荐"),
+    "sign": ("group_sign_enabled", "群自动签到"),
+    "online": ("online_status_enabled", "动态在线状态"),
+    "urlsafe": ("url_safety_enabled", "危险链接提醒"),
     "ocr": ("ocr_guard_enabled", "图片文字检测（识别图片里的字并过敏感词）"),
     "awareness": ("awareness_enabled", "群聊感知（让机器人看见群里最近的聊天与图片）"),
 }
@@ -157,7 +160,7 @@ _PLUGIN_KEYS = {
 async def handle_plugin(args: Message = CommandArg()) -> None:
     parts = args.extract_plain_text().strip().lower().split()
     if len(parts) != 2 or parts[1] not in ("on", "off") or parts[0] not in _PLUGIN_KEYS:
-        await _send(plugin_admin, "用法：/plugin reply|link|vision|proactive|blog|awareness|ocr on|off")
+        await _send(plugin_admin, "用法：/plugin reply|link|vision|proactive|blog|awareness|ocr|sign|online|urlsafe on|off")
         return
     key, label = _PLUGIN_KEYS[parts[0]]
     enable = parts[1] == "on"

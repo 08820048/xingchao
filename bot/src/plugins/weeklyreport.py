@@ -111,15 +111,24 @@ async def build_report(group_id: int) -> str | None:
     for day, cnt in series:
         wd = WEEKDAY_NAME[date.fromisoformat(day).weekday()]
         lines.append(f"  {wd} {_bar(cnt, peak):<8} {cnt}")
+    try:
+        bot = get_bot()
+    except Exception:
+        bot = None
     if top:
-        try:
-            bot = get_bot()
-        except Exception:
-            bot = None
         lines += ["", "「🏆 发言榜」"]
         for medal, (uid, cnt) in zip(("🥇", "🥈", "🥉"), top, strict=False):
             name = await _member_name(bot, group_id, uid) if bot else str(uid)
             lines.append(f"  {medal} {name} · {cnt} 条")
+    try:  # 当前龙王（接口不可用时跳过）
+        if bot:
+            from src.plugins.groupextras import _who
+
+            tal = (await bot.call_api("get_group_honor_info", group_id=group_id, type="talkative")).get("current_talkative")
+            if tal and _who(tal):
+                lines += ["", f"🐲 当前龙王：{_who(tal)}"]
+    except Exception:
+        pass
     return "\n".join(lines)
 
 

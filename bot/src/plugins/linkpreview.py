@@ -224,6 +224,9 @@ async def handle_link_preview(bot: Bot, event: GroupMessageEvent, matcher: Match
 
     text = event.message.extract_plain_text()
     urls = [u.rstrip(".,;:!?") for u in _URL_RE.findall(text)]
+    from src.plugins import nctools
+
+    urls = [u for u in urls if not nctools.known_dangerous(u)]  # 被安全中心标记的链接不去抓取
     urls = [
         u for u in urls
         if (urlparse(u).hostname or "").lower() not in _SKIP_HOSTS
