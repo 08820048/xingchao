@@ -441,6 +441,12 @@ async def handle_vision(bot: Bot, event: GroupMessageEvent, matcher: Matcher) ->
 
     desc, category, reason = _parse_result(raw)
     desc = md_to_qq(desc).strip().replace("\n", " ")
+    try:  # 复用审查时的画面描述，给群聊感知层当图片说明（不额外花钱）
+        from src.plugins import awareness
+
+        awareness.note_caption(event.group_id, event.message_id, desc)
+    except Exception:
+        logger.debug("写入图片说明失败", exc_info=True)
 
     if category in VIOLATION_CATEGORIES:
         matcher.stop_propagation()  # 不再触发 AI / 关键词回复

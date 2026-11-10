@@ -1319,6 +1319,15 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
     ]
     if blog_context:
         messages.append({"role": "system", "content": blog_context})
+    if isinstance(event, GroupMessageEvent):
+        try:
+            from src.plugins import awareness
+
+            scene_chat = await awareness.context_block(event.group_id, exclude_message_id=event.message_id)
+            if scene_chat:
+                messages.append({"role": "system", "content": scene_chat})
+        except Exception:
+            logger.exception("群聊上下文注入失败")
     messages.extend(history)
     messages.append({"role": "user", "content": text})
 
@@ -1393,6 +1402,25 @@ PURE_AT_FALLBACK = (
 )
 
 
+async def _attached_images_note(event: MessageEvent) -> str:
+    """识别用户 @ 时附带的图片与所引用消息里的图片，生成给模型看的说明（没有图返回空串）。"""
+    try:
+        from src.plugins import awareness
+
+        parts: list[str] = []
+        own = await awareness.describe_message_images(event.message)
+        if own:
+            parts.append("（用户附带的图片内容：" + "；".join(f"{i}) {c}" for i, c in enumerate(own, 1)) + "）")
+        if event.reply is not None:
+            quoted = await awareness.describe_message_images(event.reply.message)
+            if quoted:
+                parts.append("（用户引用的消息里的图片内容：" + "；".join(f"{i}) {c}" for i, c in enumerate(quoted, 1)) + "）")
+        return ("\n" + "\n".join(parts)) if parts else ""
+    except Exception:
+        logger.exception("识别用户附图失败")
+        return ""
+
+
 @ai_matcher.handle()
 async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     if not event.to_me:
@@ -1404,8 +1432,10 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         return  # 语音消息由 voice 插件识别后再交给 AI
     # 纯 @（无文字）也必须响应：结合上下文回，没上下文就自由发挥，
     # 避免成员以为机器人挂了。AI 不可用时兜底固定回应。
-    pure_at = not raw_text
-    text = PURE_AT_PROMPT if pure_at else raw_text
+    has_images = any(seg.type == "image" for seg in event.message) or (
+        event.reply is not None and any(seg.type == "image" for seg in event.reply.message)
+    )
+    pure_at = not raw_text and not has_images
     if not await is_ai_enabled():
         if pure_at:
             import random
@@ -1420,7 +1450,22 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     }:
         return
 
-    reply = await chat(event, text, bot=bot, history_user_text="@星潮" if pure_at else None)
+    img_note = await _attached_images_note(event) if has_images else ""
+    if not raw_text and not img_note:
+        pure_at = True  # 附图全部识别失败且没写文字：当作纯 @
+    if pure_at:
+        text = PURE_AT_PROMPT
+    elif not raw_text:
+        text = "（用户 @ 了你并发来图片，没有写文字，请看图自然地回应）" + img_note
+    else:
+        text = raw_text + img_note
+    if pure_at:
+        history_text: str | None = "@星潮"
+    elif img_note:
+        history_text = (raw_text or "[发了图片]") + "[附图]"
+    else:
+        history_text = None
+    reply = await chat(event, text, bot=bot, history_user_text=history_text)
     if reply is None:
         if pure_at:
             # AI 超限/调用失败时的兜底，保证纯 @ 必有回应

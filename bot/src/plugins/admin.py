@@ -148,6 +148,7 @@ _PLUGIN_KEYS = {
     "visionguard": ("vision_guard_enabled", "图片识别与违规处理"),
     "proactive": ("proactive_enabled", "群聊主动性"),
     "blog": ("blog_enabled", "博客知识关联推荐"),
+    "awareness": ("awareness_enabled", "群聊感知（让机器人看见群里最近的聊天与图片）"),
 }
 
 
@@ -155,7 +156,7 @@ _PLUGIN_KEYS = {
 async def handle_plugin(args: Message = CommandArg()) -> None:
     parts = args.extract_plain_text().strip().lower().split()
     if len(parts) != 2 or parts[1] not in ("on", "off") or parts[0] not in _PLUGIN_KEYS:
-        await _send(plugin_admin, "用法：/plugin reply|link|vision|proactive|blog on|off")
+        await _send(plugin_admin, "用法：/plugin reply|link|vision|proactive|blog|awareness on|off")
         return
     key, label = _PLUGIN_KEYS[parts[0]]
     enable = parts[1] == "on"
@@ -167,4 +168,10 @@ async def handle_plugin(args: Message = CommandArg()) -> None:
         await get_store().set_kv(key, "true" if enable else "false")
     except Exception:
         logger.exception(f"写入 {key} 开关失败（重启后可能恢复默认）")
+    if parts[0] == "awareness":
+        from src.plugins import awareness
+
+        awareness.invalidate_config()
+        if not enable:
+            awareness.clear_group()  # 关闭时立刻丢弃已缓冲的内容
     await _send(plugin_admin, f"{label}已{'开启' if enable else '关闭'}。")
