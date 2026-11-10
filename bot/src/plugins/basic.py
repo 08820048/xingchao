@@ -86,6 +86,7 @@ ADMIN_TEXT = (
     "  ◈ /notice <内容> — 发布群公告\n"
     "  ◈ /plugin reply|link|vision|proactive|blog|awareness on|off — 模块开关\n"
     "  ◈ /活跃度 安静|正常|话痨 [群号|全局] — 机器人主动程度\n"
+    "  ◈ /精华 /取消精华 /精华列表 — 回复消息设为/取消精华（机器人需是管理员）\n"
     "  ◈ /能力自检 — 探测当前 NapCat 支持哪些 QQ 能力（只读）\n"
     "  ◈ /delete @某人 <条数> — 批量撤回（群管可用）\n"
     "  ◈ /拉黑用户|拉黑群 <目标> — 黑名单（详见文档）\n"

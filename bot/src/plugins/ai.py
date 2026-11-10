@@ -1070,6 +1070,36 @@ async def _t_send_selfie(bot, event, args) -> str:
     return await send_selfie(bot, event)
 
 
+async def _t_essence_set(bot, event, args) -> str:
+    from src.plugins import essence
+    mid = args.get("message_id")
+    if not mid and getattr(event, "reply", None) is not None:
+        mid = event.reply.message_id
+    if not mid:
+        return "错误：需要 message_id，或引用要设为精华的消息后再让我设置。"
+    ok, msg = await essence.set_essence(bot, int(mid))
+    return msg if ok else f"执行失败：{msg}"
+
+
+async def _t_essence_delete(bot, event, args) -> str:
+    from src.plugins import essence
+    mid = args.get("message_id")
+    if not mid and getattr(event, "reply", None) is not None:
+        mid = event.reply.message_id
+    if not mid:
+        return "错误：需要 message_id，或引用精华消息后再让我取消。"
+    ok, msg = await essence.delete_essence(bot, int(mid))
+    return msg if ok else f"执行失败：{msg}"
+
+
+async def _t_essence_list(bot, event, args) -> str:
+    from src.plugins import essence
+    gid = args.get("group_id") or getattr(event, "group_id", None)
+    if not gid:
+        return "错误：需要 group_id（群聊中默认当前群）。"
+    return await essence.list_essence(bot, int(gid))
+
+
 async def _t_send_sticker(bot, event, args) -> str:
     from src.plugins import stickers
 
@@ -1241,6 +1271,15 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_vision_model", "设置图片识别用的视觉模型（需支持图片输入）",
               {"type": "object", "properties": {"model": {"type": "string", "description": "如 glm-4v-flash"}}, "required": ["model"]},
               "superuser", _t_vision_model_set),
+        _tool("set_essence_message", "把一条群消息设为精华（用户引用那条消息说“设为精华”，或提供 message_id；机器人需要是群管理员）",
+              {"type": "object", "properties": {"message_id": {"type": "integer", "description": "消息 ID，缺省取被引用的消息"}}, "required": []},
+              "superuser", _t_essence_set),
+        _tool("delete_essence_message", "取消一条群精华消息（引用该消息或提供 message_id）",
+              {"type": "object", "properties": {"message_id": {"type": "integer"}}, "required": []},
+              "superuser", _t_essence_delete),
+        _tool("list_essence_messages", "查看本群（或指定群）的精华消息列表",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": []},
+              "all", _t_essence_list),
         _tool("send_sticker", "发一张表情包到当前会话（从机器人收藏的表情包库里按心情挑；聊天气氛合适、想用表情包回应时使用，如 无语/开心/狗头/委屈/吃瓜/加油）",
               {"type": "object", "properties": {"mood": {"type": "string", "description": "想表达的心情或梗，如 无语、开心、狗头"}}, "required": ["mood"]},
               "all", _t_send_sticker),

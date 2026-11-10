@@ -235,6 +235,10 @@ def parse_decision(
         return None
 
     action = str(data.get("action", "skip")).lower()
+    if action == "nominate":
+        mid = target("reply_to")
+        reason = " ".join(str(data.get("text", "")).split())[:60]
+        return {"action": "nominate", "target": mid, "reason": reason} if mid and reason else skip
     if action == "sticker":
         idx = data.get("sticker")
         if isinstance(idx, str) and idx.isdigit():
@@ -309,6 +313,8 @@ RULES = (
     "值得点赞、又不需要接话的时候。\n"
     "- reply：像群友一样自然简短（总共不超过 60 字）；想像真人连发几句短消息时，用 || 分隔，最多 3 段；"
     "回答别人的问题时用 reply_to 引用那条消息；不要 @ 任何人，不要 Markdown。\n"
+    "- nominate：极少使用。当某条消息（别人给出的特别有价值的回答/总结/经验）值得长期保存时，"
+    "向管理员推荐设为群精华：action 填 nominate，reply_to 是那条消息的编号，text 写一句推荐理由；不会在群里发任何内容。\n"
     "- 严肃争论、涉及隐私/违规/管理事务、或你不确定的事实：skip 或谨慎表态，不要编造。\n"
     "- 不要重复别人的话，不要复述聊天内容，不要说“我看到了聊天记录”这类话。\n"
     "- 有人认真问你是不是 AI/机器人时，坦率承认你是机器人；可以有个性，但不撒谎冒充真人。\n"
@@ -412,6 +418,20 @@ async def decide_and_act(
     if not burst_allowed(group_id, burst):
         logger.info(f"群 {group_id} 主动发送达到滚动上限，本次放弃")
         return "skip"
+    if decision["action"] == "nominate":
+        from src.plugins import essence
+        from src.plugins.appeals import notify_superusers
+
+        mid = decision["target"]
+        if not essence.can_nominate(group_id, mid):
+            return "skip"
+        entry = next((e for e in awareness._buffers.get(group_id, ()) if e["message_id"] == mid), None)
+        if entry is None or entry["bot"]:
+            return "skip"
+        essence.mark_nominated(group_id, mid)
+        await notify_superusers(bot, essence.nomination_text(
+            group_id, mid, entry["name"], entry["text"] or "（非文字消息）", decision["reason"]))
+        return "nominate"
     if decision["action"] == "sticker":
         from src.plugins import stickers
 
