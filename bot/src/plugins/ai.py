@@ -1070,6 +1070,20 @@ async def _t_send_selfie(bot, event, args) -> str:
     return await send_selfie(bot, event)
 
 
+async def _t_invites_list(bot, event, args) -> str:
+    from src.plugins import invites
+    return invites.list_text()
+
+
+async def _t_invite_resolve(bot, event, args) -> str:
+    from src.plugins import invites
+    seq, approve = args.get("seq"), args.get("approve")
+    if not isinstance(seq, int) or not isinstance(approve, bool):
+        return "错误：需要 seq（整数，可先用 list_pending_invites 查看）与 approve（布尔值）。"
+    ok, msg = await invites.resolve(bot, seq, approve, str(args.get("reason", ""))[:50])
+    return msg if ok else f"错误：{msg}"
+
+
 async def _t_essence_set(bot, event, args) -> str:
     from src.plugins import essence
     mid = args.get("message_id")
@@ -1271,6 +1285,12 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_vision_model", "设置图片识别用的视觉模型（需支持图片输入）",
               {"type": "object", "properties": {"model": {"type": "string", "description": "如 glm-4v-flash"}}, "required": ["model"]},
               "superuser", _t_vision_model_set),
+        _tool("list_pending_invites", "查看待处理的好友申请和拉群邀请（有人加机器人好友、或把机器人拉进新群时会进入这里）",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_invites_list),
+        _tool("resolve_invite", "通过或拒绝好友申请/拉群邀请（先用 list_pending_invites 获取序号）",
+              {"type": "object", "properties": {"seq": {"type": "integer", "description": "序号"}, "approve": {"type": "boolean"}, "reason": {"type": "string", "description": "拒绝理由（可空）"}}, "required": ["seq", "approve"]},
+              "superuser", _t_invite_resolve),
         _tool("set_essence_message", "把一条群消息设为精华（用户引用那条消息说“设为精华”，或提供 message_id；机器人需要是群管理员）",
               {"type": "object", "properties": {"message_id": {"type": "integer", "description": "消息 ID，缺省取被引用的消息"}}, "required": []},
               "superuser", _t_essence_set),

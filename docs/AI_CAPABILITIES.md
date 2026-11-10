@@ -80,6 +80,11 @@
 | `/记忆` | `get_my_memory` | 所有人 | 「你记得我什么」「你了解我吗」 |
 | `/忘记我` | `forget_my_memory` | 所有人 | 「忘了我吧」「别记我的信息」 |
 | `/记住我` | `resume_my_memory` | 所有人 | 「可以重新记住我了」 |
+| `/能力自检` | `run_capability_check` | 超管 | 「现在支持精华吗」「看看你有哪些 QQ 能力」 |
+| `/精华`（回复消息）`/取消精华` `/精华列表` | `set_essence_message` / `delete_essence_message`（超管）、`list_essence_messages`（所有人） | 见左 | 「把这条设为精华」「看看本群精华」 |
+| `/邀请列表` `/同意邀请 <序号>` `/拒绝邀请 <序号> [理由]` | `list_pending_invites` / `resolve_invite` | 超管 | 「有人加我好友吗」「通过 2 号邀请」 |
+| —（内置能力） | `send_sticker` | 所有人 | 「发个表情包」「来个无语的表情」 |
+| `/plugin ocr on\|off` | — | 超管 | 开关“图片文字检测” |
 | `/ai vision <模型>` | `set_vision_model` | 超管 | 「把视觉模型换成 glm-4v-flash」 |
 | `/reply list/reload` | `list_replies` / `reload_replies` | 超管 | 「看看词库里有什么」 |
 | `/敏感词 add/del/list` | `add_sensitive_words` / `remove_sensitive_words` / `list_sensitive_words` | 超管 | 「把“代刷”加入敏感词」「删掉敏感词 代刷」 |
@@ -121,6 +126,15 @@
 >   不存原话、按群隔离、敏感内容本地过滤），后台按"新增发言数 + 间隔 + 每日次数"整理，对话时按字数预算
 >   注入相关的人，并带"熟悉度"。成员可 `/记忆` 查看、`/忘记我` 清除并停止记录；超管可在面板查看改删；
 >   总开关 `memory_enabled`。入群欢迎默认文案会告知这一点。
+> - **表情与表情包**（`expressions.py` + `stickers.py`）：AI 回复里的 `[表情:笑哭]` 发送前换成 QQ 系统表情
+>   （语音回复前会剥离占位符）；机器人账号收藏的表情包会被读取并打语义标签，主动发言可发 sticker 动作，
+>   `send_sticker` 工具按心情挑一张。表情回应（给某条消息贴表情）也用系统表情 ID。
+> - **图片文字检测**（`ocr.py`）：敏感词在文字里没命中时，再用 NapCat `ocr_image` 识别图片里的字并过同一套
+>   敏感词判定（含 AI 复核、升级处罚、申诉）；接口不支持时自动关闭。开关 `ocr_guard_enabled`。
+> - **历史回填与表情反馈**（`awareness.py` / `feedback.py`）：重启后用 `get_group_msg_history` 回填感知缓冲；
+>   监听 `group_msg_emoji_like`，群友给机器人消息贴“踩/？”≥2 次则暂停主动发言 30 分钟，反馈概况也会写进主动发言提示词。
+> - **精华推荐**（`essence.py`）：主动发言的 nominate 动作只会私聊管理员“建议设为精华”（每群每天 ≤3 次），不在群里发任何内容。
+> - **好友申请与拉群邀请**（`invites.py`）：私聊通知超管并附指令；超管本人的申请/邀请自动通过。
 > - **群聊感知**（`awareness.py`）：每个白名单群在**内存**里保留最近一段聊天（文字、引用、@、
 >   表情包、语音/视频/文件标记、机器人自己的发言），被 @ 时作为"群里最近的聊天"注入 AI，
 >   于是能回答"刚才大家在聊什么""上面那张图是什么"。图片说明按需生成并缓存（违规审查已识别的

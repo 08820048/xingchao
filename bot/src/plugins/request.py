@@ -250,8 +250,8 @@ join_request = on_request(rule=GROUP_WHITELIST, priority=1, block=False)
 
 @join_request.handle()
 async def handle_join_request(bot: Bot, event: GroupRequestEvent) -> None:
-    if event.request_type != "group":
-        return
+    if event.request_type != "group" or event.sub_type == "invite":
+        return  # 拉群邀请由 invites.py 通知超管处理
     await _handle_request(bot, event)
 
 
