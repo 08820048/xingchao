@@ -412,11 +412,13 @@ async def handle_voice(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         await matcher.finish("语音没听清，能再说一遍或者打字吗？")
     reply = await chat(event, f"（用户发来一条语音，识别内容如下）{text}", bot=bot, history_user_text=f"[语音] {text}")
     try:
-        if reply and await deliver_reply(bot, event, reply):
+        from src.plugins.expressions import render_faces, strip_faces
+
+        if reply and await deliver_reply(bot, event, strip_faces(reply)):
             return
         msg = MessageSegment.reply(event.message_id) + f"🎙 {text}"
         if reply:
-            msg += "\n" + md_to_qq(reply)
+            msg += "\n" + render_faces(md_to_qq(reply))
         await matcher.send(msg)
     except MatcherException:
         raise

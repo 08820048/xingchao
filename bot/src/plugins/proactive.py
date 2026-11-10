@@ -68,8 +68,8 @@ DEFAULTS: dict[str, Any] = {
 }
 # 表情回应：名称 → NapCat set_msg_emoji_like 的 emoji_id（QQ 表情回应）
 EMOJIS: dict[str, str] = {
-    "赞": "76", "OK": "124", "爱心": "66", "笑哭": "128514",
-    "庆祝": "127881", "鼓掌": "128079", "火": "128293", "握手": "78",
+    "赞": "76", "OK": "124", "爱心": "66", "笑哭": "182",
+    "庆祝": "320", "鼓掌": "99", "吃瓜": "271", "握手": "78", "牛啊": "299",
 }
 BURST_WINDOW = 600  # 滚动频率上限的统计窗口（秒）
 PACING = True       # 拟人延迟（测试里关闭）
@@ -203,7 +203,9 @@ def repeat_candidate(entries: list[dict]) -> str | None:
     return text if len({e["user_id"] for e in last}) >= 2 else None
 
 
-def parse_decision(raw: str, ids: list[int | None], max_chars: int = 160) -> dict[str, Any]:
+def parse_decision(
+    raw: str, ids: list[int | None], max_chars: int = 160, stickers: list[str] | None = None,
+) -> dict[str, Any]:
     """解析模型的决策。返回 {"action": skip|react|reply, ...}；不合法一律 skip。
 
     reply：parts（最多 3 段、总字数受限）、quote（要引用的 message_id 或 None）
@@ -233,6 +235,13 @@ def parse_decision(raw: str, ids: list[int | None], max_chars: int = 160) -> dic
         return None
 
     action = str(data.get("action", "skip")).lower()
+    if action == "sticker":
+        idx = data.get("sticker")
+        if isinstance(idx, str) and idx.isdigit():
+            idx = int(idx)
+        if stickers and isinstance(idx, int) and 1 <= idx <= len(stickers):
+            return {"action": "sticker", "sticker_id": stickers[idx - 1]}
+        return skip
     if action == "react":
         name = str(data.get("emoji", "")).strip()
         mid = target("reply_to") or next((i for i in reversed(ids) if i is not None), None)
@@ -294,7 +303,7 @@ RULES = (
     "你现在不是在回答别人的 @ 提问，而是在群里自然地聊天、看着大家聊。\n"
     "请只输出一个 JSON（不要代码块、不要多余文字）：\n"
     '{"action": "skip" | "react" | "reply", "reply_to": 消息编号或null, '
-    '"text": "要说的话", "emoji": "赞|OK|爱心|笑哭|庆祝|鼓掌|火|握手"}\n'
+    '"text": "要说的话", "emoji": "赞|OK|爱心|笑哭|庆祝|鼓掌|吃瓜|握手|牛啊"}\n'
     "- 默认 skip。只有你真有话说、能帮上忙、或者确实好笑/可爱/值得回应时才动。\n"
     "- react：只给某条消息贴一个表情，不说话（reply_to 是目标编号）。适合好笑、可爱、好消息、"
     "值得点赞、又不需要接话的时候。\n"
@@ -316,7 +325,9 @@ SITUATION = {
 }
 
 
-def build_prompt(transcript: str, situation: str, name: str = "", knowledge: str = "") -> str:
+def build_prompt(
+    transcript: str, situation: str, name: str = "", knowledge: str = "", sticker_menu: str = "",
+) -> str:
     prompt = (
         "下面是 QQ 群最近的聊天（#编号 [时间] 发言人: 内容；「星潮(我)」是你自己）：\n----\n"
         f"{transcript}\n----\n{SITUATION[situation].format(name=name)}\n\n{RULES}"
@@ -325,6 +336,12 @@ def build_prompt(transcript: str, situation: str, name: str = "", knowledge: str
         prompt += (
             "\n【开发者的博客/作品（如与话题相关，优先用它们回答或推荐，名称和链接放在最后；不相关就别提）】\n"
             f"{knowledge}\n"
+        )
+    if sticker_menu:
+        prompt += (
+            "\n【你收藏的表情包（想发表情包时 action 填 sticker、sticker 填编号；只在气氛合适、"
+            "表情包比文字更自然时才发，别频繁用）】\n"
+            f"{sticker_menu}\n"
         )
     return prompt
 
@@ -336,9 +353,11 @@ async def send_humanlike(bot: Bot, group_id: int, parts: list[str], quote: int |
     for i, part in enumerate(parts):
         if PACING:
             await asyncio.sleep(min(5.0, 0.8 + len(part) * 0.07) + random.uniform(0, 0.8))
-        msg: MessageSegment | str = part
+        from src.plugins.expressions import render_faces
+
+        msg = render_faces(part)
         if i == 0 and quote:
-            msg = MessageSegment.reply(quote) + part
+            msg = MessageSegment.reply(quote) + msg
         await bot.call_api("send_group_msg", group_id=group_id, message=msg)
 
 
@@ -363,7 +382,15 @@ async def decide_and_act(
         mem_text = await memory.memory_block(group_id, uids, names)
     except Exception:
         logger.exception("主动发言注入人设/记忆失败")
-    prompt = build_prompt(transcript, situation, name, knowledge)
+    sticker_menu, sticker_ids = "", []
+    try:
+        from src.plugins import stickers
+
+        if await stickers.ensure_library(bot):
+            sticker_menu, sticker_ids = await stickers.catalog()
+    except Exception:
+        logger.debug("加载表情包库失败", exc_info=True)
+    prompt = build_prompt(transcript, situation, name, knowledge, sticker_menu)
     if mem_text:
         prompt = mem_text + "\n\n" + prompt
     raw = await ai_plugin.generate_text(
@@ -378,13 +405,28 @@ async def decide_and_act(
     max_chars = int(await _kv("proactive_max_reply_chars"))
     if knowledge:
         max_chars = max(max_chars, 220)
-    decision = parse_decision(raw or "", ids, max_chars)
+    decision = parse_decision(raw or "", ids, max_chars, sticker_ids)
     if decision["action"] == "skip":
         logger.debug(f"群 {group_id} 主动性：skip（{situation}）")
         return "skip"
     if not burst_allowed(group_id, burst):
         logger.info(f"群 {group_id} 主动发送达到滚动上限，本次放弃")
         return "skip"
+    if decision["action"] == "sticker":
+        from src.plugins import stickers
+
+        msg = stickers.sticker_message(decision["sticker_id"])
+        if msg is None:
+            return "skip"
+        try:
+            if PACING:
+                await asyncio.sleep(random.uniform(0.8, 2.0))
+            await bot.call_api("send_group_msg", group_id=group_id, message=msg)
+        except Exception:
+            logger.exception("发送表情包失败")
+            return "skip"
+        _mark_sent(group_id)
+        return "sticker"
     if decision["action"] == "react":
         try:
             await bot.call_api(

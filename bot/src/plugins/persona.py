@@ -94,6 +94,9 @@ def render_persona(card: dict[str, str], state: str = "") -> str:
     lines += [f"{LABELS[k]}：{card[k]}" for k in FIELDS if card.get(k)]
     if state:
         lines.append(f"你当前的状态（只轻微影响语气，不要主动提起）：{state}")
+    from src.plugins.expressions import face_hint
+
+    lines.append(face_hint())
     return "\n".join(lines)
 
 

@@ -17,6 +17,12 @@ def _clean(monkeypatch, store):
     pa._engaged.clear()
     pa._last_repeat.clear()
     monkeypatch.setattr(pa, "PACING", False)
+    from src.plugins import stickers
+
+    async def no_library(bot, **kw):
+        return 0
+
+    monkeypatch.setattr(stickers, "ensure_library", no_library)  # 隔离：不碰真实库/不调接口
 
     async def cfg():
         return dict(aw.DEFAULTS)
@@ -132,7 +138,7 @@ async def test_send_humanlike_quotes_first_and_splits():
     assert [n for n, _ in bot.calls] == ["send_group_msg", "send_group_msg"]
     first, second = bot.calls[0][1]["message"], bot.calls[1][1]["message"]
     assert first[0].type == "reply" and first[0].data["id"] == "77"
-    assert second == "第二句"
+    assert second.extract_plain_text() == "第二句"
 
 
 def _stub_ai(monkeypatch, reply):

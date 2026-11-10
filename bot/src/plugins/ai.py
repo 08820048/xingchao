@@ -966,6 +966,15 @@ async def _t_proactive_mode(bot, event, args) -> str:
     return f"群 {scope} 的主动程度已设为「{proactive.MODE_LABEL[mode]}」。"
 
 
+async def _t_capability_check(bot, event, args) -> str:
+    from src.permission import merged_whitelist
+    from src.plugins import capabilities
+    gid = getattr(event, "group_id", None) or next(iter(sorted(merged_whitelist())), None)
+    if not gid:
+        return "错误：白名单为空，没有可用于探测的群。"
+    return await capabilities.run_and_store(bot, int(gid))
+
+
 async def _t_memory_get(bot, event, args) -> str:
     from src.plugins import memory
     gid = event.group_id if isinstance(event, GroupMessageEvent) else None
@@ -1059,6 +1068,20 @@ async def _t_send_selfie(bot, event, args) -> str:
     from src.plugins.selfie import send_selfie
 
     return await send_selfie(bot, event)
+
+
+async def _t_send_sticker(bot, event, args) -> str:
+    from src.plugins import stickers
+
+    count = await stickers.ensure_library(bot)
+    if not count:
+        return "表情包库是空的（机器人账号里还没有收藏表情，或还没来得及打标签）。"
+    sid = await stickers.pick_by_mood(str(args.get("mood", "")))
+    msg = stickers.sticker_message(sid) if sid else None
+    if msg is None:
+        return "没找到合适的表情包。"
+    await bot.send(event, msg)
+    return "已发送一张表情包；文字回复保持简短自然，不要描述这张图。"
 
 
 async def _t_calc(bot, event, args) -> str:
@@ -1218,6 +1241,12 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_vision_model", "设置图片识别用的视觉模型（需支持图片输入）",
               {"type": "object", "properties": {"model": {"type": "string", "description": "如 glm-4v-flash"}}, "required": ["model"]},
               "superuser", _t_vision_model_set),
+        _tool("send_sticker", "发一张表情包到当前会话（从机器人收藏的表情包库里按心情挑；聊天气氛合适、想用表情包回应时使用，如 无语/开心/狗头/委屈/吃瓜/加油）",
+              {"type": "object", "properties": {"mood": {"type": "string", "description": "想表达的心情或梗，如 无语、开心、狗头"}}, "required": ["mood"]},
+              "all", _t_send_sticker),
+        _tool("run_capability_check", "探测当前 QQ 连接（NapCat）支持哪些能力（精华、收藏表情包、OCR、历史消息等，只读不改动；用户问“你现在有哪些 QQ 能力/支持精华吗”时使用）",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_capability_check),
         _tool("get_my_memory", "查看你（机器人）对当前提问者记住了什么（长期记忆里关于 TA 的印象与熟悉度；用户问“你记得我什么/你了解我吗”时使用）",
               {"type": "object", "properties": {}, "required": []},
               "all", _t_memory_get),
@@ -1558,9 +1587,10 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
 
             await matcher.send(MessageSegment.at(event.user_id) + " " + random.choice(PURE_AT_FALLBACK))
         return
+    from src.plugins.expressions import render_faces, strip_faces
     from src.plugins.voice import deliver_reply
 
-    if await deliver_reply(bot, event, reply):
+    if await deliver_reply(bot, event, strip_faces(reply)):
         _note_engaged(event)
         return  # 语音回复模式：已发语音
     reply = md_to_qq(reply)  # QQ 不渲染标准 Markdown，发送前降级为可读文本
@@ -1575,7 +1605,7 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
             if i:
                 message += MessageSegment.at(dev_id)
             if part:
-                message += part
+                message += render_faces(part)  # [表情:笑哭] → QQ 系统表情
         await matcher.send(message)
         _note_engaged(event)
     except MatcherException:
