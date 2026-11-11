@@ -433,7 +433,7 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 
 - `scripts/mock_napcat.py` 支持把 `@QQ号` 文本解析为 at 消息段，可联调群管指令
 
-### 17.5 Web 管理面板 `panel.py`
+### 17.5 Web 管理面板 `panel/`
 
 - 挂载在 NoneBot 的 FastAPI 应用（与反向 WS 共用 8080），compose 映射 `127.0.0.1:8081:8080`
 - 页面 `/panel`（内嵌单页应用：状态 / 统计 / 日志 / 词库 / 白名单 五个标签页）

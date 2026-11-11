@@ -1,4 +1,4 @@
-from src.plugins import panel
+from src.plugins.panel import common as panel
 
 
 class FakeBot:

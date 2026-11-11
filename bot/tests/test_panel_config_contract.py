@@ -12,7 +12,7 @@ import pytest
 from src.plugins import visionguard as vg
 from src.plugins import weeklyreport as wr
 
-PANEL = Path("src/plugins/panel.py").read_text()
+PANEL = "\n".join(f.read_text() for f in sorted(Path("src/plugins/panel").glob("*.py")))
 APP = Path("../web/src/App.tsx").read_text() if Path("../web/src/App.tsx").exists() else ""
 
 
@@ -46,8 +46,8 @@ async def test_report_panel_config_roundtrip(kv):
 
 def test_post_fields_are_all_readable_from_get():
     """POST 接受的字段名都必须能从 GET 读回来。"""
-    block = PANEL[PANEL.index('"/panel/api/visionguard")\n    async def panel_visionguard_post'):]
-    block = block[: block.index('"/panel/api/report")')]
+    block = PANEL[PANEL.index('async def panel_visionguard_post'):]
+    block = block.split("@app.", 1)[0]
     posted = set(re.findall(r'\("(\w+)", "(?:vision|qrcode)_\w+"\)', block))
     assert posted and posted <= set(vg.PANEL_KEYS), posted - set(vg.PANEL_KEYS)
 

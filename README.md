@@ -170,7 +170,7 @@ xingchao/
 │           ├── joinverify.py / redpacket.py  # 入群验证 / 红包提醒
 │           ├── interact.py   # 点赞 / 戳一戳 / 群文件 / 已读 / 签名
 │           ├── request.py / invites.py / essence.py / capabilities.py / onlinestatus.py / nctools.py  # 入群申请 / 邀请 / 精华 / 能力自检 / 在线状态 / NapCat 封装
-│           └── panel.py      # Web 管理面板（/panel）；/ 重定向官网
+│           └── panel/        # Web 管理面板（/panel）：common + routes_* + page；/ 重定向官网
 ├── web/                    # 管理面板前端（Vite + React + Tailwind v4 + coss ui，base=/panel/）
 └── data/                   # 运行数据（compose 挂载，不入库）
 ```
