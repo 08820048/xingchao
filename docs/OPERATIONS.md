@@ -161,6 +161,10 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 | `/ping` | 连通测试 |
 | `/id` | 查看群号 / 用户 / 机器人 ID |
 | `/stats [yesterday]` | 群活跃统计（默认当天） |
+| `/龙王`（别名 `/群荣誉`） | 查看龙王等群荣誉成员 |
+| `/更新日志` | 查看最近一次更新公告 |
+| `/记忆` `/忘记我` `/记住我` | 查看 / 清除并停止记录 / 恢复机器人对自己的印象 |
+| `/转文字`（回复语音） | 识别语音内容 |
 | `@星潮 <内容>` 或 `星潮<内容>` | @响应（同群 8 秒冷却）；内容含「帮助/help」回复帮助菜单 |
 
 ### 仅超管（群聊或私聊）
@@ -179,6 +183,17 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 | `/welcome on\|off` | 进群欢迎开关 |
 | `/welcome view` | 查看当前欢迎语 |
 | `/welcome set <欢迎语>` | 自定义欢迎语（占位符：`{at}`=@新人、`{qq}`=新人QQ、`{group}`=群号；也可在面板「仪表盘」页编辑） |
+| `/备份` | 立即备份数据库并列出现有备份 |
+| `/feed list\|now <id>` | 查看内容推送订阅 / 立即推送一次 |
+| `/task list` | 查看定时任务（增删改在面板「定时任务」页） |
+| `/清理群员 [群号]` / `… 确认` | 群满员时预览 / 执行清理最不活跃成员 |
+| `/能力自检` | 探测当前 NapCat 支持哪些 QQ 能力（只读） |
+| `/名片 @某人 内容`、`/头衔 @某人 内容` | 改群名片（需管理员）/ 专属头衔（需群主） |
+| `/音色 …` | 查看 / 切换语音音色 |
+| `/活跃度 安静\|正常\|话痨 [群号\|全局]` | 调群聊主动性档位 |
+| `/邀请列表` `/同意邀请 <序号>` `/拒绝邀请 <序号>` | 好友申请与拉群邀请审批 |
+| `/敏感词 add\|del\|list`、`/申诉列表` `/申诉通过 <编号>` `/申诉驳回 <编号>` | 敏感词与申诉处理 |
+| `/精华`（回复消息）`/取消精华` `/精华列表` | 群精华管理 |
 
 ### 行为规则
 
@@ -304,3 +319,17 @@ uv run --no-project --python 3.12 --with "nonebot2[fastapi]" --with nonebot-adap
 ```
 
 推送到 main 或提 PR 时，GitHub Actions 会自动跑同样的测试。改动处罚规则、选人逻辑或数据库结构前后都请先跑一遍。
+
+---
+
+## 15. 后台自动任务速查
+
+| 功能 | 触发 | 开关 / 参数（kv 或面板） | 排错 |
+|---|---|---|---|
+| 上线 / 下线通知（`presence.py`） | 连上 NapCat / 正常停机；后台每 30 秒写心跳 `presence_last_seen` | `presence_notify=false` 关闭 | 强杀或 QQ 掉线发不出下线通知，恢复后补发「已上线」并带离线时长 |
+| 版本公告（`updates.py`） | 连上 NapCat 且 changelog 最新版本 ≠ `update_announced_version` | `update_notify=false` | 见第 11 节 |
+| 内容推送（`feeds.py`） | 到点；内容未就绪每 10 分钟重试，超 120 分钟放弃并私聊超管 | 面板「内容推送」页；`feed_last_{id}` 去重 | 想重发：`/feed now <id>` |
+| 定时任务（`scheduler.py`） | 每 30 秒扫描，北京时间 | 面板「定时任务」页 | @全体次数不足时降级为普通消息并通知超管 |
+| 群活跃周报（`weeklyreport.py`） | 配置的星期 / 时间，每群每天最多一次 | `report_enabled` / `report_weekday` / `report_time` / `report_scope` | 同上页 |
+| 群满员清理（`groupfull.py`） | 入群时 + 每 30 分钟巡检；满员 24 小时内只提醒一次 | `groupfull_enabled`(true) / `groupfull_auto_kick`(false) / `groupfull_kick_count`(100) / `groupfull_activity_days`(30) / `groupfull_protect_days`(7) | 默认只通知超管，需 `/清理群员 确认`；执行需机器人是管理员 |
+| 数据库备份（`backup.py`） | 每天 03:30；启动时最近备份超 24 小时则补做 | `backup_enabled` / `backup_keep` | 见第 12 节 |
