@@ -86,12 +86,14 @@ def format_trending(items: list[dict[str, Any]], since: str, language: str) -> s
     return head + "\n".join(lines) + (f"\n\n📅 {period}" if period else "")
 
 
-trending_cmd = on_command("trending", aliases={"趋势", "榜单"}, rule=BASIC, priority=5, block=True)
+trending_cmd = on_command("趋势榜", aliases={"trending", "趋势", "榜单"}, rule=BASIC, priority=5, block=True)
 
 
 @trending_cmd.handle()
 async def handle_trending(matcher: Matcher, args: Message = CommandArg()) -> None:
-    parts = args.extract_plain_text().strip().split()
+    from src.cmdutil import PERIODS
+
+    parts = [PERIODS.get(p, p) for p in args.extract_plain_text().strip().split()]
     since = parts[0] if parts and parts[0] in ("daily", "weekly", "monthly") else "daily"
     language = parts[1] if len(parts) > 1 and since != parts[0] else \
         (parts[0] if parts and parts[0] not in ("daily", "weekly", "monthly") else "")

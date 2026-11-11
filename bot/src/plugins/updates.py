@@ -50,7 +50,7 @@ def format_entry(entry: dict[str, Any]) -> str:
     if lines[-1] == "":
         lines.pop()
     lines.append("━━━━━━━━━━━━")
-    lines.append("发送 /help 查看全部功能；对处罚有异议可私聊机器人申诉")
+    lines.append("发送 /帮助 查看全部功能；对处罚有异议可私聊机器人申诉")
     return "\n".join(line for line in lines if line is not None)
 
 

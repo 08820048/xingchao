@@ -1,4 +1,4 @@
-"""基础指令：/help /ping /id /status /状态（白名单群或超管私聊）。"""
+"""基础指令：/帮助 /连通测试 /身份 /运行状态（白名单群或超管私聊；英文写法 /help /ping /id /status 仍可用）。"""
 
 from __future__ import annotations
 
@@ -13,10 +13,12 @@ from nonebot.adapters.onebot.v11 import (
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
+from nonebot.params import CommandArg
 from nonebot.plugin import get_loaded_plugins
 from nonebot.rule import Rule
 from nonebot.typing import T_State
 
+from src import helpmenu
 from src.config import get_config, superuser_ids
 from src.permission import BASIC, SUPERUSER, merged_whitelist
 
@@ -30,84 +32,6 @@ async def _to_me(event: MessageEvent) -> bool:
     return event.to_me
 
 
-COMMON_TEXT = (
-    "✨ 我是星潮，一个开源QQbot!\n"
-    "\n"
-    "「📖 基础指令」\n"
-    "  ◈ /ping — 连通测试\n"
-    "  ◈ /id — 查看群号 / 用户 / 机器人 ID\n"
-    "  ◈ /stats — 群活跃统计（/stats yesterday 看昨日）\n"
-    "  ◈ /trending [daily|weekly] [语言] — GitHub 趋势榜\n"
-    "  ◈ /说 <文字> — 机器人用语音念出来（也可直接说“用语音回复我”）\n"
-    "  ◈ /转文字 — 回复一条语音，识别成文字\n"
-    "  ◈ /自拍 — 看看星潮本人的照片\n"
-    "  ◈ /龙王 — 本群龙王与荣誉成员\n"
-    "  ◈ /赞我 — 给你的资料卡点赞（每天一次）\n"
-    "  ◈ /群文件 [关键词] — 查看 / 搜索群文件\n"
-    "  ◈ /搜索 <关键词> /天气 <城市> — 联网搜索 / 查天气（汇率直接问我）\n"
-    "  ◈ /提醒 <时间> <内容> — 个人提醒，如 /提醒 明天8点 开会（/提醒列表 /取消提醒）\n"
-    "  ◈ /投票 <题目> <选项…> — 发起群投票，/投 <序号> 参与\n"
-    "  ◈ /画 <描述> — AI 画图（每人每天 3 张）\n"
-    "  ◈ /记忆 — 查看我对你的印象；/忘记我 清除并停止记录；/记住我 恢复\n"
-    "  ◈ 关于星潮 — 机器人与开发者信息\n"
-)
-
-THIRD_PARTY_TEXT = (
-    "\n「🎮 趣味互动」\n"
-    "  ◈ 签到 / 积分 / 排行榜 / 挖矿 / 钓鱼 / 抽奖 — 云签到小游戏\n"
-    "  ◈ 转账 / 打劫 @某人 / 出售 物品 — 积分玩法\n"
-    "  ◈ 疯狂星期四 — KFC 疯四文案（也可 疯狂星期一~日）\n"
-    "  ◈ /轮盘 + /开枪 — 俄罗斯轮盘\n"
-    "  ◈ 戳一戳机器人 — 随机回复\n"
-    "\n「🛠 实用功能」\n"
-    "  ◈ /发言统计 / 月发言统计 — 群活跃水群榜\n"
-    "  ◈ /查询资料 <QQ> — QQ 资料卡片\n"
-    "  ◈ 直接发 GitHub 链接 — 自动生成仓库卡片\n"
-    "  ◈ 私聊机器人直接发理由（或 /申诉 <理由>）— 对处罚有异议时申诉\n"
-    "  ◈ 给消息贴 QQ 表情 — 机器人也会同款回应～\n"
-)
-
-ADMIN_TEXT = (
-    "\n「🔑 管理指令 · 仅超管」\n"
-    "  ◈ /语音回复 开|关 — 当前会话 AI 默认语音回复\n"
-    "  ◈ /status — 运行状态（插件/白名单/词库）\n"
-    "  ◈ /状态 — 服务器资源（CPU/内存/磁盘，第三方插件）\n"
-    "  ◈ /禁言 @某人 [分钟] — 禁言\n"
-    "  ◈ /解除禁言 @某人 — 解除禁言\n"
-    "  ◈ /全体禁言 开|关 — 全体禁言\n"
-    "  ◈ /踢出 @某人 — 移出本群\n"
-    "  ◈ /recall — 撤回（回复目标消息）\n"
-    "  ◈ /reply reload|list — 关键词词库\n"
-    "  ◈ /敏感词 add|del|list — 敏感词批量增删\n"
-    "  ◈ /清理群员 <群号> [确认] — 群满员时按活跃度清理不活跃成员\n"
-    "  ◈ /音色 — 查看 / 切换机器人语音音色（自动试听）\n"
-    "  ◈ /group list|add|del — 白名单管理\n"
-    "  ◈ /superuser list|add|del — 超管管理\n"
-    "  ◈ /ai on|off|status|clear|vision — AI 问答管理\n"
-    "  ◈ /blog status|refresh|list|on|off — 博客知识关联推荐（xuyi.dev）\n"
-    "  ◈ /通过|拒绝 <序号> — 入群申请审批\n"
-    "  ◈ /pending — 待审批列表\n"
-    "  ◈ /申诉列表|查看|通过|驳回 <编号> — 违规申诉处理\n"
-    "  ◈ /welcome on|off|set — 欢迎语配置\n"
-    "  ◈ /task list — 定时任务列表\n"
-    "  ◈ /notice <内容> — 发布群公告\n"
-    "  ◈ /plugin reply|link|vision|proactive|blog|awareness|ocr|sign|online|urlsafe on|off — 模块开关\n"
-    "  ◈ /活跃度 安静|正常|话痨 [群号|全局] — 机器人主动程度\n"
-    "  ◈ /邀请列表 /同意邀请 /拒绝邀请 <序号> — 好友申请与拉群邀请\n"
-    "  ◈ /名片 @某人 内容、/头衔 @某人 内容 — 改群名片 / 专属头衔\n"
-    "  ◈ /精华 /取消精华 /精华列表 — 回复消息设为/取消精华（机器人需是管理员）\n"
-    "  ◈ /能力自检 — 探测当前 NapCat 支持哪些 QQ 能力（只读）\n"
-    "  ◈ /delete @某人 <条数> — 批量撤回（群管可用）\n"
-    "  ◈ /拉黑用户|拉黑群 <目标> — 黑名单（详见文档）\n"
-)
-
-PUBLIC_TEXT = COMMON_TEXT + THIRD_PARTY_TEXT + (
-    "\n✧ ─────────── ✧\n"
-    "💌 途中遇到问题？联系超管处理吧～"
-)
-
-HELP_TEXT = PUBLIC_TEXT + ADMIN_TEXT
-
 async def _send(matcher: Matcher, text: str) -> None:
     try:
         await matcher.send(text)
@@ -118,11 +42,11 @@ async def _send(matcher: Matcher, text: str) -> None:
 
 
 # /help 以及别名「星潮帮助」「星潮 help」（昵称剥离后为「帮助」/「help」，需 to_me）
-help_cmd = on_command("help", rule=BASIC, priority=5, block=True)
+help_cmd = on_command("帮助", aliases={"help"}, rule=BASIC, priority=5, block=True)
 help_alias = on_fullmatch({"帮助", "help"}, rule=BASIC & Rule(_to_me), priority=5, block=True)
-ping_cmd = on_command("ping", rule=BASIC, priority=5, block=True)
-id_cmd = on_command("id", rule=BASIC, priority=5, block=True)
-status_cmd = on_command("status", rule=SUPERUSER, priority=5, block=True)
+ping_cmd = on_command("连通测试", aliases={"ping"}, rule=BASIC, priority=5, block=True)
+id_cmd = on_command("身份", aliases={"id"}, rule=BASIC, priority=5, block=True)
+status_cmd = on_command("运行状态", aliases={"status"}, rule=SUPERUSER, priority=5, block=True)
 
 
 async def _is_group_admin(bot: Bot, event: MessageEvent) -> bool:
@@ -141,17 +65,31 @@ async def _is_group_admin(bot: Bot, event: MessageEvent) -> bool:
         return False
 
 
+async def send_help(bot: Bot, event: MessageEvent, matcher: Matcher, arg: str = "") -> None:
+    """群主/管理员/超管看全部分类；普通成员看公共分类。「全部」在群里用合并转发发出。"""
+    is_admin = await _is_group_admin(bot, event)
+    text, want_all = helpmenu.help_text(arg, is_admin)
+    if want_all:
+        try:
+            nodes = helpmenu.forward_nodes(is_admin, str(bot.self_id))
+            if isinstance(event, GroupMessageEvent):
+                await bot.call_api("send_group_forward_msg", group_id=event.group_id, messages=nodes)
+            else:
+                await bot.call_api("send_private_forward_msg", user_id=event.user_id, messages=nodes)
+            return
+        except Exception:
+            logger.warning("帮助菜单合并转发失败，退回文字", exc_info=True)
+    await _send(matcher, text)
+
+
 @help_cmd.handle()
+async def handle_help(bot: Bot, event: MessageEvent, matcher: Matcher, args: Message = CommandArg()) -> None:
+    await send_help(bot, event, matcher, args.extract_plain_text())
+
+
 @help_alias.handle()
-async def handle_help(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
-    # 群主/管理员/超管看全部菜单；普通成员看公共菜单（趣味互动/实用功能也可见）
-    if await _is_group_admin(bot, event):
-        await _send(matcher, HELP_TEXT)
-    else:
-        await _send(matcher, PUBLIC_TEXT.replace(
-            "💌 途中遇到问题？联系超管处理吧～",
-            "💌 管理指令仅群管理与超管可见～",
-        ))
+async def handle_help_alias(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
+    await send_help(bot, event, matcher)
 
 
 about_cmd = on_command("关于星潮", rule=BASIC, priority=5, block=True)

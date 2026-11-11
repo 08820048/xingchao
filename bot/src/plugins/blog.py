@@ -24,6 +24,7 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src import blog_kb
+from src.cmdutil import norm_action
 from src.permission import SUPERUSER
 from src.store import get_store
 
@@ -264,12 +265,12 @@ async def _worker() -> None:
 
 # ---------------------------------------------------------------- 指令
 
-blog_cmd = on_command("blog", rule=SUPERUSER, priority=1, block=True)
+blog_cmd = on_command("博客", aliases={"blog"}, rule=SUPERUSER, priority=1, block=True)
 
 
 @blog_cmd.handle()
 async def handle_blog(matcher: Matcher, args: Message = CommandArg()) -> None:
-    raw = args.extract_plain_text().strip().lower()
+    raw = norm_action(args.extract_plain_text()).lower()
     if raw in ("", "status", "状态"):
         data = await status()
         await matcher.send(
@@ -277,7 +278,7 @@ async def handle_blog(matcher: Matcher, args: Message = CommandArg()) -> None:
             f"文章 {data['count']} 篇 / 作品 {len(data['products'])} 个\n"
             f"最近刷新：{data['last_refresh'] or '尚未刷新'}\n"
             f"最近错误：{data['last_error'] or '无'}\n"
-            "用法：/blog refresh 立即刷新；/blog list [数量] 查看文章；/blog on|off 开关"
+            "用法：/博客 刷新 立即刷新；/博客 列表 [数量] 查看文章；/博客 开|关 开关"
         )
         return
     if raw in ("refresh", "刷新", "reload", "更新"):
@@ -296,7 +297,7 @@ async def handle_blog(matcher: Matcher, args: Message = CommandArg()) -> None:
         data = await status()
         posts = data["posts"][:count]
         if not posts:
-            await matcher.send("知识库还没有文章，可先发送 /blog refresh。")
+            await matcher.send("知识库还没有文章，可先发送 /博客 刷新。")
             return
         lines = [f"博客文章（最新 {len(posts)} 篇）："]
         for p in posts:
@@ -310,4 +311,4 @@ async def handle_blog(matcher: Matcher, args: Message = CommandArg()) -> None:
         await set_enabled(enabled)
         await matcher.send(f"博客知识关联推荐已{'开启' if enabled else '关闭'}。")
         return
-    await matcher.send("用法：/blog status | refresh | list [数量] | on | off")
+    await matcher.send("用法：/博客 状态 | 刷新 | 列表 [数量] | 开 | 关")

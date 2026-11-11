@@ -112,7 +112,7 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 
 ## 4. QQ 小号登录（掉线后必看）
 
-非官方协议**掉线是常态**。症状：群里 @ 机器人无反应、`/ping` 无响应、面板正常但 bot 日志无消息流入。
+非官方协议**掉线是常态**。症状：群里 @ 机器人无反应、`/连通测试` 无响应、面板正常但 bot 日志无消息流入。
 
 ### 处理步骤
 
@@ -125,7 +125,7 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
      ```
 3. 「QQ 登录」页 → 手机 QQ 扫码登录小号
 4. 登录后反向 WS 配置已持久化（`napcat/config/onebot11_<QQ号>.json`），会自动重连，无需重填
-5. 验证：`docker logs -f xingchao-bot` 出现 `Bot xxx connected`，群内发 `/ping` 回 `pong`
+5. 验证：`docker logs -f xingchao-bot` 出现 `Bot xxx connected`，群内发 `/连通测试` 回 `pong`
 
 ### 注意事项
 
@@ -158,9 +158,9 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 
 | 指令 | 说明 |
 |---|---|
-| `/ping` | 连通测试 |
-| `/id` | 查看群号 / 用户 / 机器人 ID |
-| `/stats [yesterday]` | 群活跃统计（默认当天） |
+| `/连通测试` | 连通测试 |
+| `/身份` | 查看群号 / 用户 / 机器人 ID |
+| `/统计 [昨日]` | 群活跃统计（默认当天） |
 | `/搜索 <关键词>` `/天气 <城市>` | 联网搜索 / 天气（搜索提供商见下方环境变量） |
 | `/提醒 <时间> <内容>` `/提醒列表` `/取消提醒 <编号>` | 个人提醒（到点 @ 你；每人最多 10 条） |
 | `/投票 <题目> <选项…>` `/投 <序号>` `/投票结果` `/结束投票` | 群投票（到时自动公布结果） |
@@ -175,22 +175,22 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 
 | 指令 | 说明 |
 |---|---|
-| `/status` | 运行状态 |
+| `/运行状态` | 运行状态 |
 | `/禁言 @某人 [分钟]` | 禁言（默认 10 分钟，上限 30 天；**需机器人是群管理员**） |
 | `/解除禁言 @某人` | 解除禁言 |
 | `/全体禁言 开\|关` | 全体禁言 |
 | `/踢出 @某人` | 移出群聊 |
-| `/recall` | 撤回消息（回复目标消息发送，或 `/recall <message_id>`） |
-| `/reply reload\|list` | 词库热重载 / 列表 |
-| `/group list\|add\|del <群号>` | 白名单管理（add/del 即时生效，重启保留） |
-| `/plugin reply\|link\|vision\|proactive on\|off` | 关键词 / 链接自动解读 / 图片违规处理 / 群聊主动性 开关 |
-| `/welcome on\|off` | 进群欢迎开关 |
-| `/welcome view` | 查看当前欢迎语 |
-| `/welcome set <欢迎语>` | 自定义欢迎语（占位符：`{at}`=@新人、`{qq}`=新人QQ、`{group}`=群号；也可在面板「仪表盘」页编辑） |
+| `/撤回` | 撤回消息（回复目标消息发送，或 `/撤回 <message_id>`） |
+| `/词库 重载\|列表` | 词库热重载 / 列表 |
+| `/白名单 列表\|添加\|删除 <群号>` | 白名单管理（add/del 即时生效，重启保留） |
+| `/模块 回复\|链接\|视觉\|主动 开\|关` | 关键词 / 链接自动解读 / 图片违规处理 / 群聊主动性 开关 |
+| `/欢迎语 开\|关` | 进群欢迎开关 |
+| `/欢迎语 查看` | 查看当前欢迎语 |
+| `/欢迎语 设置 <欢迎语>` | 自定义欢迎语（占位符：`{at}`=@新人、`{qq}`=新人QQ、`{group}`=群号；也可在面板「仪表盘」页编辑） |
 | `/入群验证 开\|关\|提醒\|踢出\|<分钟>` | 新人入群验证（默认关；超时默认仅提醒超管，选「踢出」需机器人是管理员） |
 | `/备份` | 立即备份数据库并列出现有备份 |
-| `/feed list\|now <id>` | 查看内容推送订阅 / 立即推送一次 |
-| `/task list` | 查看定时任务（增删改在面板「定时任务」页） |
+| `/推送 列表\|立即 <编号>` | 查看内容推送订阅 / 立即推送一次 |
+| `/定时任务 列表` | 查看定时任务（增删改在面板「定时任务」页） |
 | `/清理群员 [群号]` / `… 确认` | 群满员时预览 / 执行清理最不活跃成员 |
 | `/能力自检` | 探测当前 NapCat 支持哪些 QQ 能力（只读） |
 | `/名片 @某人 内容`、`/头衔 @某人 内容` | 改群名片（需管理员）/ 专属头衔（需群主） |
@@ -333,7 +333,7 @@ uv run --no-project --python 3.12 --with "nonebot2[fastapi]" --with nonebot-adap
 |---|---|---|---|
 | 上线 / 下线通知（`presence.py`） | 连上 NapCat / 正常停机；后台每 30 秒写心跳 `presence_last_seen` | `presence_notify=false` 关闭 | 强杀或 QQ 掉线发不出下线通知，恢复后补发「已上线」并带离线时长 |
 | 版本公告（`updates.py`） | 连上 NapCat 且 changelog 最新版本 ≠ `update_announced_version` | `update_notify=false` | 见第 11 节 |
-| 内容推送（`feeds.py`） | 到点；内容未就绪每 10 分钟重试，超 120 分钟放弃并私聊超管 | 面板「内容推送」页；`feed_last_{id}` 去重 | 想重发：`/feed now <id>` |
+| 内容推送（`feeds.py`） | 到点；内容未就绪每 10 分钟重试，超 120 分钟放弃并私聊超管 | 面板「内容推送」页；`feed_last_{id}` 去重 | 想重发：`/推送 立即 <编号>` |
 | 定时任务（`scheduler.py`） | 每 30 秒扫描，北京时间 | 面板「定时任务」页 | @全体次数不足时降级为普通消息并通知超管 |
 | 群活跃周报（`weeklyreport.py`） | 配置的星期 / 时间，每群每天最多一次 | `report_enabled` / `report_weekday` / `report_time` / `report_scope` | 同上页 |
 | 群满员清理（`groupfull.py`） | 入群时 + 每 30 分钟巡检；满员 24 小时内只提醒一次 | `groupfull_enabled`(true) / `groupfull_auto_kick`(false) / `groupfull_kick_count`(100) / `groupfull_activity_days`(30) / `groupfull_protect_days`(7) | 默认只通知超管，需 `/清理群员 确认`；执行需机器人是管理员 |

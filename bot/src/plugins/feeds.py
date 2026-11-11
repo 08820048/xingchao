@@ -325,7 +325,7 @@ async def _start_worker() -> None:
 WEEKDAY_NAME = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 REPEAT_LABEL = {"daily": "每天", "weekdays": "工作日", "weekend": "周末", "weekly": "每周"}
 
-feed_cmd = on_command("feed", rule=SUPERUSER, priority=1, block=True)
+feed_cmd = on_command("推送", aliases={"feed"}, rule=SUPERUSER, priority=1, block=True)
 
 
 @feed_cmd.handle()
@@ -355,4 +355,4 @@ async def handle_feed(matcher, bot: Bot, args: Message = CommandArg()) -> None:
         ok, msg = await run_sub(bot, sub)
         await matcher.send(f"#{sub['id']}：{msg}")
         return
-    await matcher.send("用法：/feed list 查看订阅；/feed now <id> 立即推送一次（不影响当天定时推送）。")
+    await matcher.send("用法：/推送 列表 查看订阅；/推送 立即 <编号> 立即推送一次（不影响当天定时推送）。")

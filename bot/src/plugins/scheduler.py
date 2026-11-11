@@ -100,7 +100,7 @@ async def _start_worker() -> None:
         asyncio.get_event_loop().create_task(_worker())
 
 
-task_cmd = on_command("task", rule=SUPERUSER, priority=1, block=True)
+task_cmd = on_command("定时任务", aliases={"task"}, rule=SUPERUSER, priority=1, block=True)
 
 
 @task_cmd.handle()
@@ -124,4 +124,4 @@ async def handle_task(matcher, args: Message = CommandArg()) -> None:
             )
         await matcher.send("\n".join(lines))
         return
-    await matcher.send("定时任务的增删改请在 Web 管理面板「定时任务」页操作；/task list 查看列表。")
+    await matcher.send("定时任务的增删改请在 Web 管理面板「定时任务」页操作；/定时任务 列表 查看列表。")

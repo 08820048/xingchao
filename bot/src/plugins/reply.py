@@ -30,7 +30,7 @@ _DEFAULT_REPLY_FILE: dict[str, Any] = {
             "enabled": True,
             "match": "exact",
             "pattern": "你好星潮",
-            "reply": "在。发送 /help 查看指令。",
+            "reply": "在。发送 /帮助 查看指令。",
             "cooldown": 8,
         }
     ],

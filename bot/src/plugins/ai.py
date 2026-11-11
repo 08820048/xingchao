@@ -2,7 +2,7 @@
 
 - 触发：to_me 且非指令的群消息（超管私聊对话也可用）；纯 @（无文字）同样响应
   （结合上下文回，无上下文则自由发挥；AI 不可用/超限时发送固定兜底回应）
-- 上下文：每群保留最近 N 轮会话（内存），/ai clear 可清空
+- 上下文：每群保留最近 N 轮会话（内存），/智能问答 清空 可清空
 - 护栏：每群 / 每人每日调用上限（面板可配），超限静默忽略
 - 配置：base_url / api_key 来自环境变量；开关、模型、系统提示词、限额存 SQLite kv
   （面板「AI」页可配置）。base_url 或 api_key 缺失时功能自动禁用并打日志。
@@ -28,6 +28,7 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src.markdown import md_to_qq
+from src.cmdutil import norm_action
 from src.config import get_config
 from src.permission import SUPERUSER
 from src.store import get_store
@@ -339,7 +340,7 @@ CAPABILITY_RULES = (
     "【自我认知：能力与边界（最高优先级，必须严格遵守）】\n"
     "你是「星潮」，一个开源 QQ 群助手机器人。你清楚自己具备下面全部能力，"
     "也清楚每一项能力的权限与边界。不能因为用户表达方式不同，就否认自己具备某能力。\n"
-    "\n【你的完整能力清单（与 /help 菜单一一对应）】\n"
+    "\n【你的完整能力清单（与 /帮助 菜单一一对应）】\n"
     "{capabilities}\n"
     "\n【当前对话者权限】\n"
     "{permission}\n"
@@ -347,7 +348,7 @@ CAPABILITY_RULES = (
     "1. 用户的需求只要命中清单里任一能力，就必须直接调用对应工具完成；"
     "严禁回答“我没有这个功能”“我做不到”“我不支持”之类的话。\n"
     "2. 标注【仅超管】的能力，如果当前对话者不是超管，你只是「没有权限」，"
-    "而不是「没有这个功能」：必须明确回复“这个操作需要超管权限，可以让超管用 /help 里的对应指令操作”，"
+    "而不是「没有这个功能」：必须明确回复“这个操作需要超管权限，可以让超管用 /帮助 里的对应指令操作”，"
     "绝不能说成“我没有这个功能/我不会”。\n"
     "3. 用户通常不说指令名，而用口语描述，例如“把TA禁言十分钟”→ mute_member、"
     "“撤回上面那条”→ recall_message、“看看今天GitHub有什么火的项目”→ get_github_trending、"
@@ -359,14 +360,14 @@ CAPABILITY_RULES = (
     "   - 群管理操作作用于当前群；要操作其他群需明确群号，且你必须在那个群里；\n"
     "   - 禁言时长上限为 30 天；只有超管才能禁言/踢人/撤回。\n"
     "6. 判断某能力是否存在，一律以本清单为准：清单里有 = 你有（可能需权限）；"
-    "清单里没有 = 如实说“这个功能我暂时没有”，并可提示用 /help 查看。\n"
+    "清单里没有 = 如实说“这个功能我暂时没有”，并可提示用 /帮助 查看。\n"
     "7. 你有独立人格，像群友一样自然交流：能力清单只是你的“技能”，不是广告词。"
     "禁止在普通回答末尾硬挂功能推销（如“要 GitHub trending 的话告诉我”“需要签到也可以找我”）；"
     "仅当用户明确询问你会什么、或某项能力与用户当前需求直接相关时，才自然地提及。\n"
     "8. 当用户问“你能做什么 / 你有什么功能 / 你会什么”时，用你自己的语气自然地介绍："
     "挑几件拿手或有趣的事举例，一两句话即可，可以反问对方想做什么；"
-    "不要机械罗列完整工具名，也不要整段粘贴 /help 菜单。"
-    "只有用户明确索要“完整菜单 / 指令列表”时，才调用 get_help 或提示发送 /help。\n"
+    "不要机械罗列完整工具名，也不要整段粘贴 /帮助 菜单。"
+    "只有用户明确索要“完整菜单 / 指令列表”时，才调用 get_help 或提示发送 /帮助。\n"
 )
 
 
@@ -695,10 +696,9 @@ async def _t_my_id(bot, event, args) -> str:
 
 
 async def _t_help(bot, event, args) -> str:
-    from src.plugins.basic import ADMIN_TEXT, COMMON_TEXT, _is_group_admin
-    if await _is_group_admin(bot, event):
-        return COMMON_TEXT + ADMIN_TEXT
-    return COMMON_TEXT + "\n管理指令仅群管理与超管可见～"
+    from src import helpmenu
+    from src.plugins.basic import _is_group_admin
+    return helpmenu.render_all(await _is_group_admin(bot, event))
 
 
 async def _t_about(bot, event, args) -> str:
@@ -1858,9 +1858,9 @@ PURE_AT_PROMPT = (
 )
 
 PURE_AT_FALLBACK = (
-    "在的～我在这儿呢！发送 /help 可以看到我的全部功能，直接@我聊天也行哦～",
-    "我在！有什么可以帮你的吗？发送 /help 查看我的技能清单～",
-    "在的在的～想让我帮你做什么？/help 有完整功能列表哦～",
+    "在的～我在这儿呢！发送 /帮助 可以看到我的全部功能，直接@我聊天也行哦～",
+    "我在！有什么可以帮你的吗？发送 /帮助 查看我的技能清单～",
+    "在的在的～想让我帮你做什么？/帮助 有完整功能列表哦～",
 )
 
 
@@ -2036,7 +2036,7 @@ async def _handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
 
 # ---------------------------------------------------------------- /ai 指令
 
-ai_cmd = on_command("ai", rule=SUPERUSER, priority=1, block=True)
+ai_cmd = on_command("智能问答", aliases={"ai"}, rule=SUPERUSER, priority=1, block=True)
 
 
 async def _send(matcher: Matcher, text: str) -> None:
@@ -2052,7 +2052,7 @@ async def _send(matcher: Matcher, text: str) -> None:
 async def handle_ai_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
     from src.plugins import mention as mention_plugin
 
-    raw = args.extract_plain_text().strip()
+    raw = norm_action(args.extract_plain_text())
     action, _, rest = raw.partition(" ")
     if action == "on" or action == "off":
         if not (await is_configured()):
@@ -2086,7 +2086,7 @@ async def handle_ai_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
             await get_store().set_kv("ai_vision_model", rest.strip())
             await _send(ai_cmd, f"视觉模型已设为：{rest.strip()}")
         else:
-            await _send(ai_cmd, f"当前视觉模型：{await _vision_model()}\n用法：/ai vision <模型名>")
+            await _send(ai_cmd, f"当前视觉模型：{await _vision_model()}\n用法：/智能问答 视觉 <模型名>")
         return
     if action == "test" and rest.strip():
         cfg = await ai_config()
@@ -2107,7 +2107,7 @@ async def handle_ai_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
         return
     await _send(
         ai_cmd,
-        "用法：/ai on|off、/ai status、/ai clear、/ai vision <模型>、/ai test <问题>\n"
+        "用法：/智能问答 开|关、状态、清空、视觉 <模型>、测试 <问题>\n"
         "（配置修改请在 Web 管理面板「AI」页操作）",
     )
 
@@ -2125,5 +2125,5 @@ async def _startup_hint() -> None:
     else:
         logger.warning(
             "AI 问答未启用：缺少 XINGCHAO_AI_BASE_URL / XINGCHAO_AI_API_KEY。"
-            "配置后并在面板「AI」页或 /ai on 开启即可使用。"
+            "配置后并在面板「AI」页或 /智能问答 开 开启即可使用。"
         )

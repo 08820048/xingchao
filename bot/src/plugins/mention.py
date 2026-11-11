@@ -5,7 +5,7 @@
 - 成员 @ 机器人且不是指令时：
   - 纯 @（无文字）→ 简短回应
   - 内容含「帮助 / help」→ 回复帮助菜单（通常已被 basic 的别名抢先，此处兜底）
-  - 其他内容 → 简短回应 + 提示 /help
+  - 其他内容 → 简短回应 + 提示 /帮助
 - 同群冷却（默认与关键词回复一致，取 XINGCHAO_REPLY_COOLDOWN），避免刷屏
 """
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 
 from nonebot import get_driver, on_message
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
@@ -26,7 +26,7 @@ mention_matcher = on_message(rule=GROUP_WHITELIST, priority=10, block=False)
 
 _last_hit: dict[int, float] = {}
 
-GREETING = "在的～发送 /help 查看我能做什么。"
+GREETING = "在的～发送 /帮助 查看我能做什么。"
 
 
 def _is_command(text: str) -> bool:
@@ -44,7 +44,7 @@ async def _send(matcher: Matcher, message: MessageSegment | str) -> None:
 
 
 @mention_matcher.handle()
-async def handle_mention(event: GroupMessageEvent, matcher: Matcher) -> None:
+async def handle_mention(bot: Bot, event: GroupMessageEvent, matcher: Matcher) -> None:
     if not event.to_me:
         return
 
@@ -57,7 +57,7 @@ async def handle_mention(event: GroupMessageEvent, matcher: Matcher) -> None:
     if text and ("帮助" in text or "help" in lowered):
         from src.plugins import basic as basic_plugin
 
-        await _send(matcher, basic_plugin.HELP_TEXT)
+        await basic_plugin.send_help(bot, event, matcher)
         return
 
     # AI 已启用时由 ai 插件接管对话（priority 11）

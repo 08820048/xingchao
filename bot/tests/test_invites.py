@@ -47,7 +47,7 @@ async def test_resolve_friend_and_group_invite():
     assert ok and bot.calls[-1] == ("set_friend_add_request", {"flag": "f1", "approve": True, "remark": ""})
     ok, msg = await inv.resolve(bot, s2, True)
     assert ok and bot.calls[-1][0] == "set_group_add_request" and bot.calls[-1][1]["sub_type"] == "invite"
-    assert "/group add 999" in msg  # 通过后提示加白名单
+    assert "/白名单 添加 999" in msg  # 通过后提示加白名单
     assert inv._PENDING == {}
 
 

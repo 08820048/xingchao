@@ -12,6 +12,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.cmdutil import norm_action
 from src.config import get_config
 from src.permission import (
     SUPERUSER,
@@ -25,11 +26,10 @@ from src.permission import (
 )
 from src.store import get_store
 
-reply_admin = on_command("reply", rule=SUPERUSER, priority=1, block=True)
-group_admin = on_command("group", rule=SUPERUSER, priority=1, block=True)
-plugin_admin = on_command("plugin", rule=SUPERUSER, priority=1, block=True)
-welcome_cmd = on_command("welcome", rule=SUPERUSER, priority=1, block=True)
-superuser_admin = on_command("superuser", rule=SUPERUSER, priority=1, block=True)
+reply_admin = on_command("词库", aliases={"reply"}, rule=SUPERUSER, priority=1, block=True)
+group_admin = on_command("白名单", aliases={"group"}, rule=SUPERUSER, priority=1, block=True)
+plugin_admin = on_command("模块", aliases={"plugin"}, rule=SUPERUSER, priority=1, block=True)
+superuser_admin = on_command("超管", aliases={"superuser"}, rule=SUPERUSER, priority=1, block=True)
 
 
 async def _send(matcher: Matcher, text: str) -> None:
@@ -43,9 +43,9 @@ async def _send(matcher: Matcher, text: str) -> None:
 
 @superuser_admin.handle()
 async def handle_superuser(args: Message = CommandArg()) -> None:
-    parts = args.extract_plain_text().strip().split()
+    parts = norm_action(args.extract_plain_text()).split()
     if not parts:
-        await _send(superuser_admin, "用法：/superuser list | /superuser add <QQ> | /superuser del <QQ>")
+        await _send(superuser_admin, "用法：/超管 列表 | /超管 添加 <QQ> | /超管 删除 <QQ>")
         return
     action = parts[0].strip().lower()
     if action == "list":
@@ -71,14 +71,14 @@ async def handle_superuser(args: Message = CommandArg()) -> None:
             else:
                 await _send(superuser_admin, f"QQ {qq} 不在运行时超管中。")
         return
-    await _send(superuser_admin, "用法：/superuser list | /superuser add <QQ> | /superuser del <QQ>")
+    await _send(superuser_admin, "用法：/超管 列表 | /超管 添加 <QQ> | /超管 删除 <QQ>")
 
 
 @reply_admin.handle()
 async def handle_reply(args: Message = CommandArg()) -> None:
     from src.plugins import reply as reply_plugin
 
-    action = args.extract_plain_text().strip().lower()
+    action = norm_action(args.extract_plain_text()).lower()
     if action == "reload":
         count = reply_plugin.reload_replies()
         await _send(reply_admin, f"词库已重载，共 {count} 条词条。")
@@ -93,14 +93,14 @@ async def handle_reply(args: Message = CommandArg()) -> None:
             lines.append(f"{i}. {it['id']} [{it.get('match', 'exact')}] {it['pattern']} ({status})")
         await _send(reply_admin, "\n".join(lines))
     else:
-        await _send(reply_admin, "用法：/reply reload 或 /reply list")
+        await _send(reply_admin, "用法：/词库 重载 或 /词库 列表")
 
 
 @group_admin.handle()
 async def handle_group(args: Message = CommandArg()) -> None:
-    parts = args.extract_plain_text().strip().split()
+    parts = norm_action(args.extract_plain_text()).split()
     if not parts:
-        await _send(group_admin, "用法：/group list | /group add <群号> | /group del <群号>")
+        await _send(group_admin, "用法：/白名单 列表 | /白名单 添加 <群号> | /白名单 删除 <群号>")
         return
     action = parts[0].strip().lower()
 
@@ -137,8 +137,13 @@ async def handle_group(args: Message = CommandArg()) -> None:
                 await _send(group_admin, f"群 {group_id} 不在运行时白名单中。")
         return
 
-    await _send(group_admin, "用法：/group list | /group add <群号> | /group del <群号>")
+    await _send(group_admin, "用法：/白名单 列表 | /白名单 添加 <群号> | /白名单 删除 <群号>")
 
+
+_PLUGIN_ALIASES = {
+    "回复": "reply", "链接": "link", "主动": "proactive", "博客": "blog", "签到": "sign",
+    "在线状态": "online", "链接安全": "urlsafe", "识别文字": "ocr", "感知": "awareness",
+}
 
 _PLUGIN_KEYS = {
     "reply": ("reply_enabled", "关键词回复"),
@@ -158,9 +163,11 @@ _PLUGIN_KEYS = {
 
 @plugin_admin.handle()
 async def handle_plugin(args: Message = CommandArg()) -> None:
-    parts = args.extract_plain_text().strip().lower().split()
+    parts = norm_action(args.extract_plain_text(), second=True).lower().split()
+    if parts:
+        parts[0] = _PLUGIN_ALIASES.get(parts[0], parts[0])
     if len(parts) != 2 or parts[1] not in ("on", "off") or parts[0] not in _PLUGIN_KEYS:
-        await _send(plugin_admin, "用法：/plugin reply|link|vision|proactive|blog|awareness|ocr|sign|online|urlsafe on|off")
+        await _send(plugin_admin, "用法：/模块 回复|链接|视觉|主动|博客|感知|识别文字|签到|在线状态|链接安全 开|关")
         return
     key, label = _PLUGIN_KEYS[parts[0]]
     enable = parts[1] == "on"

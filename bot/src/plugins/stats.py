@@ -20,7 +20,7 @@ from nonebot.params import CommandArg
 from src.permission import BASIC
 from src.store import get_store
 
-stats_cmd = on_command("stats", rule=BASIC, priority=5, block=True)
+stats_cmd = on_command("统计", aliases={"stats"}, rule=BASIC, priority=5, block=True)
 
 
 async def _send(matcher: Matcher, text: str) -> None:

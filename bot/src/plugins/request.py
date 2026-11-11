@@ -353,7 +353,7 @@ reject_cmd_en.append_handler(_reject_handler)
 
 # ---------------------------------------------------------------- /pending
 
-pending_cmd = on_command("pending", rule=SUPERUSER, priority=1, block=True)
+pending_cmd = on_command("待审批", aliases={"pending"}, rule=SUPERUSER, priority=1, block=True)
 
 
 @pending_cmd.handle()

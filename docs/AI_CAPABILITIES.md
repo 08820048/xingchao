@@ -6,11 +6,11 @@
 
 机器人有两套交互方式：
 
-1. **斜杠指令**：`/help`、`/禁言`、`/trending` 等，由各插件 `on_command` 注册；
+1. **斜杠指令**：`/帮助`、`/禁言`、`/趋势榜` 等，由各插件 `on_command` 注册；
 2. **自然语言对话**：用户 @机器人（或私聊超管）直接说话，由 AI 插件
    （`bot/src/plugins/ai.py`）调用 LLM 并通过 **工具调用（function calling）** 完成。
 
-历史问题：指令菜单（/help）里标注的能力，AI 对话时却经常回答
+历史问题：指令菜单（/帮助）里标注的能力，AI 对话时却经常回答
 「我没有这样的功能」。原因是 LLM 只知道自己注册了哪些工具，而注册表滞后于指令开发。
 
 **铁律：凡是能通过斜杠指令完成的事，必须也能通过和机器人的自然对话完成。**
@@ -27,7 +27,7 @@
       无需手工维护；只需确保工具的 `description` 写清楚「用户会怎么说这件事」；
 - [ ] **更新本文档**：在第 4 节的对照表中补一行。
 
-同步更新 `/help` 菜单文本（`bot/src/plugins/basic.py`）。
+同步更新 `/帮助` 菜单文本（`bot/src/plugins/basic.py`）。
 
 ## 3. 实现机制说明
 
@@ -45,7 +45,7 @@
 - **独立人格 / 不硬推销**：规约明确要求 AI 以群友身份自然交流，能力清单是「技能」而非广告；
   除非用户明确询问会什么、或某项能力与当前需求直接相关，否则禁止在回答末尾附加
   「要 XX 可以找我」式的功能推销。问「你能做什么」时用自己的语气举例介绍，
-  只有明确索要完整菜单/指令列表时才调用 `get_help` 或提示发送 `/help`。
+  只有明确索要完整菜单/指令列表时才调用 `get_help` 或提示发送 `/帮助`。
 - **工具执行**：处理器签名统一为 `async def _t_xxx(bot, event, args) -> str`，
   返回值是给 LLM 的中文摘要（不是给用户看的原文）。
 - **纯 @ 唤起**：用户只 @ 机器人、不带文字时，AI 插件会注入
@@ -56,26 +56,28 @@
 
 ## 4. 斜杠指令 ⇄ AI 工具对照表
 
+> 指令统一用中文名展示；原来的英文写法（如 `/help` `/group` `/plugin` `/ai`）作为别名继续可用。子命令也同样：`/白名单 添加 123` ≡ `/group add 123`，`/模块 回复 关` ≡ `/plugin reply off`。
+
 | 斜杠指令 | AI 工具 | 权限 | 自然语言示例 |
 | --- | --- | --- | --- |
-| `/ping` | `ping` | 所有人 | 「测一下你在不在线」 |
-| `/id` | `get_my_id` | 所有人 | 「这是哪个群」「我的QQ是多少」 |
-| `/help` | `get_help` | 所有人 | 「你能做什么」「 help 」 |
+| `/连通测试` | `ping` | 所有人 | 「测一下你在不在线」 |
+| `/身份` | `get_my_id` | 所有人 | 「这是哪个群」「我的QQ是多少」 |
+| `/帮助` | `get_help` | 所有人 | 「你能做什么」「 help 」 |
 | 「关于星潮」 | `get_about` | 所有人 | 「你是谁做的」「开发者是谁」 |
-| `/stats [day]` | `get_active_stats` | 所有人 | 「今天群里活跃吗」 |
+| `/统计 [昨日]` | `get_active_stats` | 所有人 | 「今天群里活跃吗」 |
 | `/状态` | —（第三方插件 nonebot-plugin-status，硬编码指令，未接入 AI 工具） | 超管 | 群里发 `/状态` 查看服务器 CPU/内存/磁盘；私聊戳一戳也可触发 |
-| `/trending [since] [lang]` | `get_github_trending` | 所有人 | 「今天 GitHub 有什么火的项目」 |
+| `/趋势榜 [今日|本周|本月] [语言]` | `get_github_trending` | 所有人 | 「今天 GitHub 有什么火的项目」 |
 | `/禁言 @某人 [分钟]` | `mute_member` | 超管 | 「把TA禁言十分钟」 |
 | `/解除禁言 @某人` | `unmute_member` | 超管 | 「解除他的禁言」 |
 | `/踢出 @某人` | `kick_member` | 超管 | 「把TA踢出去」 |
 | `/全体禁言 开/关` | `set_whole_ban` | 超管 | 「开启全体禁言」 |
-| `/recall` | `recall_message` | 超管 | 「把上面那条消息撤回」 |
-| `/group list/add/del` | `list_whitelist` / `add_whitelist_group` / `remove_whitelist_group` | 超管 | 「把群 123 加入白名单」 |
-| `/superuser list/add/del` | `list_superusers` / `add_superuser` / `remove_superuser` | 超管 | 「添加超管 123456」 |
-| `/plugin reply on/off` | `set_reply_enabled` | 超管 | 「关闭关键词回复」 |
-| `/plugin link on/off` | `set_link_preview_enabled` | 超管 | 「关闭链接自动解读」 |
-| `/plugin vision on/off` | `set_vision_guard_enabled` | 超管 | 「关闭图片违规检测」 |
-| `/plugin proactive on/off` | `set_proactive_enabled` | 超管 | 「关闭群聊主动性」 |
+| `/撤回` | `recall_message` | 超管 | 「把上面那条消息撤回」 |
+| `/白名单 列表/添加/删除` | `list_whitelist` / `add_whitelist_group` / `remove_whitelist_group` | 超管 | 「把群 123 加入白名单」 |
+| `/超管 列表/添加/删除` | `list_superusers` / `add_superuser` / `remove_superuser` | 超管 | 「添加超管 123456」 |
+| `/模块 回复 开/关` | `set_reply_enabled` | 超管 | 「关闭关键词回复」 |
+| `/模块 链接 开/关` | `set_link_preview_enabled` | 超管 | 「关闭链接自动解读」 |
+| `/模块 视觉 开/关` | `set_vision_guard_enabled` | 超管 | 「关闭图片违规检测」 |
+| `/模块 主动 开/关` | `set_proactive_enabled` | 超管 | 「关闭群聊主动性」 |
 | `/活跃度 安静\|正常\|话痨 [群号\|全局]` | `set_proactive_mode` | 超管 | 「话痨一点」「这个群安静点」「全局调成正常」 |
 | `/记忆` | `get_my_memory` | 所有人 | 「你记得我什么」「你了解我吗」 |
 | `/忘记我` | `forget_my_memory` | 所有人 | 「忘了我吧」「别记我的信息」 |
@@ -84,7 +86,7 @@
 | `/精华`（回复消息）`/取消精华` `/精华列表` | `set_essence_message` / `delete_essence_message`（超管）、`list_essence_messages`（所有人） | 见左 | 「把这条设为精华」「看看本群精华」 |
 | `/邀请列表` `/同意邀请 <序号>` `/拒绝邀请 <序号> [理由]` | `list_pending_invites` / `resolve_invite` | 超管 | 「有人加我好友吗」「通过 2 号邀请」 |
 | —（内置能力） | `send_sticker` | 所有人 | 「发个表情包」「来个无语的表情」 |
-| `/plugin ocr on\|off` | — | 超管 | 开关“图片文字检测” |
+| `/模块 识别文字 开\|关` | — | 超管 | 开关“图片文字检测” |
 | `/龙王`（别名 `/群荣誉`） | `get_group_honor` | 所有人 | 「谁是龙王」「群里有哪些荣誉成员」 |
 | `/赞我`（别名 `/点赞`） | `send_like` | 所有人 | 「给我点个赞」「赞我一下」 |
 | —（内置能力，无斜杠指令；机器人被戳时的回应由第三方 pokepoke_miss 负责） | `poke_member` | 所有人（同群 20 秒冷却） | 「戳戳他」「戳我一下」 |
@@ -100,23 +102,23 @@
 | `/画 <描述>`（别名 `/draw` `/绘图`） | `generate_image` | 所有人（每人每天 3 张） | 「帮我画一只戴墨镜的柴犬」；需先配置 kv `image_model` |
 | `/名片 @某人 内容` | `set_member_card` | 超管 | 「把他的群名片改成 xxx」 |
 | `/头衔 @某人 内容` | `set_member_title` | 超管（机器人需是群主） | 「给他一个“摸鱼王”头衔」 |
-| `/plugin sign\|online\|urlsafe on\|off` | — | 超管 | 开关“群自动签到 / 动态在线状态（默认关）/ 危险链接提醒” |
-| `/ai vision <模型>` | `set_vision_model` | 超管 | 「把视觉模型换成 glm-4v-flash」 |
-| `/reply list/reload` | `list_replies` / `reload_replies` | 超管 | 「看看词库里有什么」 |
+| `/模块 签到\|在线状态\|链接安全 开\|关` | — | 超管 | 开关“群自动签到 / 动态在线状态（默认关）/ 危险链接提醒” |
+| `/智能问答 视觉 <模型>` | `set_vision_model` | 超管 | 「把视觉模型换成 glm-4v-flash」 |
+| `/词库 列表/重载` | `list_replies` / `reload_replies` | 超管 | 「看看词库里有什么」 |
 | `/敏感词 add/del/list` | `add_sensitive_words` / `remove_sensitive_words` / `list_sensitive_words` | 超管 | 「把“代刷”加入敏感词」「删掉敏感词 代刷」 |
 | `/申诉 <理由>` | —（私聊指令：AI 私聊仅超管可用，被处罚者多为普通成员，故未接入 AI 工具；处理见下一行） | 被处罚者 | 对敏感词处罚有异议时私聊说明理由 |
 | `/申诉列表` `/申诉查看 <编号>` `/申诉通过 <编号> [备注]` `/申诉驳回 <编号> [理由]` | `list_appeals` / `resolve_appeal` | 超管 | 「有没有待处理的申诉」「通过 5 号申诉」「驳回 5 号，理由：确实是广告」 |
-| `/welcome view/set/on/off` | `get_welcome` / `set_welcome` / `set_welcome_enabled` | 超管 | 「把欢迎语改成……」 |
-| `/notice <内容>` / `/notice list` | `publish_group_notice` / `get_group_notices` | 超管 | 「发个公告说周五维护」 |
+| `/欢迎语 查看/设置/开/关` | `get_welcome` / `set_welcome` / `set_welcome_enabled` | 超管 | 「把欢迎语改成……」 |
+| `/公告 <内容>` / `/公告 列表` | `publish_group_notice` / `get_group_notices` | 超管 | 「发个公告说周五维护」 |
 | —（内置能力） | `send_group_message` | 超管 | 「在群 123 里说一句：今晚八点活动开始」 |
-| `/task list` | `list_scheduled_tasks` / `create_scheduled_task` / `delete_scheduled_task` / `toggle_scheduled_task` | 超管 | 「现在有哪些定时任务」「每天 9 点在群里提醒大家签到」「把 3 号任务停掉」 |
-| `/blog status/refresh/list/on/off` | `search_blog` / `get_blog_post`（所有人）、`refresh_blog` / `set_blog_enabled`（超管） | 见左 | 「有没有 Mac 剪贴板工具推荐」「博客里有没有讲 git 的文章」「刷新一下博客知识库」 |
-| `/通过 /approve <序号>` | `approve_join_request` | 超管 | 「通过 3 号申请」 |
-| `/拒绝 /reject <序号>` | `reject_join_request` | 超管 | 「拒绝 3 号申请，理由：不符合要求」 |
-| `/pending` | `get_pending_join_requests` | 超管 | 「有没有人申请进群」 |
-| `/ai on/off` | `set_ai_enabled` | 超管 | 「把 AI 关掉」 |
-| `/ai status` | `get_ai_status` | 超管 | 「AI 今天用了多少次」 |
-| `/ai clear` | `clear_ai_context` | 超管 | 「忘掉我们刚才聊的」 |
+| `/定时任务 列表` | `list_scheduled_tasks` / `create_scheduled_task` / `delete_scheduled_task` / `toggle_scheduled_task` | 超管 | 「现在有哪些定时任务」「每天 9 点在群里提醒大家签到」「把 3 号任务停掉」 |
+| `/博客 状态/刷新/列表/开/关` | `search_blog` / `get_blog_post`（所有人）、`refresh_blog` / `set_blog_enabled`（超管） | 见左 | 「有没有 Mac 剪贴板工具推荐」「博客里有没有讲 git 的文章」「刷新一下博客知识库」 |
+| `/通过 <序号>`（别名 /approve） | `approve_join_request` | 超管 | 「通过 3 号申请」 |
+| `/拒绝 <序号>`（别名 /reject） | `reject_join_request` | 超管 | 「拒绝 3 号申请，理由：不符合要求」 |
+| `/待审批` | `get_pending_join_requests` | 超管 | 「有没有人申请进群」 |
+| `/智能问答 开/关` | `set_ai_enabled` | 超管 | 「把 AI 关掉」 |
+| `/智能问答 状态` | `get_ai_status` | 超管 | 「AI 今天用了多少次」 |
+| `/智能问答 清空` | `clear_ai_context` | 超管 | 「忘掉我们刚才聊的」 |
 | —（内置能力） | `get_group_info` / `get_member_list` / `get_member_info` | 所有人 | 「群里多少人」「他是什么身份」 |
 | `/说 <文字>` | `send_voice` | 所有人 | 「用语音说一下」「念给我听」「语音回复我」 |
 | `/语音回复 开|关` | `set_voice_reply` | 超管 | 「以后都用语音回复我」「别发语音了」 |
@@ -125,24 +127,24 @@
 | —（面板「群开关」，无斜杠指令） | `set_group_business` | 超管 | 「先把群 123 的业务关掉」 |
 | `/更新日志`（别名 `/changelog` `/更新`） | `get_changelog` | 所有人 | 「最近更新了什么」「有什么新功能」 |
 | `/备份`（别名 `/backup`） | `run_backup` | 超管 | 「备份一下数据库」 |
-| `/feed list` `/feed now <id>` | `list_feed_subscriptions` / `run_feed_now` | 超管 | 「有哪些内容推送」「现在推一下 3 号」；增删改在面板「内容推送」页 |
+| `/推送 列表` `/推送 立即 <编号>` | `list_feed_subscriptions` / `run_feed_now` | 超管 | 「有哪些内容推送」「现在推一下 3 号」；增删改在面板「内容推送」页 |
 | `/清理群员 [群号]`（预览）`/清理群员 [群号] 确认`（执行） | — | 超管 | 群满员时按活跃度清理最不活跃的成员；破坏性操作，刻意只留斜杠指令 |
 | `/音色` `/音色 <序号\|名称\|ID>` `/音色 edge <名称>` | — | 超管 | 查看 / 切换语音音色（未接 AI 工具） |
 | `/转文字`（回复一条语音） | — | 所有人 | 单独识别语音内容（语音消息被 @ 时也会自动转文字） |
 
 > 另有三大类**自动能力**（无需指令、无需 AI 显式调用工具，直接监听群消息）：
 > - **链接自动解读**（`linkpreview.py`）：白名单群有人发网页链接时，抓取标题/描述并调用
->   AI 用一句话概括，引用原消息回复；开关 `link_preview_enabled`（`/plugin link on|off`）。
+>   AI 用一句话概括，引用原消息回复；开关 `link_preview_enabled`（`/模块 链接 开|关`）。
 > - **图片识别与违规处理**（`visionguard.py`）：白名单群图片经视觉模型识别，**仅正常图片完全静默**，
 >   只有命中翻墙/VPN、色情、血腥暴力时才自动撤回并禁言发送者（默认 15 分钟）；开关
->   `vision_guard_enabled`（`/plugin vision on|off`），视觉模型由 `/ai vision <模型>` 配置。
+>   `vision_guard_enabled`（`/模块 视觉 开|关`），视觉模型由 `/智能问答 视觉 <模型>` 配置。
 > - **群聊主动性**（`proactive.py`）：基于群聊感知缓冲，像群友一样参与聊天。触发（先过规则门槛，
 >   过了才调一次模型）：求助/讨论、有人发图（按档位小概率看图）、接话窗口（机器人刚回复某人后，
 >   对方继续说不用再 @）、复读（不调模型）。一次决策返回 skip / react（只贴表情）/ reply（可引用某条、
 >   拆成最多 3 条短消息，回复前有拟人延迟）。档位 安静/正常/话痨 可按群设置（`/活跃度`、面板「AI」页、
 >   AI 工具 `set_proactive_mode`），决定冷却/日限/门槛/看图与复读概率；夜间静默时段（默认
 >   23:30–07:30）只保留接话；所有主动发送共用滚动频率上限。被认真问到是不是 AI 时承认是机器人。
->   依赖「群聊感知」开启；开关 `proactive_enabled`（`/plugin proactive on|off`）。
+>   依赖「群聊感知」开启；开关 `proactive_enabled`（`/模块 主动 开|关`）。
 > - **人设与长期记忆**（`persona.py` + `memory.py`）：人设卡（名字/性格/说话风格/兴趣/底线/背景）
 >   在面板「AI」页编辑，@ 对话与主动发言共用，并带一点随时间、群热度变化的轻量"状态"；
 >   "不冒充真人"是强制保留的底线。长期记忆是模型从聊天里提炼的**短事实**（每人 ≤8 条、每条 ≤40 字，
@@ -167,7 +169,7 @@
 >   表情包、语音/视频/文件标记、机器人自己的发言），被 @ 时作为"群里最近的聊天"注入 AI，
 >   于是能回答"刚才大家在聊什么""上面那张图是什么"。图片说明按需生成并缓存（违规审查已识别的
 >   描述直接复用）；用户 @ 时附带或引用的图片会即时识别。不落盘、重启清空、撤回即移除。
->   开关 `awareness_enabled`（`/plugin awareness on|off`），其余参数见模块文档字符串。
+>   开关 `awareness_enabled`（`/模块 感知 开|关`），其余参数见模块文档字符串。
 > - **内容订阅推送**（`feeds.py`）：订阅 = 目标群 + 内容源（`zaobao` 早报、`github` 趋势榜）+ 时间 + 重复规则。
 >   到点内容未就绪不发旧内容，每 10 分钟重试，超 120 分钟放弃并私聊超管；`feed_last_{id}` 去重，重启不重发。
 > - **定时任务与周报**（`scheduler.py` / `weeklyreport.py`）：定时发群消息（支持 @全体，规则 daily/weekdays/weekend/weekly/once）；
@@ -178,7 +180,7 @@
 >   有新版本时公告（来自 `changelog.json`，`notify:false` 只记录）与「已上线」合并。开关 kv `presence_notify` / `update_notify`。
 > - **数据库定时备份**（`backup.py`）：每天 03:30 在线备份并 gzip，保留最近 7 份；开关 `backup_enabled`，份数 `backup_keep`。
 > - **@ 响应**（`mention.py`，priority 10，先于 ai 的 11）：@ / 昵称唤起且内容含「帮助/help」时回帮助菜单（无论 AI 是否开启）；
->   AI **关闭**时回固定一句「在的～发送 /help …」，同群冷却防刷屏；AI 开启时交给 `ai.py`。
+>   AI **关闭**时回固定一句「在的～发送 /帮助 …」，同群冷却防刷屏；AI 开启时交给 `ai.py`。
 > - **互动小能力**（`interact.py`）：后台每 10 分钟对白名单群标记消息已读（kv `mark_read_enabled=false` 关闭）；
 >   私聊里机器人回复前显示"正在输入"（仅私聊，NapCat 不支持时静默忽略）；群里超过 600 字的 AI 回复改用合并转发
 >   （失败退回普通消息，不再只截断）。不提供「上传群文件」（NapCat 在独立容器，读不到 bot 容器的本地文件）。
@@ -188,12 +190,12 @@
 >   `searxng` 需 `XINGCHAO_SEARCH_URL`）；全局每日 300 次上限。天气用 wttr.in、汇率用 frankfurter（欧洲央行参考汇率），均无需密钥。
 > - **私聊上下文**（`privatectx.py`）：超管私聊里用的斜杠指令、机器人的指令回复、系统通知（入群申请 / 申诉 / 邀请等）
 >   会以【指令/通知回复】标记写进该私聊的 AI 历史，于是先用 `/备份` 再问"刚才结果是什么意思"，AI 能接上。
->   AI 自己的回复不重复记录（`ai.AI_REPLYING` 上下文变量）；只存内存，`/ai clear` 可清。群聊本来就有感知缓冲，不需要这个。
+>   AI 自己的回复不重复记录（`ai.AI_REPLYING` 上下文变量）；只存内存，`/智能问答 清空` 可清。群聊本来就有感知缓冲，不需要这个。
 > - **博客知识关联推荐**（`blog.py` + `src/blog_kb.py`）：本地索引开发者博客 xuyi.dev 的
 >   文章与作品集（RSS + sitemap 全量补齐，24 小时自动刷新）。对话与主动插话时按话题
 >   相关性自动注入「博主内容·优先参考」，引导 AI 优先推荐；强相关 + 求助语气时，
 >   主动接话门槛降为 1 条消息（保留 5 分钟/群冷却与每日上限）。开关 `blog_enabled`
->   （`/plugin blog on|off`、面板「博客」页、仪表盘模块开关）。
+>   （`/模块 博客 开|关`、面板「博客」页、仪表盘模块开关）。
 
 ## 5. 消息格式规约（Markdown 处理）
 
@@ -206,7 +208,7 @@
    `bot/src/markdown.py` 的 `md_to_qq()` 降级转换
    （标题→【】、加粗去标记、链接→文字（url）、表格→全角竖线等）；
 2. 新增任何 AI 输出口径（新指令、新面板功能、新播报）同样适用；
-3. 指令类固定文案（/help 等）本来就手写成纯文本，无需转换，但**不要**
+3. 指令类固定文案（/帮助 等）本来就手写成纯文本，无需转换，但**不要**
    在固定文案里使用 Markdown 语法；
 4. 系统提示词已要求 AI 回答简洁、口语化，`md_to_qq` 是最后兜底，两者配合使用。
 
@@ -231,3 +233,5 @@
 - 2026-11-11：新增联网搜索 / 天气 / 汇率（`webtools.py`）、个人提醒（`reminders.py`）、入群验证（`joinverify.py`）、群投票（`polls.py`）、
   AI 绘图（`imagegen.py`，需配置绘图模型）、红包提醒（`redpacket.py`，只提醒不领取）。已核实不与 scheduler（管理员群定时消息）、cloudsignx（抽奖）、request（入群申请审批）重复。
 - 2026-11-11：新增私聊上下文 `privatectx.py`：修复“私聊先用指令、再问相关内容，AI 一无所知”。
+- 2026-11-11：指令统一中文：新增中文主指令名 /帮助 /连通测试 /身份 /统计 /趋势榜 /运行状态 /词库 /白名单 /超管 /模块 /欢迎语 /智能问答 /博客 /推送 /定时任务 /撤回 /公告 /待审批，英文保留为别名；子命令支持中文（`src/cmdutil.py`）。
+  /帮助 改为分类菜单（`src/helpmenu.py`）：总览 + /帮助 <分类> + /帮助 全部（合并转发）。

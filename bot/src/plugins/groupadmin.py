@@ -25,6 +25,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.cmdutil import norm_action
 from src.permission import GROUP_WHITELIST, SUPERUSER
 from src.store import get_store
 
@@ -34,9 +35,9 @@ mute_cmd = on_command("禁言", aliases={"mute"}, rule=SUPERUSER, priority=1, bl
 unmute_cmd = on_command("解除禁言", aliases={"unmute"}, rule=SUPERUSER, priority=1, block=True)
 banall_cmd = on_command("全体禁言", aliases={"banall"}, rule=SUPERUSER, priority=1, block=True)
 kick_cmd = on_command("踢出", aliases={"kick"}, rule=SUPERUSER, priority=1, block=True)
-recall_cmd = on_command("recall", rule=SUPERUSER, priority=1, block=True)
-welcome_cmd = on_command("welcome", rule=SUPERUSER, priority=1, block=True)
-notice_cmd = on_command("notice", rule=SUPERUSER, priority=1, block=True)
+recall_cmd = on_command("撤回", aliases={"recall"}, rule=SUPERUSER, priority=1, block=True)
+welcome_cmd = on_command("欢迎语", aliases={"welcome"}, rule=SUPERUSER, priority=1, block=True)
+notice_cmd = on_command("公告", aliases={"notice"}, rule=SUPERUSER, priority=1, block=True)
 
 welcome_notice = on_notice(rule=GROUP_WHITELIST, priority=2, block=False)
 
@@ -49,9 +50,9 @@ async def handle_notice_cmd(bot: Bot, event: MessageEvent, matcher: Matcher,
         return
     text = args.extract_plain_text().strip()
     if not text:
-        await _send(notice_cmd, "用法：/notice <公告内容>（发布群公告）；/notice list（查看当前公告）")
+        await _send(notice_cmd, "用法：/公告 <公告内容>（发布群公告）；/公告 列表（查看当前公告）")
         return
-    if text.lower() == "list":
+    if text.lower() in ("list", "列表"):
         try:
             notices = await bot.call_api("get_group_notice", group_id=group.group_id)
         except Exception as e:
@@ -211,7 +212,7 @@ async def handle_recall(bot: Bot, event: MessageEvent, matcher: Matcher, args: M
         if text.isdigit():
             message_id = int(text)
     if message_id is None:
-        await _send(recall_cmd, "用法：回复目标消息发送 /recall，或 /recall <message_id>")
+        await _send(recall_cmd, "用法：回复目标消息发送 /撤回，或 /撤回 <message_id>")
         return
     await _call(matcher, bot.call_api("delete_msg", message_id=message_id))
     await _send(recall_cmd, f"已撤回消息 {message_id}。")
@@ -219,7 +220,7 @@ async def handle_recall(bot: Bot, event: MessageEvent, matcher: Matcher, args: M
 
 @welcome_cmd.handle()
 async def handle_welcome(matcher: Matcher, args: Message = CommandArg()) -> None:
-    raw = args.extract_plain_text().strip()
+    raw = norm_action(args.extract_plain_text())
     action, _, rest = raw.partition(" ")
     if action == "on" or action == "off":
         try:
@@ -243,13 +244,13 @@ async def handle_welcome(matcher: Matcher, args: Message = CommandArg()) -> None
     else:
         await _send(
             welcome_cmd,
-            "用法：/welcome on|off、/welcome view、/welcome set <欢迎语>\n"
+            "用法：/欢迎语 开|关、/欢迎语 查看、/欢迎语 设置 <欢迎语>\n"
             "占位符：{at}=@新人，{qq}=新人QQ，{group}=群号",
         )
 
 
 DEFAULT_WELCOME_TEXT = (
-    "欢迎进群～发送 /help 查看我能做什么。\n"
+    "欢迎进群～发送 /帮助 查看我能做什么。\n"
     "我会记住大家聊过的兴趣爱好来更好地聊天，发送 /记忆 可查看、/忘记我 可清除并停止记录。"
 )
 

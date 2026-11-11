@@ -85,7 +85,7 @@ async def resolve(bot: Bot, seq: int, approve: bool, reason: str = "") -> tuple[
     what = "好友申请" if req["kind"] == "friend" else f"拉群邀请（群 {req['group_id']}）"
     msg = f"已{'通过' if approve else '拒绝'}{what} #{seq}（QQ {req['user_id']}）"
     if approve and req["kind"] == "group_invite":
-        msg += "。该群尚未加入白名单，要启用请发送 /group add " + str(req["group_id"])
+        msg += "。该群尚未加入白名单，要启用请发送 /白名单 添加 " + str(req["group_id"])
     return True, msg
 
 
