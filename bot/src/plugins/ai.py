@@ -1186,6 +1186,115 @@ async def _t_voice_character(bot, event, args) -> str:
     return await voice.choose_character(bot, gid, str(args.get("character", "")))
 
 
+async def _t_web_search(bot, event, args) -> str:
+    from src.plugins import webtools
+    return await webtools.search_text(str(args.get("query", "")))
+
+
+async def _t_weather(bot, event, args) -> str:
+    from src.plugins import webtools
+    return await webtools.weather_text(str(args.get("city", "")))
+
+
+async def _t_rate(bot, event, args) -> str:
+    from src.plugins import webtools
+    try:
+        amount = float(args.get("amount", 1) or 1)
+    except (TypeError, ValueError):
+        amount = 1.0
+    return await webtools.rate_text(str(args.get("from", "")), str(args.get("to", "")), amount)
+
+
+async def _t_reminder_create(bot, event, args) -> str:
+    from datetime import datetime, timedelta
+    from src.plugins import reminders
+    gid = getattr(event, "group_id", None)
+    due = None
+    if args.get("after_minutes") is not None:
+        try:
+            due = datetime.now() + timedelta(minutes=float(args["after_minutes"]))
+        except (TypeError, ValueError):
+            pass
+    elif args.get("when"):
+        for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                due = datetime.strptime(str(args["when"]).strip(), fmt)
+                break
+            except ValueError:
+                continue
+    if due is None:
+        return "错误：需要 after_minutes（多少分钟后）或 when（格式 YYYY-MM-DD HH:MM，本地时间；不确定当前时间先调用 get_current_time）。"
+    ok, msg = await reminders.create(event.user_id, gid, due, str(args.get("content", "")))
+    return msg if ok else f"没设成功：{msg}"
+
+
+async def _t_reminder_list(bot, event, args) -> str:
+    from src.plugins import reminders
+    return await reminders.list_text(event.user_id)
+
+
+async def _t_reminder_cancel(bot, event, args) -> str:
+    from src.plugins import reminders
+    ok, msg = await reminders.cancel(event.user_id, int(args.get("id", 0) or 0))
+    return msg
+
+
+async def _t_join_verify(bot, event, args) -> str:
+    from src.plugins import joinverify
+    return await joinverify.set_config(
+        enabled=args.get("enabled"), action=args.get("action"), minutes=args.get("minutes"))
+
+
+async def _t_poll_create(bot, event, args) -> str:
+    from src.plugins import polls
+    gid = args.get("group_id") or getattr(event, "group_id", None)
+    if not gid:
+        return "错误：投票只能在群里发起。"
+    opts = args.get("options") or []
+    ok, msg = polls.create_poll(int(gid), event.user_id, str(args.get("question", "")),
+                                [str(o) for o in opts], int(args.get("minutes") or polls.DEFAULT_MINUTES))
+    if ok:
+        try:
+            await bot.call_api("send_group_msg", group_id=int(gid), message=msg)
+        except Exception as e:
+            return f"投票已创建但发送到群失败：{e}"
+        return "投票已发到群里，截止后会自动公布结果。"
+    return f"没发起成功：{msg}"
+
+
+async def _t_poll_result(bot, event, args) -> str:
+    from src.plugins import polls
+    gid = args.get("group_id") or getattr(event, "group_id", None)
+    return polls.get_result(int(gid)) if gid else "错误：需要在群里查询。"
+
+
+async def _t_poll_end(bot, event, args) -> str:
+    from src.plugins import polls
+    gid = args.get("group_id") or getattr(event, "group_id", None)
+    if not gid:
+        return "错误：需要在群里操作。"
+    ok, msg = polls.end_poll(int(gid), event.user_id)
+    if ok:
+        try:
+            await bot.call_api("send_group_msg", group_id=int(gid), message=msg)
+        except Exception:
+            pass
+        return "投票已结束，结果已发到群里。"
+    return msg
+
+
+async def _t_generate_image(bot, event, args) -> str:
+    from src.plugins import imagegen
+    seg, tip = await imagegen.generate(event.user_id, str(args.get("prompt", "")))
+    if seg is None:
+        return f"没画成：{tip}"
+    try:
+        await bot.send(event, seg)
+    except Exception as e:
+        return f"图片已生成但发送失败：{e}"
+    return "图片已发送，请用一句话简短自然地回应（不要描述图片细节）。"
+
+
 async def _t_invites_list(bot, event, args) -> str:
     from src.plugins import invites
     return invites.list_text()
@@ -1425,6 +1534,39 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_voice_character", "切换/查看 QQ AI 语音角色（character 留空列出可选角色；可填序号或名称）",
               {"type": "object", "properties": {"character": {"type": "string"}}, "required": []},
               "superuser", _t_voice_character),
+        _tool("web_search", "联网搜索网页（需要最新信息、新闻、版本号、你不确定的事实时使用；返回标题/摘要/链接，回答时说明信息来自网络搜索）",
+              {"type": "object", "properties": {"query": {"type": "string", "description": "搜索关键词"}}, "required": ["query"]},
+              "all", _t_web_search),
+        _tool("get_weather", "查询城市天气（当前 + 未来三天；用户问“北京天气怎么样/明天下雨吗”时使用）",
+              {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+              "all", _t_weather),
+        _tool("get_exchange_rate", "查询汇率/换算金额（币种用三位代码，如 USD CNY JPY EUR；用户问“100美元多少人民币”时使用）",
+              {"type": "object", "properties": {"from": {"type": "string"}, "to": {"type": "string"}, "amount": {"type": "number"}}, "required": ["from", "to"]},
+              "all", _t_rate),
+        _tool("create_reminder", "给提问的人设置个人提醒（到点在原来的会话里 @ 他；用户说“明天8点提醒我开会/半小时后叫我”时使用；after_minutes 与 when 二选一，when 为本地时间 YYYY-MM-DD HH:MM，不确定当前时间先调用 get_current_time）",
+              {"type": "object", "properties": {"content": {"type": "string"}, "after_minutes": {"type": "number"}, "when": {"type": "string"}}, "required": ["content"]},
+              "all", _t_reminder_create),
+        _tool("list_my_reminders", "查看提问的人自己的待触发提醒",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_reminder_list),
+        _tool("cancel_reminder", "取消提问的人自己的某条提醒（先用 list_my_reminders 查编号）",
+              {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]},
+              "all", _t_reminder_cancel),
+        _tool("set_join_verify", "设置新人入群验证（新人入群后须回答算术题，超时提醒超管或踢出）：enabled 开关，action 为 notify（仅提醒超管）或 kick（踢出，需机器人是管理员），minutes 时限 1–60；不传参数则只查看当前设置",
+              {"type": "object", "properties": {"enabled": {"type": "boolean"}, "action": {"type": "string", "enum": ["notify", "kick"]}, "minutes": {"type": "integer"}}, "required": []},
+              "superuser", _t_join_verify),
+        _tool("create_poll", "在群里发起投票（2–8 个选项，默认 30 分钟，到时自动公布结果；用户说“发起个投票：晚上吃啥 火锅 烧烤”时使用）",
+              {"type": "object", "properties": {"question": {"type": "string"}, "options": {"type": "array", "items": {"type": "string"}}, "minutes": {"type": "integer"}, "group_id": {"type": "integer"}}, "required": ["question", "options"]},
+              "all", _t_poll_create),
+        _tool("get_poll_result", "查看本群当前投票的票数",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": []},
+              "all", _t_poll_result),
+        _tool("end_poll", "提前结束本群投票并公布结果（仅发起人或超管有效）",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": []},
+              "all", _t_poll_end),
+        _tool("generate_image", "AI 画图并发送到当前会话（用户说“画一张/帮我画”时使用；每人每天有限额；发送后文字回应简短自然）",
+              {"type": "object", "properties": {"prompt": {"type": "string", "description": "画面描述"}}, "required": ["prompt"]},
+              "all", _t_generate_image),
         _tool("list_pending_invites", "查看待处理的好友申请和拉群邀请（有人加机器人好友、或把机器人拉进新群时会进入这里）",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_invites_list),

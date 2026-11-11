@@ -161,6 +161,10 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 | `/ping` | 连通测试 |
 | `/id` | 查看群号 / 用户 / 机器人 ID |
 | `/stats [yesterday]` | 群活跃统计（默认当天） |
+| `/搜索 <关键词>` `/天气 <城市>` | 联网搜索 / 天气（搜索提供商见下方环境变量） |
+| `/提醒 <时间> <内容>` `/提醒列表` `/取消提醒 <编号>` | 个人提醒（到点 @ 你；每人最多 10 条） |
+| `/投票 <题目> <选项…>` `/投 <序号>` `/投票结果` `/结束投票` | 群投票（到时自动公布结果） |
+| `/画 <描述>` | AI 绘图（需先配置 kv `image_model`；每人每天 3 张） |
 | `/龙王`（别名 `/群荣誉`） | 查看龙王等群荣誉成员 |
 | `/更新日志` | 查看最近一次更新公告 |
 | `/记忆` `/忘记我` `/记住我` | 查看 / 清除并停止记录 / 恢复机器人对自己的印象 |
@@ -183,6 +187,7 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 | `/welcome on\|off` | 进群欢迎开关 |
 | `/welcome view` | 查看当前欢迎语 |
 | `/welcome set <欢迎语>` | 自定义欢迎语（占位符：`{at}`=@新人、`{qq}`=新人QQ、`{group}`=群号；也可在面板「仪表盘」页编辑） |
+| `/入群验证 开\|关\|提醒\|踢出\|<分钟>` | 新人入群验证（默认关；超时默认仅提醒超管，选「踢出」需机器人是管理员） |
 | `/备份` | 立即备份数据库并列出现有备份 |
 | `/feed list\|now <id>` | 查看内容推送订阅 / 立即推送一次 |
 | `/task list` | 查看定时任务（增删改在面板「定时任务」页） |
@@ -333,3 +338,16 @@ uv run --no-project --python 3.12 --with "nonebot2[fastapi]" --with nonebot-adap
 | 群活跃周报（`weeklyreport.py`） | 配置的星期 / 时间，每群每天最多一次 | `report_enabled` / `report_weekday` / `report_time` / `report_scope` | 同上页 |
 | 群满员清理（`groupfull.py`） | 入群时 + 每 30 分钟巡检；满员 24 小时内只提醒一次 | `groupfull_enabled`(true) / `groupfull_auto_kick`(false) / `groupfull_kick_count`(100) / `groupfull_activity_days`(30) / `groupfull_protect_days`(7) | 默认只通知超管，需 `/清理群员 确认`；执行需机器人是管理员 |
 | 数据库备份（`backup.py`） | 每天 03:30；启动时最近备份超 24 小时则补做 | `backup_enabled` / `backup_keep` | 见第 12 节 |
+
+---
+
+## 16. 新功能的配置项
+
+| 功能 | 配置 | 说明 |
+|---|---|---|
+| 联网搜索 | 环境变量 `XINGCHAO_SEARCH_PROVIDER`=`duckduckgo`(默认)\|`brave`\|`searxng`；`XINGCHAO_SEARCH_API_KEY`（brave）；`XINGCHAO_SEARCH_URL`（searxng） | duckduckgo 靠解析页面，结构变了会搜不到结果，此时换 brave / searxng；全局每日 300 次 |
+| AI 绘图 | kv `image_model`（留空 = 不启用） | 要求默认 AI 提供商支持 OpenAI 兼容的 `images.generate`；提示词先过敏感词库；每人每天 3 张、全局每天 30 张 |
+| 入群验证 | kv `joinverify_enabled`(false) / `joinverify_action`(notify\|kick) / `joinverify_minutes`(5) | 待验证名单在内存里，重启后不再追踪重启前入群的人 |
+| 红包提醒 | kv `redpacket_notify`(默认开) | 只提醒不领取；NapCat 不上报红包时不会触发，看日志里有没有"检测到疑似红包" |
+| 已读标记 | kv `mark_read_enabled`(默认开) | 每 10 分钟对白名单群标记已读 |
+| 个人提醒 / 投票 | 无 | 提醒存 SQLite `reminders` 表，投票只存内存 |

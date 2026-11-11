@@ -66,6 +66,12 @@ data/xingchao.db + data/replies.json + data/logs/
 - 群荣誉与群成员装扮：`/龙王` 查看龙王等荣誉成员；超管 `/名片 @某人 内容`、`/头衔 @某人 内容`
 - 危险链接提醒（QQ 安全中心判定，只提醒不处罚）、群自动签到、定时任务 @全体前检查剩余次数、
   动态在线状态（默认关闭，`/plugin online on|off`）、@ 机器人并转发聊天记录时能读懂转发内容
+- 联网能力：`/搜索 关键词`、`/天气 城市`，AI 对话时也会自己联网搜索、查天气和汇率（搜索提供商可在环境变量里选）
+- 个人提醒：`/提醒 明天8点 开会`，到点在群里 @ 你；`/提醒列表` `/取消提醒 <编号>`
+- 群投票：`/投票 晚上吃啥 火锅 烧烤`，大家 `/投 1` 参与，到时间自动公布结果
+- AI 绘图：`/画 一只戴墨镜的柴犬`（需先配置绘图模型，每人每天 3 张）
+- 新人入群验证：新人要在限定时间内回答算术题，超时提醒管理员或踢出（默认关闭，超管 `/入群验证 开`）
+- 红包提醒：群里出现 QQ 红包时私聊通知超管（只提醒，不自动领取）
 - 互动小能力：`/赞我` 点赞、`/群文件 [关键词]` 搜索群文件、AI 可戳一戳群友；群里的长回答自动用合并转发；超管 `/签名` 改机器人签名
 - 内容订阅推送：早报、GitHub 趋势榜等按时间推送到群，内容未就绪不发旧内容、失败会私聊超管（面板「内容推送」页，`/feed list|now`）
 - 定时任务：定时发群消息、支持 @全体与多种重复规则（面板「定时任务」页，`/task list`）
@@ -157,6 +163,8 @@ xingchao/
 │           ├── sensitive.py / appeals.py / visionguard.py / ocr.py / urlsafety.py  # 内容安全
 │           ├── linkpreview.py / blog.py / github.py / feeds.py  # 链接解读 / 博客知识 / GitHub / 内容推送
 │           ├── scheduler.py / weeklyreport.py / presence.py / updates.py / backup.py  # 定时 / 周报 / 上下线 / 公告 / 备份
+│           ├── webtools.py / reminders.py / polls.py / imagegen.py  # 搜索天气汇率 / 个人提醒 / 投票 / 绘图
+│           ├── joinverify.py / redpacket.py  # 入群验证 / 红包提醒
 │           ├── interact.py   # 点赞 / 戳一戳 / 群文件 / 已读 / 签名
 │           ├── request.py / invites.py / essence.py / capabilities.py / onlinestatus.py / nctools.py  # 入群申请 / 邀请 / 精华 / 能力自检 / 在线状态 / NapCat 封装
 │           └── panel.py      # Web 管理面板（/panel）；/ 重定向官网

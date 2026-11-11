@@ -91,6 +91,13 @@
 | `/群文件 [关键词]` | `list_group_files` | 所有人 | 「群里有没有周报文件」「群文件有什么」 |
 | `/签名 <内容>` | `set_bot_signature` | 超管 | 「把你的签名改成……」 |
 | `/音色`（QQ AI 语音角色部分） | `set_voice_character` | 超管 | 「换个语音角色」「用 xx 的声音」 |
+| `/搜索 <关键词>`（别名 `/search`） | `web_search` | 所有人 | 「帮我搜一下 xxx」「最新的 Python 版本是多少」 |
+| `/天气 <城市>` | `get_weather` | 所有人 | 「北京天气怎么样」「明天上海下雨吗」 |
+| —（内置能力） | `get_exchange_rate` | 所有人 | 「100 美元多少人民币」 |
+| `/提醒 <时间> <内容>` `/提醒列表` `/取消提醒 <编号>` | `create_reminder` / `list_my_reminders` / `cancel_reminder` | 所有人（只能管自己的） | 「明天早上 8 点提醒我开会」「半小时后叫我」「我有哪些提醒」 |
+| `/入群验证 开\|关\|提醒\|踢出\|<分钟>` | `set_join_verify` | 超管 | 「开启入群验证」「新人超时没回答就踢掉」 |
+| `/投票 <题目> <选项…>` `/投 <序号>` `/投票结果` `/结束投票` | `create_poll` / `get_poll_result` / `end_poll`（投票本身用 `/投`，不接 AI 工具） | 所有人 | 「发起个投票：晚上吃啥 火锅 烧烤」「投票现在什么情况」 |
+| `/画 <描述>`（别名 `/draw` `/绘图`） | `generate_image` | 所有人（每人每天 3 张） | 「帮我画一只戴墨镜的柴犬」；需先配置 kv `image_model` |
 | `/名片 @某人 内容` | `set_member_card` | 超管 | 「把他的群名片改成 xxx」 |
 | `/头衔 @某人 内容` | `set_member_title` | 超管（机器人需是群主） | 「给他一个“摸鱼王”头衔」 |
 | `/plugin sign\|online\|urlsafe on\|off` | — | 超管 | 开关“群自动签到 / 动态在线状态（默认关）/ 危险链接提醒” |
@@ -175,6 +182,10 @@
 > - **互动小能力**（`interact.py`）：后台每 10 分钟对白名单群标记消息已读（kv `mark_read_enabled=false` 关闭）；
 >   私聊里机器人回复前显示"正在输入"（仅私聊，NapCat 不支持时静默忽略）；群里超过 600 字的 AI 回复改用合并转发
 >   （失败退回普通消息，不再只截断）。不提供「上传群文件」（NapCat 在独立容器，读不到 bot 容器的本地文件）。
+> - **红包提醒**（`redpacket.py`）：白名单群出现 QQ 红包时私聊通知超管，**只提醒、不领取**（NapCat 无可靠领取接口，自动领取封号风险高）。
+>   部分 NapCat 版本不上报红包消息，此时不会触发；识别到时日志里会记录消息段类型，方便确认。开关 kv `redpacket_notify`。
+> - **联网搜索配置**：环境变量 `XINGCHAO_SEARCH_PROVIDER`（`duckduckgo` 默认，无需密钥 / `brave` 需 `XINGCHAO_SEARCH_API_KEY` /
+>   `searxng` 需 `XINGCHAO_SEARCH_URL`）；全局每日 300 次上限。天气用 wttr.in、汇率用 frankfurter（欧洲央行参考汇率），均无需密钥。
 > - **博客知识关联推荐**（`blog.py` + `src/blog_kb.py`）：本地索引开发者博客 xuyi.dev 的
 >   文章与作品集（RSS + sitemap 全量补齐，24 小时自动刷新）。对话与主动插话时按话题
 >   相关性自动注入「博主内容·优先参考」，引导 AI 优先推荐；强相关 + 求助语气时，
@@ -214,3 +225,5 @@
   上线下线与版本公告、数据库备份、@ 兜底响应。
 - 2026-11-11：新增互动小能力 `interact.py`：`/赞我` `/群文件` `/签名`、戳一戳、已读标记、私聊输入中状态、长回复合并转发；
   `set_voice_character` 工具补齐 `/音色` 的 AI 语音角色切换。已核实不重复造轮子：入群 AI 预审（request.py）、被戳回应（pokepoke_miss）、动态在线状态（onlinestatus.py）均已存在。
+- 2026-11-11：新增联网搜索 / 天气 / 汇率（`webtools.py`）、个人提醒（`reminders.py`）、入群验证（`joinverify.py`）、群投票（`polls.py`）、
+  AI 绘图（`imagegen.py`，需配置绘图模型）、红包提醒（`redpacket.py`，只提醒不领取）。已核实不与 scheduler（管理员群定时消息）、cloudsignx（抽奖）、request（入群申请审批）重复。

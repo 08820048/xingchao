@@ -49,6 +49,14 @@ CREATE TABLE IF NOT EXISTS feed_subs (
     enabled INTEGER DEFAULT 1,
     created_at TEXT
 );
+CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    group_id INTEGER,
+    due_ts INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT
+);
 CREATE TABLE IF NOT EXISTS memories (
     scope TEXT NOT NULL,
     group_id INTEGER NOT NULL,
@@ -748,6 +756,48 @@ class Store:
         async with conn.execute("SELECT COUNT(*) FROM blog_posts") as cur:
             row = await cur.fetchone()
         return int(row[0]) if row else 0
+
+    # ------------------------------------------------------------ 个人提醒
+
+    async def add_reminder(self, user_id: int, group_id: int | None, due_ts: int, content: str) -> int:
+        conn = await self._ensure()
+        cur = await conn.execute(
+            "INSERT INTO reminders (user_id, group_id, due_ts, content, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, group_id, int(due_ts), content,
+             datetime.now().astimezone().isoformat(timespec="seconds")),
+        )
+        await conn.commit()
+        return int(cur.lastrowid)
+
+    async def list_reminders(self, user_id: int | None = None) -> list[dict]:
+        conn = await self._ensure()
+        sql = "SELECT id, user_id, group_id, due_ts, content FROM reminders"
+        params: tuple = ()
+        if user_id is not None:
+            sql += " WHERE user_id = ?"
+            params = (user_id,)
+        async with conn.execute(sql + " ORDER BY due_ts", params) as cur:
+            rows = await cur.fetchall()
+        return [{"id": r[0], "user_id": r[1], "group_id": r[2], "due_ts": r[3], "content": r[4]} for r in rows]
+
+    async def due_reminders(self, now_ts: int) -> list[dict]:
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT id, user_id, group_id, due_ts, content FROM reminders WHERE due_ts <= ? ORDER BY due_ts",
+            (int(now_ts),),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [{"id": r[0], "user_id": r[1], "group_id": r[2], "due_ts": r[3], "content": r[4]} for r in rows]
+
+    async def delete_reminder(self, reminder_id: int, user_id: int | None = None) -> bool:
+        conn = await self._ensure()
+        sql, params = "DELETE FROM reminders WHERE id = ?", [reminder_id]
+        if user_id is not None:
+            sql += " AND user_id = ?"
+            params.append(user_id)
+        cur = await conn.execute(sql, params)
+        await conn.commit()
+        return cur.rowcount > 0
 
     async def close(self) -> None:
         if self._conn is not None:
