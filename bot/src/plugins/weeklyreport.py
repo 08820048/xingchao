@@ -46,7 +46,23 @@ async def _kv(key: str) -> Any:
 
 
 async def report_config() -> dict[str, Any]:
+    """调度器用配置（键为 kv 键）。"""
     return {k: await _kv(k) for k in DEFAULTS}
+
+
+# 面板接口的字段名（前端 ReportConfig / POST /panel/api/report）→ kv 键。
+# 面板 GET 必须返回短字段名，否则前端读到 undefined，开关永远显示为关。
+PANEL_KEYS: dict[str, str] = {
+    "enabled": "report_enabled",
+    "weekday": "report_weekday",
+    "time": "report_time",
+    "scope": "report_scope",
+}
+
+
+async def panel_report_config() -> dict[str, Any]:
+    """面板用配置（字段名见 PANEL_KEYS）。"""
+    return {short: await _kv(kv) for short, kv in PANEL_KEYS.items()}
 
 
 def _fmt_delta(total: int, prev: int) -> str:

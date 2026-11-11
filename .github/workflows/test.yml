@@ -21,6 +21,6 @@ jobs:
           uv run --no-project --python 3.12
           --with "nonebot2[fastapi]" --with nonebot-adapter-onebot
           --with aiosqlite --with httpx --with openai --with pypinyin
-          --with opencc-python-reimplemented --with pydantic
+          --with opencc-python-reimplemented --with pydantic --with pillow --with zxing-cpp
           --with pytest --with pytest-asyncio
           python -m pytest -q

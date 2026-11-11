@@ -856,7 +856,7 @@ def _register_routes() -> None:
             return _unauthorized()
         from src.plugins import weeklyreport as report_plugin
 
-        cfg = await report_plugin.report_config()
+        cfg = await report_plugin.panel_report_config()
         return JSONResponse({"ok": True, "data": {**cfg, "groups": sorted(merged_whitelist())}})
 
     @app.post("/panel/api/report")

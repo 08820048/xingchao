@@ -127,9 +127,24 @@ async def vision_guard_enabled() -> bool:
     return await _kv("vision_guard_enabled") is True
 
 
+# 面板接口的字段名（前端 VisionConfig / POST /panel/api/visionguard）→ kv 键。
+# 注意：GET 必须返回这些短字段名，而不是 kv 键，否则前端读到 undefined，开关永远显示为关。
+PANEL_KEYS: dict[str, str] = {
+    "enabled": "vision_guard_enabled",
+    "mute_minutes": "vision_mute_minutes",
+    "notify": "vision_notify",
+    "cooldown": "vision_cooldown",
+    "daily_limit": "vision_daily_limit",
+    "qrcode_enabled": "qrcode_guard_enabled",
+    "qrcode_types": "qrcode_types",
+    "qrcode_mute_minutes": "qrcode_mute_minutes",
+    "qrcode_notify": "qrcode_notify",
+}
+
+
 async def vision_config() -> dict[str, object]:
-    """图片/二维码审核的全部配置（面板用）。"""
-    return {k: await _kv(k) for k in DEFAULTS}
+    """图片/二维码审核的全部配置（面板用，字段名见 PANEL_KEYS）。"""
+    return {short: await _kv(kv) for short, kv in PANEL_KEYS.items()}
 
 
 async def _bump_usage(group_id: int) -> None:
