@@ -13,7 +13,6 @@ from nonebot.adapters.onebot.v11 import (
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
-from nonebot.params import CommandArg
 from nonebot.plugin import get_loaded_plugins
 from nonebot.rule import Rule
 from nonebot.typing import T_State
@@ -65,30 +64,14 @@ async def _is_group_admin(bot: Bot, event: MessageEvent) -> bool:
         return False
 
 
-async def send_help(bot: Bot, event: MessageEvent, matcher: Matcher, arg: str = "") -> None:
-    """群主/管理员/超管看全部分类；普通成员看公共分类。「全部」在群里用合并转发发出。"""
-    is_admin = await _is_group_admin(bot, event)
-    text, want_all = helpmenu.help_text(arg, is_admin)
-    if want_all:
-        try:
-            nodes = helpmenu.forward_nodes(is_admin, str(bot.self_id))
-            if isinstance(event, GroupMessageEvent):
-                await bot.call_api("send_group_forward_msg", group_id=event.group_id, messages=nodes)
-            else:
-                await bot.call_api("send_private_forward_msg", user_id=event.user_id, messages=nodes)
-            return
-        except Exception:
-            logger.warning("帮助菜单合并转发失败，退回文字", exc_info=True)
-    await _send(matcher, text)
+async def send_help(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
+    """一条消息展示全部指令；群主/管理员/超管额外看到管理与系统分类。"""
+    await _send(matcher, helpmenu.render_menu(await _is_group_admin(bot, event)))
 
 
 @help_cmd.handle()
-async def handle_help(bot: Bot, event: MessageEvent, matcher: Matcher, args: Message = CommandArg()) -> None:
-    await send_help(bot, event, matcher, args.extract_plain_text())
-
-
 @help_alias.handle()
-async def handle_help_alias(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
+async def handle_help(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     await send_help(bot, event, matcher)
 
 

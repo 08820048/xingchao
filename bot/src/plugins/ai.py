@@ -698,7 +698,7 @@ async def _t_my_id(bot, event, args) -> str:
 async def _t_help(bot, event, args) -> str:
     from src import helpmenu
     from src.plugins.basic import _is_group_admin
-    return helpmenu.render_all(await _is_group_admin(bot, event))
+    return helpmenu.render_menu(await _is_group_admin(bot, event))
 
 
 async def _t_about(bot, event, args) -> str:
