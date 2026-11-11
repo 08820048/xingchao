@@ -7,18 +7,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 from datetime import datetime
 
-from nonebot import get_bots, get_driver
+from nonebot.adapters.onebot.v11 import Bot
 from nonebot.log import logger
 
+from src.background import periodic
 from src.permission import disabled_groups, merged_whitelist
 from src.store import get_store
 
 SCAN_SECONDS = 60
-_worker_started = False
 
 
 def sign_minute(group_id: int, day: str) -> int:
@@ -61,20 +60,6 @@ async def tick(bot, now: datetime | None = None) -> list[int]:
     return done
 
 
-async def _worker() -> None:
-    while True:
-        try:
-            bot = next(iter(get_bots().values()), None)
-            if bot is not None:
-                await tick(bot)
-        except Exception:
-            logger.exception("群签到扫描异常")
-        await asyncio.sleep(SCAN_SECONDS)
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+@periodic("群签到扫描", SCAN_SECONDS)
+async def _scan(bot: Bot) -> None:
+    await tick(bot)

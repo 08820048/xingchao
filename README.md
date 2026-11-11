@@ -159,7 +159,7 @@ xingchao/
 │           ├── logger.py     # 白名单群 jsonl 日志
 │           ├── basic.py / reply.py / admin.py / stats.py   # 基础指令 / 关键词回复 / 超管指令 / 活跃统计
 │           ├── groupadmin.py / groupextras.py / groupfull.py / groupsign.py  # 群管+欢迎 / 荣誉名片头衔 / 满员清理 / 签到
-│           ├── ai.py / mention.py / persona.py / memory.py   # AI 问答与工具 / @响应 / 人设 / 长期记忆
+│           ├── ai.py / mention.py / persona.py / memory.py   # AI 问答（工具注册表在 src/aitools.py）/ @响应 / 人设 / 长期记忆
 │           ├── awareness.py / proactive.py / feedback.py     # 群聊感知 / 主动发言 / 表情反馈
 │           ├── expressions.py / stickers.py / selfie.py / voice.py  # 表情 / 表情包 / 自拍 / 语音
 │           ├── sensitive.py / appeals.py / visionguard.py / ocr.py / urlsafety.py  # 内容安全

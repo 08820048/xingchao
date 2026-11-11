@@ -16,7 +16,6 @@ from typing import Any
 import httpx
 from nonebot import on_command
 from nonebot.adapters import Message
-from nonebot.adapters.onebot.v11 import MessageEvent
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher

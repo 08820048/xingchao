@@ -18,13 +18,14 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from nonebot import get_bots, get_driver, on_command
+from nonebot import get_driver, on_command
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
 from nonebot.log import logger
 from nonebot.params import CommandArg
 
 from src.config import get_config
+from src.background import periodic
 from src.permission import SUPERUSER
 from src.store import get_store
 
@@ -40,7 +41,6 @@ ACTION_LABEL = {
 }
 SOURCE_LABEL = {"sensitive": "敏感词", "vision": "图片审核", "qrcode": "二维码引流"}
 
-_worker_started = False
 
 
 def read_original_text(log_dir: Path, group_id: int, message_id: int | None, ts: str) -> str | None:
@@ -190,24 +190,9 @@ async def remind_tick(bot: Bot, now: datetime | None = None) -> int:
     return len(stale)
 
 
-async def _worker() -> None:
-    logger.info("申诉催办调度器已启动")
-    while True:
-        try:
-            bot = next(iter(get_bots().values()), None)
-            if bot is not None:
-                await remind_tick(bot)  # type: ignore[arg-type]
-        except Exception:
-            logger.exception("申诉催办扫描异常")
-        await asyncio.sleep(REMIND_SCAN_SECONDS)
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+@periodic("申诉催办扫描", REMIND_SCAN_SECONDS)
+async def _scan(bot: Bot) -> None:
+    await remind_tick(bot)
 
 
 # ---------------------------------------------------------------- 指令（仅超管）

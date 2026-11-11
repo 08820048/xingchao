@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Optional
 
 from nonebot import on_command, on_notice
-from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import (
     Bot,
     GroupIncreaseNoticeEvent,

@@ -56,4 +56,11 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "ASYNC"]
+# 只开会抓真 bug 的规则（未使用/未定义名字、常见陷阱、异步误用）；风格类规则（行宽、import 排序）不强制
+select = ["F", "B", "ASYNC"]
+ignore = [
+    "B008",     # NoneBot 的 CommandArg() 等依赖注入就是写在参数默认值里
+    "B905",     # zip(strict=) 对 3.11 目标无意义
+    "ASYNC109", # 业务函数里的 timeout 参数是普通超时秒数
+    "ASYNC240", # 小文件同步读写，不值得 to_thread
+]

@@ -3,9 +3,9 @@ name: test
 on:
   push:
     branches: [main]
-    paths: ["bot/**", ".github/workflows/test.yml"]
+    paths: ["bot/**", "web/**", ".github/workflows/test.yml"]
   pull_request:
-    paths: ["bot/**", ".github/workflows/test.yml"]
+    paths: ["bot/**", "web/**", ".github/workflows/test.yml"]
 
 jobs:
   bot:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+      - name: ruff（未使用/未定义名字、常见陷阱，规则见 pyproject.toml）
+        run: uvx ruff check src tests
       - name: pytest（只装被测逻辑需要的依赖，不装第三方插件）
         run: >
           uv run --no-project --python 3.12
@@ -24,3 +26,17 @@ jobs:
           --with opencc-python-reimplemented --with pydantic --with pillow --with zxing-cpp
           --with pytest --with pytest-asyncio
           python -m pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: 类型检查 + 构建
+        run: npm run build

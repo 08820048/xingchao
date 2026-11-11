@@ -1,5 +1,4 @@
 import time
-from collections import deque
 from types import SimpleNamespace
 
 import pytest

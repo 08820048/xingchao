@@ -10,18 +10,18 @@
 
 from __future__ import annotations
 
-import asyncio
 import re
 import time
 from datetime import datetime, timedelta
 
-from nonebot import get_bots, get_driver, on_command
+from nonebot import on_command
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent, MessageSegment
 from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.background import periodic
 from src.permission import BASIC
 from src.store import get_store
 
@@ -32,14 +32,13 @@ MAX_AHEAD_DAYS = 365
 LATE_SECONDS = 300
 SCAN_SECONDS = 20
 
-_worker_started = False
 
 _NUM = r"\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百半]+"
 _REL = re.compile(
     rf"^\s*({_NUM})\s*(个)?\s*(半)?\s*(分钟|分|小时|钟头|h|min|天)\s*(半)?\s*(?:以?后|之后)\s*"
 )
 _DAY = re.compile(r"^\s*(今天|今晚|今早|明天|明早|明晚|后天)?\s*(早上|早晨|上午|中午|下午|晚上)?\s*")
-_CLOCK = re.compile(rf"^\s*(\d{{1,2}}|[零〇一二两三四五六七八九十]+)\s*(?:[:：]|点|时)\s*(半|\d{{1,2}}|[零〇一二三四五六七八九十]+)?\s*分?\s*")
+_CLOCK = re.compile(r"^\s*(\d{1,2}|[零〇一二两三四五六七八九十]+)\s*(?:[:：]|点|时)\s*(半|\d{1,2}|[零〇一二三四五六七八九十]+)?\s*分?\s*")
 _DATE = re.compile(r"^\s*(?:(\d{4})[-/年])?(\d{1,2})[-/月](\d{1,2})日?\s*")
 
 _CN_DIGIT = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
@@ -235,21 +234,6 @@ async def tick(bot: Bot, now_ts: int | None = None) -> int:
     return n
 
 
-async def _worker() -> None:
-    while True:
-        await asyncio.sleep(SCAN_SECONDS)
-        try:
-            for bot in list(get_bots().values()):
-                if isinstance(bot, Bot):
-                    await tick(bot)
-                    break
-        except Exception:
-            logger.exception("提醒扫描异常")
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+@periodic("提醒扫描", SCAN_SECONDS)
+async def _scan(bot: Bot) -> None:
+    await tick(bot)

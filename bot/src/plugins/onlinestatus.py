@@ -7,18 +7,17 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from datetime import datetime
 
-from nonebot import get_bots, get_driver
+from nonebot.adapters.onebot.v11 import Bot
 from nonebot.log import logger
 
+from src.background import periodic
 from src.store import get_store
 
 SCAN_SECONDS = 1800
 BUSY_THRESHOLD = 20  # 最近 10 分钟全部群消息数 ≥ 这个值算"热闹"
-_worker_started = False
 _last_wording = ""
 
 
@@ -63,20 +62,6 @@ async def update(bot, now: datetime | None = None) -> str | None:
     return wording
 
 
-async def _worker() -> None:
-    while True:
-        try:
-            bot = next(iter(get_bots().values()), None)
-            if bot is not None:
-                await update(bot)
-        except Exception:
-            logger.exception("在线状态更新异常")
-        await asyncio.sleep(SCAN_SECONDS)
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+@periodic("在线状态更新", SCAN_SECONDS)
+async def _scan(bot: Bot) -> None:
+    await update(bot)

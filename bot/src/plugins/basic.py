@@ -112,7 +112,6 @@ async def handle_id(event: MessageEvent, bot: Bot, matcher: Matcher) -> None:
 
 @status_cmd.handle()
 async def handle_status(state: T_State, matcher: Matcher) -> None:
-    cfg = get_config()
     from src.plugins import reply as reply_plugin
 
     plugin_names = sorted(
@@ -124,7 +123,7 @@ async def handle_status(state: T_State, matcher: Matcher) -> None:
     enabled = sum(1 for it in items if it.get("enabled", True))
     lines = [
         "星潮 Xingchao 运行状态",
-        f"在线: 是",
+        "在线: 是",
         f"插件: {', '.join(plugin_names) or '无'}",
         f"白名单群: {len(merged_whitelist())} 个",
         f"关键词词条: {len(items)} 条（启用 {enabled}，模块 {'开' if reply_plugin.is_enabled() else '关'}）",

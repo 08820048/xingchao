@@ -1,4 +1,3 @@
-import pytest
 from nonebot.adapters.onebot.v11.exception import ActionFailed
 
 from src.plugins import capabilities as cap

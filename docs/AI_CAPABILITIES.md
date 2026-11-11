@@ -20,8 +20,8 @@
 新增/修改一个斜杠指令时，必须同步完成以下四步（缺一即视为功能未完成）：
 
 - [ ] **实现指令**：在对应插件中注册 `on_command`；
-- [ ] **注册 AI 工具**：在 `bot/src/plugins/ai.py` 中新增
-      `_t_xxx` 处理器，并在 `_build_tools()` 里用 `_tool(...)` 注册
+- [ ] **注册 AI 工具**：在 `bot/src/aitools.py` 中新增
+      `_t_xxx` 处理器，并在 `build_tools()` 里用 `_tool(...)` 注册
       （注意标注 `perm`：`all` = 所有人 / `superuser` = 仅超管）；
 - [ ] **更新能力清单**：能力清单由 `_capability_prompt()` 从工具注册表**自动生成**，
       无需手工维护；只需确保工具的 `description` 写清楚「用户会怎么说这件事」；
@@ -32,8 +32,8 @@
 ## 3. 实现机制说明
 
 - **自我认知与权限边界**：`chat()` 每次都会把
-  `_capability_prompt(_build_tools(), is_superuser)` 作为一条 system 消息注入。
-  `_build_tools()` 返回**全部**工具（含仅超管的），清单里用【仅超管】标注权限，
+  `_capability_prompt(build_tools(), is_superuser)` 作为一条 system 消息注入。
+  `build_tools()` 返回**全部**工具（含仅超管的），清单里用【仅超管】标注权限，
   并同时注入「当前对话者权限」与「能力与边界规约」，让 AI 清楚：
   - 自己具备哪些能力（避免误答「我没有这个功能」）；
   - 哪些能力需要超管权限（应回答「这个操作需要超管权限」而非「没有这个功能」）；

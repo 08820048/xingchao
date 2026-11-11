@@ -13,13 +13,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import random
 import re
 import time
 from dataclasses import dataclass
 
-from nonebot import get_bots, get_driver, on_command, on_message, on_notice
+from nonebot import on_command, on_message, on_notice
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, GroupIncreaseNoticeEvent, GroupMessageEvent, MessageSegment
 from nonebot.log import logger
@@ -27,6 +26,7 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src.config import superuser_ids
+from src.background import periodic
 from src.permission import GROUP_WHITELIST, SUPERUSER
 from src.store import get_store
 
@@ -34,7 +34,6 @@ DEFAULT_MINUTES = 5
 SCAN_SECONDS = 15
 
 _NUM = re.compile(r"(?<!\d)(\d{1,3})(?!\d)")
-_worker_started = False
 
 
 @dataclass
@@ -158,24 +157,9 @@ async def handle_timeouts(bot: Bot, now: float | None = None) -> int:
     return len(keys)
 
 
-async def _worker() -> None:
-    while True:
-        await asyncio.sleep(SCAN_SECONDS)
-        try:
-            for bot in list(get_bots().values()):
-                if isinstance(bot, Bot):
-                    await handle_timeouts(bot)
-                    break
-        except Exception:
-            logger.exception("入群验证超时扫描异常")
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+@periodic("入群验证超时扫描", SCAN_SECONDS)
+async def _scan(bot: Bot) -> None:
+    await handle_timeouts(bot)
 
 
 # ---------------------------------------------------------------- 指令

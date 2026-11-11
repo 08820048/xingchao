@@ -11,11 +11,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from dataclasses import dataclass, field
 
-from nonebot import get_bots, get_driver, on_command
+from nonebot import on_command
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
 from nonebot.log import logger
@@ -23,6 +22,7 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src.config import superuser_ids
+from src.background import periodic
 from src.permission import GROUP_WHITELIST
 
 MIN_OPTIONS, MAX_OPTIONS = 2, 8
@@ -32,7 +32,6 @@ OPTION_MAX = 30
 QUESTION_MAX = 60
 SCAN_SECONDS = 15
 
-_worker_started = False
 
 
 @dataclass
@@ -161,21 +160,6 @@ async def announce_expired(bot: Bot, now: float | None = None) -> int:
     return len(done)
 
 
-async def _worker() -> None:
-    while True:
-        await asyncio.sleep(SCAN_SECONDS)
-        try:
-            for bot in list(get_bots().values()):
-                if isinstance(bot, Bot):
-                    await announce_expired(bot)
-                    break
-        except Exception:
-            logger.exception("投票到期扫描异常")
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+@periodic("投票到期扫描", SCAN_SECONDS)
+async def _scan(bot: Bot) -> None:
+    await announce_expired(bot)

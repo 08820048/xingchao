@@ -28,7 +28,6 @@ from nonebot.adapters.onebot.v11 import (
     GroupDecreaseNoticeEvent,
     GroupRequestEvent,
     MessageEvent,
-    MessageSegment,
 )
 from nonebot.exception import MatcherException
 from nonebot.log import logger

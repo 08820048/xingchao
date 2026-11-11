@@ -1,5 +1,3 @@
-import pytest
-from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.markdown import md_to_qq
 from src.plugins import expressions as ex

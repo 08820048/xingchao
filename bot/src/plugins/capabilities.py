@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
 
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent

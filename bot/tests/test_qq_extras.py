@@ -1,7 +1,6 @@
 import time
 from datetime import datetime
 
-import pytest
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
 from src.plugins import groupextras as ge

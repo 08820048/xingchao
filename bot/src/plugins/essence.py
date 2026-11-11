@@ -16,11 +16,10 @@ from typing import Any
 from nonebot import on_command
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
-from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
-from src.permission import SUPERUSER, merged_whitelist
+from src.permission import SUPERUSER
 
 NOMINATE_DAILY_LIMIT = 3
 _nominated: dict[int, float] = {}                # message_id → ts
