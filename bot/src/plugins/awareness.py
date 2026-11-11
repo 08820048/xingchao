@@ -289,9 +289,14 @@ async def ensure_captions(group_id: int) -> int:
 
 
 async def describe_message_images(message: Message, limit: int = 3) -> list[str]:
-    """识别某条消息里的图片（用户 @ 时附带 / 引用的图），不占每日说明额度。"""
+    """识别某条消息里的图片（用户 @ 时附带 / 引用的图），不占每日说明额度。
+
+    用户明确 @ 机器人并给图属于直接请求，与「群聊感知」总开关无关，只要视觉模型可用就识别。"""
     segs = [s for s in message if s.type == "image"][:limit]
-    if not segs or not (await config())["awareness_enabled"] or not await _vision_available():
+    if not segs:
+        return []
+    if not await _vision_available():
+        logger.warning("用户附图无法识别：AI 未启用或视觉模型凭据未配置")
         return []
 
     async def one(seg) -> str | None:
@@ -301,7 +306,7 @@ async def describe_message_images(message: Message, limit: int = 3) -> list[str]
         try:
             cap = await asyncio.wait_for(_vision_describe(seg, DIRECT_PROMPT), timeout=30)
         except Exception:
-            logger.debug("附图识别失败", exc_info=True)
+            logger.warning("附图识别失败", exc_info=True)
             return None
         if cap:
             _cache_put(key, cap)

@@ -132,13 +132,23 @@ def mask_key(key: str) -> str:
     return f"{key[:5]}****{key[-4:]}"
 
 
+async def _vision_via_deepseek() -> bool:
+    """视觉请求是否应走 DeepSeek 通道：已启用 DeepSeek 提供商，且视觉模型是 DeepSeek 的模型
+    （deepseek-flash 支持图片输入；模型名不是 deepseek 开头时仍走默认提供商）。"""
+    if await active_provider() != "deepseek":
+        return False
+    return (await _vision_model()).lower().startswith("deepseek")
+
+
 async def get_client(kind: str = "text") -> Any | None:
     """按当前凭据返回客户端；凭据变更（面板更新密钥/地址）时自动重建。
 
-    kind="text"（默认）跟随当前提供商；"vision"/"audio" 始终用默认提供商
-    （DeepSeek 不支持图片与语音输入）。
+    kind="text"（默认）跟随当前提供商；"vision" 在视觉模型为 DeepSeek 模型且已启用 DeepSeek 时走
+    DeepSeek 通道，否则走默认提供商；"audio" 始终用默认提供商（DeepSeek 无语音输入）。
     """
-    if kind == "text" and await active_provider() == "deepseek":
+    if (kind == "text" and await active_provider() == "deepseek") or (
+        kind == "vision" and await _vision_via_deepseek()
+    ):
         ds = await deepseek_settings()
         base, key = ds["base_url"], ds["api_key"]
     else:
@@ -222,6 +232,7 @@ async def generate_vision(
 ) -> str | None:
     """图片理解：image_ref 可为 http(s) URL 或 data URI；失败返回 None。
 
+    视觉模型为 deepseek 系且启用了 DeepSeek 提供商时走 DeepSeek 通道（见 get_client）。
     注意：glm-5.3-flash 等思维链多模态模型的隐藏推理同样占用 max_tokens，
     预算过小会出现 finish_reason=length 且 content 为空（表现为静默跳过），故给足空间。
     """
@@ -1684,9 +1695,16 @@ async def _attached_images_note(event: MessageEvent, bot=None) -> str:
                         texts.append(t)
             return "\n".join(texts[:2])
 
+        fail_note = "（用户发来了图片，但图片识别失败，你看不到图片内容；请如实告诉用户你这边暂时看不了这张图，不要猜测或编造图片内容）"
+
+        def _n_images(message) -> int:
+            return sum(1 for seg in message if seg.type == "image")
+
         own = await awareness.describe_message_images(event.message)
         if own:
             parts.append("（用户附带的图片内容：" + _join(own) + "）")
+        elif _n_images(event.message):
+            parts.append(fail_note)
         fwd = await _forwards(event.message)
         if fwd:
             parts.append("（用户转发的聊天记录内容：\n" + fwd + "\n）")
@@ -1694,6 +1712,8 @@ async def _attached_images_note(event: MessageEvent, bot=None) -> str:
             quoted = await awareness.describe_message_images(event.reply.message)
             if quoted:
                 parts.append("（用户引用的消息里的图片内容：" + _join(quoted) + "）")
+            elif _n_images(event.reply.message):
+                parts.append(fail_note.replace("用户发来了图片", "用户引用的消息里有图片"))
             qfwd = await _forwards(event.reply.message)
             if qfwd:
                 parts.append("（用户引用的合并转发里的聊天记录：\n" + qfwd + "\n）")
