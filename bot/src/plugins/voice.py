@@ -214,6 +214,28 @@ def pick_character(arg: str, chars: list[tuple[str, str]]) -> tuple[str, str] | 
     return hits[0] if len(hits) == 1 else None
 
 
+async def choose_character(bot: Bot, group_id: int | None, arg: str) -> str:
+    """AI 工具用：arg 为空返回可选角色列表；否则按序号 / ID / 名称切换 QQ AI 语音角色。"""
+    global _ai_character
+    if group_id is None:
+        return "没有可用的群来查询 QQ AI 语音角色，请在白名单群里使用。"
+    try:
+        chars = await list_ai_characters(bot, group_id)
+    except Exception as e:
+        return f"获取 QQ AI 语音角色失败：{str(getattr(e, 'info', None) or e)[:60]}（NapCat 不支持）"
+    if not chars:
+        return "NapCat 没有返回任何 QQ AI 语音角色。"
+    if not arg.strip():
+        return "可选角色：" + "；".join(f"{i}.{name}" for i, (_, name) in enumerate(chars[:40], 1))
+    chosen = pick_character(arg, chars)
+    if chosen is None:
+        return "没找到唯一匹配的角色，请先不带参数查看列表再按序号或名称选择。"
+    cid, name = chosen
+    await get_store().set_kv("voice_ai_character", cid)
+    _ai_character = cid
+    return f"已切换语音角色为「{name}」"
+
+
 voice_cmd = on_command("音色", aliases={"voice"}, rule=SUPERUSER, priority=5, block=True)
 
 

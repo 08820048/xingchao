@@ -1150,6 +1150,42 @@ async def _t_member_title(bot, event, args) -> str:
     return msg if ok else f"执行失败：{msg}"
 
 
+async def _t_send_like(bot, event, args) -> str:
+    from src.plugins import interact
+    ok, msg = await interact.give_like(bot, event.user_id)
+    return msg if ok else f"没点成：{msg}"
+
+
+async def _t_poke(bot, event, args) -> str:
+    from src.plugins import interact
+    gid = args.get("group_id") or getattr(event, "group_id", None)
+    uid = args.get("user_id") or event.user_id
+    if not gid:
+        return "错误：戳一戳只能在群里用（需要 group_id）。"
+    ok, msg = await interact.poke(bot, int(gid), int(uid))
+    return msg if ok else f"没戳成：{msg}"
+
+
+async def _t_group_files(bot, event, args) -> str:
+    from src.plugins import interact
+    gid = args.get("group_id") or getattr(event, "group_id", None)
+    if not gid:
+        return "错误：需要 group_id（群聊中默认当前群）。"
+    return await interact.files_text(bot, int(gid), str(args.get("keyword", "")))
+
+
+async def _t_set_signature(bot, event, args) -> str:
+    from src.plugins import interact
+    ok, msg = await interact.set_signature(bot, str(args.get("text", "")))
+    return msg if ok else f"执行失败：{msg}"
+
+
+async def _t_voice_character(bot, event, args) -> str:
+    from src.plugins import voice
+    gid = getattr(event, "group_id", None) or voice._api_group(event)
+    return await voice.choose_character(bot, gid, str(args.get("character", "")))
+
+
 async def _t_invites_list(bot, event, args) -> str:
     from src.plugins import invites
     return invites.list_text()
@@ -1374,6 +1410,21 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("set_member_title", "给某成员设置专属头衔（最多 6 个字，机器人需是群主；title 留空则清除）",
               {"type": "object", "properties": {"user_id": {"type": "integer"}, "title": {"type": "string"}, "group_id": {"type": "integer"}}, "required": ["user_id"]},
               "superuser", _t_member_title),
+        _tool("send_like", "给提问的人点赞（QQ 资料卡点赞，每人每天一次；用户说“给我点个赞/赞我”时使用）",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_send_like),
+        _tool("poke_member", "戳一戳群成员（用户说“戳戳他/戳我一下”时使用；user_id 不填则戳提问的人；同群 20 秒冷却）",
+              {"type": "object", "properties": {"user_id": {"type": "integer"}, "group_id": {"type": "integer"}}, "required": []},
+              "all", _t_poke),
+        _tool("list_group_files", "查看群文件（可按文件名关键词搜索，结果少时附下载链接；用户问“群里有没有××文件/群文件有什么”时使用）",
+              {"type": "object", "properties": {"keyword": {"type": "string", "description": "文件名关键词，留空列出最近文件"}, "group_id": {"type": "integer"}}, "required": []},
+              "all", _t_group_files),
+        _tool("set_bot_signature", "修改机器人账号的个性签名（最多 60 字，留空清空）",
+              {"type": "object", "properties": {"text": {"type": "string"}}, "required": []},
+              "superuser", _t_set_signature),
+        _tool("set_voice_character", "切换/查看 QQ AI 语音角色（character 留空列出可选角色；可填序号或名称）",
+              {"type": "object", "properties": {"character": {"type": "string"}}, "required": []},
+              "superuser", _t_voice_character),
         _tool("list_pending_invites", "查看待处理的好友申请和拉群邀请（有人加机器人好友、或把机器人拉进新群时会进入这里）",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_invites_list),
@@ -1723,6 +1774,21 @@ async def _attached_images_note(event: MessageEvent, bot=None) -> str:
         return ""
 
 
+LONG_REPLY_FORWARD_CHARS = 600  # 群里超过这个长度的回复改用合并转发，避免刷屏
+
+
+async def _send_as_forward(bot: Bot, event: GroupMessageEvent, text: str) -> bool:
+    """把长回复包成一条合并转发发出；失败返回 False，由调用方退回普通消息。"""
+    try:
+        name = str(bot.self_id)
+        nodes = [{"type": "node", "data": {"name": "星潮", "uin": name, "content": text}}]
+        await bot.call_api("send_group_forward_msg", group_id=event.group_id, messages=nodes)
+        return True
+    except Exception:
+        logger.warning("长回复合并转发失败，退回普通消息", exc_info=True)
+        return False
+
+
 @ai_matcher.handle()
 async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     if not event.to_me:
@@ -1752,6 +1818,10 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     }:
         return
 
+    if isinstance(event, PrivateMessageEvent):
+        from src.plugins.interact import typing_private
+
+        await typing_private(bot, event.user_id)
     img_note = await _attached_images_note(event, bot) if has_images else ""
     if not raw_text and not img_note:
         pure_at = True  # 附图全部识别失败且没写文字：当作纯 @
@@ -1782,6 +1852,10 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         _note_engaged(event)
         return  # 语音回复模式：已发语音
     reply = md_to_qq(reply)  # QQ 不渲染标准 Markdown，发送前降级为可读文本
+    if isinstance(event, GroupMessageEvent) and len(reply) > LONG_REPLY_FORWARD_CHARS and "{dev_at}" not in reply:
+        if await _send_as_forward(bot, event, reply):
+            _note_engaged(event)
+            return
     dev_id = get_config().xingchao_developer_id
     try:
         if isinstance(event, GroupMessageEvent):

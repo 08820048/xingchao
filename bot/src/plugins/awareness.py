@@ -464,7 +464,12 @@ def extract_bot_text(api: str, data: dict[str, Any]) -> tuple[int, str] | None:
         text = str(data.get("text", "")).strip()
         return int(gid), f"[语音]{text}" if text else "[语音]"
     if api == "send_group_forward_msg":
-        return int(gid), "[发了一组合并转发]"
+        nodes = data.get("messages")
+        texts = [
+            str(n["data"]["content"]) for n in (nodes if isinstance(nodes, list) else [])
+            if isinstance(n, dict) and isinstance(n.get("data"), dict) and isinstance(n["data"].get("content"), str)
+        ]
+        return int(gid), "".join(texts).strip() or "[发了一组合并转发]"
     if api not in ("send_group_msg", "send_msg"):
         return None
     msg = data.get("message")
