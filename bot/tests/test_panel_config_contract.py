@@ -13,7 +13,8 @@ from src.plugins import visionguard as vg
 from src.plugins import weeklyreport as wr
 
 PANEL = "\n".join(f.read_text() for f in sorted(Path("src/plugins/panel").glob("*.py")))
-APP = Path("../web/src/App.tsx").read_text() if Path("../web/src/App.tsx").exists() else ""
+_WEB = Path("../web/src")
+APP = "\n".join(f.read_text() for f in sorted(_WEB.rglob("*.tsx"))) if _WEB.exists() else ""
 
 
 @pytest.fixture

@@ -10,6 +10,7 @@ on:
 jobs:
   bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: bot
@@ -29,6 +30,7 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: web
