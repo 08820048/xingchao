@@ -1,6 +1,6 @@
 """个人提醒：到点在原来的群里 @ 你（私聊发起的在私聊里提醒）。
 
-- /提醒 <时间> <内容>：时间可写 "10分钟后"、"2小时后"、"明天8点"、"今晚8点半"、"20:30"、"后天 9:00"、
+- /提醒 <时间> <内容>：时间可写 "10分钟后"、"五分钟后"、"半小时后"、"2小时后"、"明天8点"、"明天下午三点"、"今晚8点半"、"20:30"、"后天 9:00"、
   "2026-12-01 08:00"；/提醒列表（别名 /我的提醒）；/取消提醒 <编号>
 - AI 工具：create_reminder / list_my_reminders / cancel_reminder（用户说"明天早上8点提醒我开会"时使用）
 - 存 SQLite reminders 表，重启不丢；每 20 秒扫描一次；机器人离线期间错过的提醒，恢复后补发并标注"迟到"
@@ -34,24 +34,59 @@ SCAN_SECONDS = 20
 
 _worker_started = False
 
-_REL = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(分钟|分|小时|个小时|钟头|h|min|天)\s*(?:以?后|之后)\s*")
-_DAY = re.compile(r"^\s*(今天|今晚|今早|明天|明早|明晚|后天)?\s*")
-_CLOCK = re.compile(r"^\s*(\d{1,2})\s*(?:[:：]|点|时)\s*(半|\d{1,2})?\s*分?\s*")
+_NUM = r"\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百半]+"
+_REL = re.compile(
+    rf"^\s*({_NUM})\s*(个)?\s*(半)?\s*(分钟|分|小时|钟头|h|min|天)\s*(半)?\s*(?:以?后|之后)\s*"
+)
+_DAY = re.compile(r"^\s*(今天|今晚|今早|明天|明早|明晚|后天)?\s*(早上|早晨|上午|中午|下午|晚上)?\s*")
+_CLOCK = re.compile(rf"^\s*(\d{{1,2}}|[零〇一二两三四五六七八九十]+)\s*(?:[:：]|点|时)\s*(半|\d{{1,2}}|[零〇一二三四五六七八九十]+)?\s*分?\s*")
 _DATE = re.compile(r"^\s*(?:(\d{4})[-/年])?(\d{1,2})[-/月](\d{1,2})日?\s*")
+
+_CN_DIGIT = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+
+
+def to_number(s: str) -> float | None:
+    """阿拉伯数字或中文数字（半、五、十五、二十三、一百）转数值；解析不了返回 None。"""
+    s = s.strip()
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    if s == "半":
+        return 0.5
+    total, cur, seen = 0, 0, False
+    for ch in s:
+        if ch in _CN_DIGIT:
+            cur = _CN_DIGIT[ch]
+            seen = True
+        elif ch == "十":
+            total += (cur or 1) * 10
+            cur = 0
+            seen = True
+        elif ch == "百":
+            total += (cur or 1) * 100
+            cur = 0
+            seen = True
+        else:
+            return None
+    return float(total + cur) if seen else None
 
 
 def parse_when(text: str, now: datetime) -> tuple[datetime, str] | None:
     """从文字开头解析时间，返回 (时间点, 剩余内容)；解析不了返回 None。"""
     m = _REL.match(text)
     if m:
-        n = float(m.group(1))
-        unit = m.group(2)
-        delta = (
-            timedelta(minutes=n) if unit in ("分钟", "分", "min")
-            else timedelta(hours=n) if unit in ("小时", "个小时", "钟头", "h")
-            else timedelta(days=n)
-        )
-        return now + delta, text[m.end():].strip()
+        n = to_number(m.group(1))
+        if n is not None:
+            if m.group(3) or m.group(5):  # 一个半小时 / 一小时半
+                n += 0.5
+            unit = m.group(4)
+            delta = (
+                timedelta(minutes=n) if unit in ("分钟", "分", "min")
+                else timedelta(hours=n) if unit in ("小时", "钟头", "h")
+                else timedelta(days=n)
+            )
+            return now + delta, text[m.end():].strip()
 
     rest = text
     date = None
@@ -62,17 +97,31 @@ def parse_when(text: str, now: datetime) -> tuple[datetime, str] | None:
         except ValueError:
             return None
         rest = rest[dm.end():]
-    day_word = None
-    if date is None:
-        wm = _DAY.match(rest)
-        day_word = wm.group(1) if wm else None
-        rest = rest[wm.end():] if wm else rest
+    day_word = period = None
+    wm = _DAY.match(rest)
+    if wm:
+        period = wm.group(2)
+        if date is None:
+            day_word = wm.group(1)
+        rest = rest[wm.end():]
     cm = _CLOCK.match(rest)
     if not cm:
         return None
-    hour = int(cm.group(1))
-    minute = 30 if cm.group(2) == "半" else int(cm.group(2) or 0)
-    if day_word in ("今晚", "明晚") and hour < 12:
+    h = to_number(cm.group(1))
+    if h is None:
+        return None
+    hour = int(h)
+    if cm.group(2) is None:
+        minute = 0
+    else:
+        mi = to_number(cm.group(2))
+        if mi is None:
+            return None
+        minute = 30 if cm.group(2) == "半" else int(mi)
+    pm = day_word in ("今晚", "明晚") or period in ("下午", "晚上")
+    if pm and hour < 12:
+        hour += 12
+    elif period == "中午" and hour < 11:
         hour += 12
     if not (0 <= hour < 24 and 0 <= minute < 60):
         return None
@@ -138,7 +187,7 @@ async def handle_remind(matcher: Matcher, event: MessageEvent, args: Message = C
     text = args.extract_plain_text().strip()
     parsed = parse_when(text, datetime.now()) if text else None
     if not parsed:
-        await matcher.finish("用法：/提醒 <时间> <内容>\n例：/提醒 10分钟后 喝水　/提醒 明天8点 开会　/提醒 20:30 打卡")
+        await matcher.finish("没看懂时间。用法：/提醒 <时间> <内容>\n例：/提醒 10分钟后 喝水　/提醒 五分钟后 领红包　/提醒 明天下午三点 开会　/提醒 20:30 打卡")
     due, content = parsed
     _, msg = await create(event.user_id, _group_of(event), due, content)
     await matcher.send(msg)

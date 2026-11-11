@@ -6,7 +6,7 @@
     * searxng（需 XINGCHAO_SEARCH_URL，指向自建实例，需开启 json 输出）
   全局每日调用上限 300 次，超限返回提示而不是继续请求
 - 天气（/天气 <城市>；AI 工具 get_weather）：wttr.in，无需密钥，当前 + 未来三天
-- 汇率（AI 工具 get_exchange_rate）：api.frankfurter.app（欧洲央行参考汇率，每个工作日更新），无需密钥
+- 汇率（AI 工具 get_exchange_rate）：api.frankfurter.dev（欧洲央行参考汇率，每个工作日更新），无需密钥
 
 返回给 AI 的都是纯文本摘要；网络失败只返回友好提示，不抛异常。
 """
@@ -85,10 +85,17 @@ def parse_ddg(page: str, limit: int = MAX_RESULTS) -> list[dict[str, str]]:
     return out
 
 
+class SearchBlocked(Exception):
+    """搜索站点返回了机器人验证页（而不是搜索结果）。"""
+
+
 async def _search_ddg(client: httpx.AsyncClient, q: str) -> list[dict[str, str]]:
     r = await client.post("https://html.duckduckgo.com/html/", data={"q": q})
     r.raise_for_status()
-    return parse_ddg(r.text)
+    res = parse_ddg(r.text)
+    if not res and (r.status_code == 202 or "anomaly" in r.text):
+        raise SearchBlocked("duckduckgo 返回了机器人验证页")
+    return res
 
 
 async def _search_brave(client: httpx.AsyncClient, q: str, key: str) -> list[dict[str, str]]:
@@ -136,9 +143,12 @@ async def search(query: str) -> tuple[list[dict[str, str]] | None, str]:
                 res = await _search_searxng(client, query, cfg.xingchao_search_url)
             else:
                 res = await _search_ddg(client, query)
+    except SearchBlocked as e:
+        logger.warning(f"联网搜索被拦截（{provider}）：{e}")
+        return None, "搜索被 DuckDuckGo 拦截了（机器人验证），管理员需要改用 brave 或 searxng（见 .env.example）"
     except Exception as e:
         logger.warning(f"联网搜索失败（{provider}）：{type(e).__name__}: {e}")
-        return None, "搜索服务暂时不可用，稍后再试"
+        return None, f"搜索服务暂时连不上（{type(e).__name__}），如果一直这样，管理员需要检查服务器网络或换搜索提供商"
     return res, ""
 
 
@@ -188,7 +198,7 @@ async def weather_text(city: str) -> str:
     if not city:
         return "请告诉我要查哪个城市的天气。"
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": "curl/8"}) as client:
+        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": "curl/8"}) as client:
             r = await client.get(f"https://wttr.in/{quote(city)}", params={"format": "j1", "lang": "zh"})
             r.raise_for_status()
             data = r.json()
@@ -212,8 +222,8 @@ async def rate_text(src: str, dst: str, amount: float = 1.0) -> str:
     if not (0 < amount < 1e12):
         return "金额不合法。"
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            r = await client.get("https://api.frankfurter.app/latest", params={"from": src, "to": dst, "amount": amount})
+        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
+            r = await client.get("https://api.frankfurter.dev/v1/latest", params={"base": src, "symbols": dst, "amount": amount})
             r.raise_for_status()
             data = r.json()
     except Exception as e:

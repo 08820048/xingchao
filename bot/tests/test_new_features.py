@@ -23,6 +23,18 @@ NOW = datetime(2026, 11, 11, 10, 0)  # 周三
     ("后天 9:00 交报告", datetime(2026, 11, 13, 9, 0), "交报告"),
     ("2026-12-01 08:00 生日", datetime(2026, 12, 1, 8, 0), "生日"),
     ("明早7点 跑步", datetime(2026, 11, 12, 7, 0), "跑步"),
+    ("五分钟后提醒我领红包", datetime(2026, 11, 11, 10, 5), "提醒我领红包"),
+    ("五分钟后 提醒我领一个红包", datetime(2026, 11, 11, 10, 5), "提醒我领一个红包"),  # 内容里的中文数字不被改动
+    ("十分钟后 喝水", datetime(2026, 11, 11, 10, 10), "喝水"),
+    ("二十三分钟后 x", datetime(2026, 11, 11, 10, 23), "x"),
+    ("半小时后 喝水", datetime(2026, 11, 11, 10, 30), "喝水"),
+    ("两小时后 开会", datetime(2026, 11, 11, 12, 0), "开会"),
+    ("一个半小时后 x", datetime(2026, 11, 11, 11, 30), "x"),
+    ("三天后 交作业", datetime(2026, 11, 14, 10, 0), "交作业"),
+    ("明天下午三点 开会", datetime(2026, 11, 12, 15, 0), "开会"),
+    ("今天晚上八点半 吃饭", datetime(2026, 11, 11, 20, 30), "吃饭"),
+    ("明天早上八点十分 x", datetime(2026, 11, 12, 8, 10), "x"),
+    ("中午一点 午休结束", datetime(2026, 11, 11, 13, 0), "午休结束"),  # 现在 10:00，13:00 就是今天
 ])
 def test_parse_when(text, due, content):
     assert reminders.parse_when(text, NOW) == (due, content)
@@ -231,3 +243,36 @@ def test_red_packet_detection():
     assert redpacket.looks_like_red_packet("x", [("json", {"data": "QQ红包"})])
     assert not redpacket.looks_like_red_packet("发个红包吧", [("text", {"text": "发个红包吧"})])
     assert not redpacket.looks_like_red_packet("红包", [("text", {"text": "红包"}), ("image", {"file": "a.jpg"})])
+
+
+async def test_ddg_challenge_page_reported_as_blocked(monkeypatch):
+    class Cfg:
+        xingchao_search_provider = "duckduckgo"
+        xingchao_search_api_key = ""
+        xingchao_search_url = ""
+
+    class Resp:
+        status_code = 202
+        text = "<html>anomaly-modal challenge</html>"
+
+        def raise_for_status(self):
+            pass
+
+    class Client:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, *a, **k):
+            return Resp()
+
+    monkeypatch.setattr(webtools, "get_config", lambda: Cfg)
+    monkeypatch.setattr(webtools.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(webtools, "_daily", ("", 0))
+    res, note = await webtools.search("python")
+    assert res is None and "拦截" in note and "brave" in note
