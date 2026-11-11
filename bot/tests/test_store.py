@@ -82,3 +82,4 @@ async def test_old_database_is_migrated_with_counted_column(tmp_path):
     conn = await store._ensure()
     async with conn.execute("PRAGMA table_info(punishments)") as cur:
         assert "counted" in {r[1] for r in await cur.fetchall()}
+    await store.close()
