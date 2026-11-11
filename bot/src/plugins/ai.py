@@ -807,6 +807,47 @@ async def _t_group_send(bot, event, args) -> str:
     return f"已发送到群 {group_id}：{text[:60]}"
 
 
+async def _t_changelog(bot, event, args) -> str:
+    from src.plugins.updates import format_entry, load_changelog
+    entries = load_changelog()
+    if not entries:
+        return _j({"更新记录": "暂无"})
+    return _j({"最近一次更新": format_entry(entries[0])})
+
+
+async def _t_run_backup(bot, event, args) -> str:
+    from src.plugins.backup import backup_dir, run_backup
+    try:
+        path, removed = await run_backup()
+    except Exception as e:
+        return _j({"ok": False, "错误": f"备份失败：{e}"})
+    files = sorted(backup_dir().glob("xingchao-*.db.gz"), reverse=True)
+    return _j({"ok": True, "本次备份": path.name, "大小KB": path.stat().st_size // 1024,
+               "清理旧备份": removed, "现有份数": len(files), "最近备份": [f.name for f in files[:8]]})
+
+
+async def _t_feed_list(bot, event, args) -> str:
+    from src.plugins.feeds import REPEAT_LABEL, SOURCES, WEEKDAY_NAME
+    items = []
+    for s in await get_store().list_feed_subs():
+        rep = REPEAT_LABEL.get(s["repeat"], s["repeat"])
+        if s["repeat"] == "weekly" and s["weekday"] is not None:
+            rep += f"（{WEEKDAY_NAME[s['weekday']]}）"
+        items.append({"id": s["id"], "时间": s["time"], "重复": rep, "内容源": SOURCES.get(s["source"], (s["source"],))[0],
+                      "群号": s["group_id"], "启用": bool(s["enabled"])})
+    return _j({"内容推送订阅": items, "提示": "增删改请到 Web 面板「内容推送」页"})
+
+
+async def _t_feed_now(bot, event, args) -> str:
+    from src.plugins.feeds import SOURCES, run_sub
+    sid = int(args["id"])
+    sub = next((s for s in await get_store().list_feed_subs() if s["id"] == sid), None)
+    if sub is None or sub["source"] not in SOURCES:
+        return _j({"ok": False, "错误": "订阅不存在"})
+    ok, msg = await run_sub(bot, sub)
+    return _j({"ok": ok, "结果": msg})
+
+
 async def _t_task_list(bot, event, args) -> str:
     from src.plugins.scheduler import REPEAT_LABEL, WEEKDAY_NAME
     tasks = await get_store().list_tasks()
@@ -1412,6 +1453,18 @@ def _build_tools() -> list[tuple[dict, Any]]:
         _tool("send_group_message", "让机器人在指定群发送一条普通群消息（仅限白名单群；与「群公告」不同；用户说“在群里说一句/帮我发条消息”时使用）",
               {"type": "object", "properties": {"group_id": {"type": "integer", "description": "目标群号，群聊中默认当前群；私聊时必须指定"}, "text": {"type": "string", "description": "要发送的文本内容"}}, "required": ["text"]},
               "superuser", _t_group_send),
+        _tool("get_changelog", "查看机器人最近一次更新了什么（用户问“最近更新了啥/有什么新功能”时使用）",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_changelog),
+        _tool("run_backup", "立即备份数据库并列出现有备份（用户说“备份一下数据”时使用）",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_run_backup),
+        _tool("list_feed_subscriptions", "查看内容推送订阅（早报、GitHub 趋势等定时推送到群的订阅）",
+              {"type": "object", "properties": {}, "required": []},
+              "superuser", _t_feed_list),
+        _tool("run_feed_now", "立即执行一次内容推送订阅（不影响当天定时推送）；先用 list_feed_subscriptions 查 id",
+              {"type": "object", "properties": {"id": {"type": "integer", "description": "订阅 id"}}, "required": ["id"]},
+              "superuser", _t_feed_now),
         _tool("list_scheduled_tasks", "查看定时任务列表（可用对话创建/删除/启停）",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_task_list),
