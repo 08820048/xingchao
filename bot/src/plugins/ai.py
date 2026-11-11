@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import re
 import time
@@ -269,6 +270,9 @@ async def generate_vision(
 # ---------------------------------------------------------------- 上下文
 
 _ctx: dict[int, list[dict[str, str]]] = {}
+
+# handle_ai 执行期间为 True：privatectx 的发送钩子据此跳过 AI 自己的回复（它们由 chat() 记入历史）
+AI_REPLYING: contextvars.ContextVar[bool] = contextvars.ContextVar("ai_replying", default=False)
 
 
 def _get_history(group_key: int) -> list[dict[str, str]]:
@@ -1782,6 +1786,10 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
                 messages.append({"role": "system", "content": mem_text})
         except Exception:
             logger.exception("长期记忆注入失败")
+    if any("【指令/通知回复】" in m.get("content", "") for m in history):
+        messages.append({"role": "system", "content": (
+            "下面历史里以【指令/通知回复】开头的消息，是用户刚用斜杠指令得到的输出或系统通知，不是你自己说的话；"
+            "用户追问相关内容（“刚才那个结果什么意思”“帮我处理上面那个”）时，请据此回答；回复里不要复述这个标记。")})
     messages.extend(history)
     messages.append({"role": "user", "content": text})
 
@@ -1933,6 +1941,14 @@ async def _send_as_forward(bot: Bot, event: GroupMessageEvent, text: str) -> boo
 
 @ai_matcher.handle()
 async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
+    token = AI_REPLYING.set(True)
+    try:
+        await _handle_ai(bot, event, matcher)
+    finally:
+        AI_REPLYING.reset(token)
+
+
+async def _handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     if not event.to_me:
         return
     raw_text = event.message.extract_plain_text().strip()

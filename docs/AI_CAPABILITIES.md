@@ -186,6 +186,9 @@
 >   部分 NapCat 版本不上报红包消息，此时不会触发；识别到时日志里会记录消息段类型，方便确认。开关 kv `redpacket_notify`。
 > - **联网搜索配置**：环境变量 `XINGCHAO_SEARCH_PROVIDER`（`duckduckgo` 默认，无需密钥 / `brave` 需 `XINGCHAO_SEARCH_API_KEY` /
 >   `searxng` 需 `XINGCHAO_SEARCH_URL`）；全局每日 300 次上限。天气用 wttr.in、汇率用 frankfurter（欧洲央行参考汇率），均无需密钥。
+> - **私聊上下文**（`privatectx.py`）：超管私聊里用的斜杠指令、机器人的指令回复、系统通知（入群申请 / 申诉 / 邀请等）
+>   会以【指令/通知回复】标记写进该私聊的 AI 历史，于是先用 `/备份` 再问"刚才结果是什么意思"，AI 能接上。
+>   AI 自己的回复不重复记录（`ai.AI_REPLYING` 上下文变量）；只存内存，`/ai clear` 可清。群聊本来就有感知缓冲，不需要这个。
 > - **博客知识关联推荐**（`blog.py` + `src/blog_kb.py`）：本地索引开发者博客 xuyi.dev 的
 >   文章与作品集（RSS + sitemap 全量补齐，24 小时自动刷新）。对话与主动插话时按话题
 >   相关性自动注入「博主内容·优先参考」，引导 AI 优先推荐；强相关 + 求助语气时，
@@ -227,3 +230,4 @@
   `set_voice_character` 工具补齐 `/音色` 的 AI 语音角色切换。已核实不重复造轮子：入群 AI 预审（request.py）、被戳回应（pokepoke_miss）、动态在线状态（onlinestatus.py）均已存在。
 - 2026-11-11：新增联网搜索 / 天气 / 汇率（`webtools.py`）、个人提醒（`reminders.py`）、入群验证（`joinverify.py`）、群投票（`polls.py`）、
   AI 绘图（`imagegen.py`，需配置绘图模型）、红包提醒（`redpacket.py`，只提醒不领取）。已核实不与 scheduler（管理员群定时消息）、cloudsignx（抽奖）、request（入群申请审批）重复。
+- 2026-11-11：新增私聊上下文 `privatectx.py`：修复“私聊先用指令、再问相关内容，AI 一无所知”。

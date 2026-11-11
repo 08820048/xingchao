@@ -66,6 +66,7 @@ data/xingchao.db + data/replies.json + data/logs/
 - 群荣誉与群成员装扮：`/龙王` 查看龙王等荣誉成员；超管 `/名片 @某人 内容`、`/头衔 @某人 内容`
 - 危险链接提醒（QQ 安全中心判定，只提醒不处罚）、群自动签到、定时任务 @全体前检查剩余次数、
   动态在线状态（默认关闭，`/plugin online on|off`）、@ 机器人并转发聊天记录时能读懂转发内容
+- 私聊上下文：超管私聊里用过的指令、机器人的指令回复和系统通知，AI 都记得，可以接着追问
 - 联网能力：`/搜索 关键词`、`/天气 城市`，AI 对话时也会自己联网搜索、查天气和汇率（搜索提供商可在环境变量里选）
 - 个人提醒：`/提醒 明天8点 开会`，到点在群里 @ 你；`/提醒列表` `/取消提醒 <编号>`
 - 群投票：`/投票 晚上吃啥 火锅 烧烤`，大家 `/投 1` 参与，到时间自动公布结果
@@ -164,6 +165,7 @@ xingchao/
 │           ├── linkpreview.py / blog.py / github.py / feeds.py  # 链接解读 / 博客知识 / GitHub / 内容推送
 │           ├── scheduler.py / weeklyreport.py / presence.py / updates.py / backup.py  # 定时 / 周报 / 上下线 / 公告 / 备份
 │           ├── webtools.py / reminders.py / polls.py / imagegen.py  # 搜索天气汇率 / 个人提醒 / 投票 / 绘图
+│           ├── privatectx.py  # 私聊指令往来写入 AI 上下文
 │           ├── joinverify.py / redpacket.py  # 入群验证 / 红包提醒
 │           ├── interact.py   # 点赞 / 戳一戳 / 群文件 / 已读 / 签名
 │           ├── request.py / invites.py / essence.py / capabilities.py / onlinestatus.py / nctools.py  # 入群申请 / 邀请 / 精华 / 能力自检 / 在线状态 / NapCat 封装
