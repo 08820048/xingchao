@@ -9,13 +9,13 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from nonebot import get_bot, get_driver
+from nonebot import get_bot
 from nonebot.log import logger
 
+from src.background import periodic
 from src.permission import merged_whitelist
 from src.store import get_store
 
@@ -27,7 +27,6 @@ DEFAULTS: dict[str, Any] = {
 }
 
 WEEKDAY_NAME = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-_worker_started = False
 
 
 async def _kv(key: str) -> Any:
@@ -171,26 +170,13 @@ async def _send_reports() -> None:
         await get_store().set_kv(key, day_key)
 
 
-async def _worker() -> None:
-    logger.info("群活跃周报调度器已启动（每 30 秒扫描）")
-    while True:
-        try:
-            cfg = await report_config()
-            now = datetime.now()
-            if (
-                cfg["report_enabled"]
-                and now.weekday() == int(cfg["report_weekday"])
-                and now.strftime("%H:%M") == str(cfg["report_time"])
-            ):
-                await _send_reports()
-        except Exception:
-            logger.exception("周报扫描异常")
-        await asyncio.sleep(30)
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+@periodic("周报扫描", 30, wait_bot=False)
+async def _scan(_bot) -> None:
+    cfg = await report_config()
+    now = datetime.now()
+    if (
+        cfg["report_enabled"]
+        and now.weekday() == int(cfg["report_weekday"])
+        and now.strftime("%H:%M") == str(cfg["report_time"])
+    ):
+        await _send_reports()

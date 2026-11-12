@@ -8,20 +8,19 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 
-from nonebot import get_driver, on_command
+from nonebot import get_bot, on_command
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.params import CommandArg
 from nonebot.log import logger
 
+from src.background import periodic
 from src.permission import SUPERUSER
 from src.store import get_store
 
 _fired: set[tuple[int, str]] = set()  # (task_id, "YYYY-MM-DD HH:MM") 去重
-_worker_started = False
 REPEAT_LABEL = {
     "daily": "每天", "weekdays": "工作日", "weekend": "周末",
     "weekly": "每周指定日", "once": "仅一次",
@@ -65,39 +64,18 @@ async def _fire(bot, task: dict) -> None:
         logger.exception(f"定时任务 #{task['id']} 发送失败：群 {task['group_id']}")
 
 
-async def _worker() -> None:
-    logger.info("定时任务调度器已启动（每 30 秒扫描）")
-    while True:
-        try:
-            now = datetime.now()
-            key_now = now.strftime("%Y-%m-%d %H:%M")
-            tasks = await get_store().list_tasks(enabled_only=True)
-            for task in tasks:
-                key = (task["id"], key_now)
-                if task["time"] == now.strftime("%H:%M") and key not in _fired \
-                        and _matches_today(task, now):
-                    _fired.add(key)
-                    # 清理 48 小时前的去重记录
-                    for k in [k for k in _fired if k[1] < key_now]:
-                        _fired.discard(k)
-                    await _fire(_get_bot(), task)
-        except Exception:
-            logger.exception("定时任务扫描异常")
-        await asyncio.sleep(30)
-
-
-def _get_bot():
-    from nonebot import get_bot
-
-    return get_bot()
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+@periodic("定时任务扫描", 30, wait_bot=False)
+async def _scan(_bot) -> None:
+    now = datetime.now()
+    key_now = now.strftime("%Y-%m-%d %H:%M")
+    for task in await get_store().list_tasks(enabled_only=True):
+        key = (task["id"], key_now)
+        if task["time"] == now.strftime("%H:%M") and key not in _fired and _matches_today(task, now):
+            _fired.add(key)
+            # 清理旧的去重记录
+            for k in [k for k in _fired if k[1] < key_now]:
+                _fired.discard(k)
+            await _fire(get_bot(), task)
 
 
 task_cmd = on_command("定时任务", aliases={"task"}, rule=SUPERUSER, priority=1, block=True)

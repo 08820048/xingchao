@@ -16,19 +16,19 @@ memory_daily_limit（见 DEFAULTS）。
 
 from __future__ import annotations
 
-import asyncio
 import json
 import re
 import time
 from datetime import datetime
 from typing import Any
 
-from nonebot import get_driver, on_command
+from nonebot import on_command
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent, PrivateMessageEvent
 from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.rule import Rule
 
+from src.background import periodic
 from src.permission import disabled_groups, merged_whitelist
 from src.store import get_store
 
@@ -54,7 +54,6 @@ _SENSITIVE_RE = re.compile(
 
 _last_ts: dict[int, float] = {}
 _daily: dict[tuple[int, str], int] = {}
-_worker_started = False
 
 
 # ---------------------------------------------------------------- 纯函数
@@ -232,28 +231,15 @@ async def consolidate_group(gid: int, *, force: bool = False) -> str:
     return "updated"
 
 
-async def _worker() -> None:
+@periodic("长期记忆整理", SCAN_SECONDS, wait_bot=False)
+async def _scan(_bot) -> None:
     from src.plugins import ai as ai_plugin
 
-    logger.info("长期记忆整理器已启动（每 5 分钟巡检）")
-    while True:
-        try:
-            if await ai_plugin.is_ai_enabled() and await memory_enabled():
-                for gid in sorted(merged_whitelist() - disabled_groups()):
-                    result = await consolidate_group(gid)
-                    if result == "updated":
-                        logger.info(f"群 {gid} 记忆已整理")
-        except Exception:
-            logger.exception("记忆整理异常")
-        await asyncio.sleep(SCAN_SECONDS)
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+    if await ai_plugin.is_ai_enabled() and await memory_enabled():
+        for gid in sorted(merged_whitelist() - disabled_groups()):
+            result = await consolidate_group(gid)
+            if result == "updated":
+                logger.info(f"群 {gid} 记忆已整理")
 
 
 # ---------------------------------------------------------------- 注入

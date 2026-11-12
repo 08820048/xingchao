@@ -28,13 +28,19 @@ def first_bot() -> Bot | None:
     return next((b for b in get_bots().values() if isinstance(b, Bot)), None)
 
 
-def periodic(name: str, seconds: float, *, wait_bot: bool = True):
-    """把 `async def fn(bot)` 注册为周期任务；wait_bot=False 时无 bot 也执行（传入 None）。"""
+def periodic(name: str, seconds: float, *, wait_bot: bool = True, run_first: bool = False):
+    """把 `async def fn(bot)` 注册为周期任务。
+
+    wait_bot=False：没有 bot 连接也执行（传入 None）；run_first=True：启动后先执行一次再开始等待。
+    """
 
     def deco(fn: Callable[[Bot], Awaitable[object]]):
         async def loop() -> None:
+            first = run_first
             while True:
-                await asyncio.sleep(seconds)
+                if not first:
+                    await asyncio.sleep(seconds)
+                first = False
                 try:
                     bot = first_bot()
                     if bot is not None or not wait_bot:

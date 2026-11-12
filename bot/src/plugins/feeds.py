@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import html
 import json
 import re
@@ -26,6 +25,7 @@ from nonebot.adapters.onebot.v11 import Bot
 from nonebot.log import logger
 from nonebot.params import CommandArg
 
+from src.background import periodic
 from src.permission import SUPERUSER
 from src.plugins.scheduler import _matches_today
 from src.store import get_store
@@ -36,7 +36,6 @@ WINDOW_MINUTES = 120  # 从设定时间起最多重试多久
 REPEATS = ("daily", "weekdays", "weekend", "weekly")
 _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 
-_worker_started = False
 _next_try: dict[int, float] = {}  # sub_id -> 下次允许尝试的时间戳
 _failed: dict[int, tuple[str, str]] = {}  # sub_id -> (日期, 最近一次失败原因)
 _notified: set[tuple[int, str]] = set()
@@ -300,24 +299,9 @@ async def _tick(bot) -> None:
             logger.info(f"内容推送 #{sid} 暂未推送（{msg}），{RETRY_INTERVAL // 60} 分钟后重试")
 
 
-async def _worker() -> None:
-    from nonebot import get_bot
-
-    logger.info("内容推送调度器已启动（每 30 秒扫描）")
-    while True:
-        try:
-            await _tick(get_bot())
-        except Exception:
-            logger.exception("内容推送扫描异常")
-        await asyncio.sleep(30)
-
-
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_worker())
+@periodic("内容推送扫描", 30)
+async def _scan(bot: Bot) -> None:
+    await _tick(bot)
 
 
 # ---------------------------------------------------------------- 指令

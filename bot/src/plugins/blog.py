@@ -17,13 +17,14 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
-from nonebot import get_driver, on_command
+from nonebot import on_command
 from nonebot.adapters import Message
 from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src import blog_kb
+from src.background import periodic
 from src.cmdutil import norm_action
 from src.permission import SUPERUSER
 from src.store import get_store
@@ -43,7 +44,6 @@ HINT = (
 
 _index: blog_kb.BlogIndex | None = None
 _refresh_lock = asyncio.Lock()
-_worker_started = False
 
 
 # ---------------------------------------------------------------- 配置 / 状态
@@ -244,23 +244,10 @@ async def status() -> dict[str, Any]:
 
 # ---------------------------------------------------------------- 后台刷新
 
-@get_driver().on_startup
-async def _start_worker() -> None:
-    global _worker_started
-    if _worker_started:
-        return
-    _worker_started = True
-    asyncio.get_event_loop().create_task(_worker())
-
-
-async def _worker() -> None:
-    while True:
-        try:
-            if await is_enabled() and await _is_stale():
-                await refresh(force=True)
-        except Exception:
-            logger.exception("博客知识库后台刷新异常")
-        await asyncio.sleep(_CHECK_INTERVAL)
+@periodic("博客知识库后台刷新", _CHECK_INTERVAL, wait_bot=False, run_first=True)
+async def _scan(_bot) -> None:
+    if await is_enabled() and await _is_stale():
+        await refresh(force=True)
 
 
 # ---------------------------------------------------------------- 指令

@@ -17,18 +17,18 @@ get_group_file_url / mark_group_msg_as_read / set_self_longnick / set_input_stat
 
 from __future__ import annotations
 
-import asyncio
 import time
 from datetime import datetime
 from typing import Any
 
-from nonebot import get_bots, get_driver, on_command
+from nonebot import on_command
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
 from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.background import periodic
 from src.permission import GROUP_WHITELIST, SUPERUSER, disabled_groups, merged_whitelist
 from src.store import get_store
 
@@ -40,7 +40,6 @@ SIGNATURE_MAX = 60
 
 _liked: dict[int, str] = {}          # user_id -> 点过赞的日期
 _last_poke: dict[int, float] = {}    # group_id -> monotonic 时间戳
-_worker_started = False
 
 
 def _err(e: Exception) -> str:
@@ -201,22 +200,7 @@ async def mark_read_once(bot: Bot) -> int:
     return n
 
 
-async def _mark_loop() -> None:
-    while True:
-        await asyncio.sleep(MARK_READ_INTERVAL)
-        try:
-            if await get_store().get_kv("mark_read_enabled") == "false":
-                continue
-            for bot in list(get_bots().values()):
-                if isinstance(bot, Bot):
-                    await mark_read_once(bot)
-        except Exception:
-            logger.exception("已读标记循环异常")
-
-
-@get_driver().on_startup
-async def _start_mark_loop() -> None:
-    global _worker_started
-    if not _worker_started:
-        _worker_started = True
-        asyncio.get_event_loop().create_task(_mark_loop())
+@periodic("已读标记循环", MARK_READ_INTERVAL)
+async def _mark_loop(bot: Bot) -> None:
+    if await get_store().get_kv("mark_read_enabled") != "false":
+        await mark_read_once(bot)
