@@ -1115,7 +1115,7 @@ def build_tools() -> list[tuple[dict, Any]]:
         _tool("cancel_reminder", "取消提问的人自己的某条提醒（先用 list_my_reminders 查编号）",
               {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]},
               "all", _t_reminder_cancel),
-        _tool("set_join_verify", "设置新人入群验证（新人入群后须回答算术题，超时提醒超管或踢出）：enabled 开关，action 为 notify（仅提醒超管）或 kick（踢出，需机器人是管理员），minutes 时限 1–60；不传参数则只查看当前设置",
+        _tool("set_join_verify", "设置新人入群验证（新人入群后须回答算术题；超时或答错 3 次时先在群里 @ 公示并宽限 30 秒，再提醒超管或踢出）：enabled 开关，action 为 notify（仅提醒超管）或 kick（踢出，需机器人是管理员），minutes 时限 1–60；不传参数则只查看当前设置",
               {"type": "object", "properties": {"enabled": {"type": "boolean"}, "action": {"type": "string", "enum": ["notify", "kick"]}, "minutes": {"type": "integer"}}, "required": []},
               "superuser", _t_join_verify),
         _tool("create_poll", "在群里发起投票（2–8 个选项，默认 30 分钟，到时自动公布结果；用户说“发起个投票：晚上吃啥 火锅 烧烤”时使用）",

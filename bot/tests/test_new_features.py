@@ -158,7 +158,25 @@ def test_question_and_answer():
     assert not joinverify.check_answer("111", 11) and not joinverify.check_answer("你好", 11)
 
 
-async def test_join_verify_timeout_actions(store, monkeypatch):
+class _Msg:
+    def __init__(self, text):
+        self._t = text
+
+    def extract_plain_text(self):
+        return self._t
+
+
+class _Ev:
+    def __init__(self, group_id, user_id, text):
+        self.group_id, self.user_id, self.message = group_id, user_id, _Msg(text)
+
+
+def _group_texts(bot):
+    return [str(c[1]["message"]) for c in bot.calls if c[0] == "send_group_msg"]
+
+
+@pytest.fixture
+def jv(store, monkeypatch):
     monkeypatch.setattr(joinverify, "get_store", lambda: store)
     sent = []
 
@@ -167,19 +185,90 @@ async def test_join_verify_timeout_actions(store, monkeypatch):
 
     from src.plugins import appeals
     monkeypatch.setattr(appeals, "notify_superusers", fake_notify)
-    now = time.time()
     joinverify._pending.clear()
-    joinverify._pending[(1, 10)] = joinverify.Pending(5, now - 1, "2+3")
-    joinverify._pending[(1, 11)] = joinverify.Pending(5, now + 100, "2+3")
+    yield sent
+    joinverify._pending.clear()
+
+
+async def test_timeout_announces_in_group_before_punishing(jv):
+    """超时：先在群里 @ 公示并给宽限，宽限过了才踢；公示之前不能动手。"""
+    await joinverify.set_config(action="kick")
+    now = time.time()
+    joinverify._pending[(1, 12)] = joinverify.Pending(5, now - 1, "2+3")
+    joinverify._pending[(1, 13)] = joinverify.Pending(5, now + 100, "2+3")
     bot = _Bot()
     assert await joinverify.handle_timeouts(bot, now) == 1
-    assert "未回答" in sent[0] and bot.calls == [] and (1, 11) in joinverify._pending
+    texts = _group_texts(bot)
+    assert len(texts) == 1 and "未通过" in texts[0] and "超时" in texts[0] and "移出群聊" in texts[0]
+    assert not any(c[0] == "set_group_kick" for c in bot.calls)  # 公示阶段不踢
+    assert jv == []  # 也还没通知超管
 
+    assert await joinverify.handle_timeouts(bot, now + 5) == 0  # 宽限没到，什么都不做
+    assert not any(c[0] == "set_group_kick" for c in bot.calls)
+
+    assert await joinverify.handle_timeouts(bot, now + joinverify.GRACE_SECONDS + 1) == 1
+    kicks = [c for c in bot.calls if c[0] == "set_group_kick"]
+    assert len(kicks) == 1 and kicks[0][1]["user_id"] == 12
+    assert (1, 12) not in joinverify._pending and (1, 13) in joinverify._pending
+    assert "已移出群聊" in _group_texts(bot)[-1] and "移出群" in jv[0]
+
+
+async def test_notify_mode_announces_then_notifies_superusers(jv):
+    now = time.time()
+    joinverify._pending[(1, 10)] = joinverify.Pending(5, now - 1, "2+3")
+    bot = _Bot()
+    await joinverify.handle_timeouts(bot, now)
+    assert "交由管理员处理" in _group_texts(bot)[0] and jv == []
+    await joinverify.handle_timeouts(bot, now + joinverify.GRACE_SECONDS + 1)
+    assert "未通过" in jv[0] and not any(c[0] == "set_group_kick" for c in bot.calls)
+
+
+async def test_answer_during_grace_still_passes(jv):
     await joinverify.set_config(action="kick")
+    now = time.time()
     joinverify._pending[(1, 12)] = joinverify.Pending(5, now - 1, "2+3")
-    assert await joinverify.handle_timeouts(bot, now) == 1
-    assert bot.calls[0][0] == "set_group_kick" and bot.calls[0][1]["user_id"] == 12
-    joinverify._pending.clear()
+    bot = _Bot()
+    await joinverify.handle_timeouts(bot, now)
+    await joinverify.handle_answer(bot, _Ev(1, 12, "5"))
+    assert (1, 12) not in joinverify._pending and "验证通过" in _group_texts(bot)[-1]
+    await joinverify.handle_timeouts(bot, now + 999)
+    assert not any(c[0] == "set_group_kick" for c in bot.calls)
+
+
+async def test_wrong_answers_warn_then_fail_after_max_attempts(jv):
+    await joinverify.set_config(action="kick")
+    joinverify._pending[(1, 12)] = joinverify.Pending(5, time.time() + 300, "2+3")
+    bot = _Bot()
+    await joinverify.handle_answer(bot, _Ev(1, 12, "大家好"))  # 没有数字：不算答错
+    assert joinverify._pending[(1, 12)].attempts == 0 and _group_texts(bot) == []
+
+    await joinverify.handle_answer(bot, _Ev(1, 12, "6"))
+    assert "答案不对" in _group_texts(bot)[-1] and "还有 2 次" in _group_texts(bot)[-1]
+    await joinverify.handle_answer(bot, _Ev(1, 12, "7"))
+    assert "还有 1 次" in _group_texts(bot)[-1]
+    await joinverify.handle_answer(bot, _Ev(1, 12, "8"))  # 第三次错：公示，但还没踢
+    assert "答错了 3 次" in _group_texts(bot)[-1] and "移出群聊" in _group_texts(bot)[-1]
+    assert not any(c[0] == "set_group_kick" for c in bot.calls)
+    p = joinverify._pending[(1, 12)]
+    await joinverify.handle_timeouts(bot, p.punish_at + 1)
+    assert any(c[0] == "set_group_kick" for c in bot.calls)
+
+
+async def test_kick_failure_tells_member_and_admins(jv):
+    await joinverify.set_config(action="kick")
+    now = time.time()
+    joinverify._pending[(1, 12)] = joinverify.Pending(5, now - 1, "2+3")
+
+    class _Fail(_Bot):
+        async def call_api(self, name, **kw):
+            if name == "set_group_kick":
+                raise RuntimeError("no permission")
+            return await super().call_api(name, **kw)
+
+    bot = _Fail()
+    await joinverify.handle_timeouts(bot, now)
+    await joinverify.handle_timeouts(bot, now + joinverify.GRACE_SECONDS + 1)
+    assert "踢出失败" in jv[0] and "已通知管理员" in _group_texts(bot)[-1]
 
 
 async def test_join_verify_config_clamped(store, monkeypatch):
