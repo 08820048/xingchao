@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, BookOpen, ClipboardList, Gavel, LogOut, MessageSquareText, Newspaper, ShieldAlert, Clock3, Sparkles, UserCog, UserPlus, Users } from "lucide-react";
+import { Activity, BookOpen, ClipboardList, Gavel, LogOut, Megaphone, MessageSquareText, Newspaper, ShieldAlert, Clock3, Sparkles, UserCog, UserPlus, Users } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { RepliesTab } from "@/pages/replies";
@@ -14,6 +14,7 @@ import { StatsTab } from "@/pages/stats";
 import { PunishmentsTab } from "@/pages/punishments";
 import { AiTab } from "@/pages/ai";
 import { FeedsTab } from "@/pages/feeds";
+import { AdsTab } from "@/pages/ads";
 import { GroupsTab, SuperusersTab } from "@/pages/groups";
 import { ThemeToggle } from "@/components/theme";
 import { Toast } from "@/components/toast";
@@ -33,6 +34,7 @@ const NAV = [
   { id: "punishments", label: "违规记录", icon: Gavel },
   { id: "tasks", label: "定时任务", icon: Clock3 },
   { id: "feeds", label: "内容推送", icon: Newspaper },
+  { id: "ads", label: "广告", icon: Megaphone },
 ] as const;
 
 function PanelApp() {
@@ -143,6 +145,7 @@ function PanelApp() {
           {tab === "punishments" && <PunishmentsTab toast={toast} />}
           {tab === "tasks" && <TasksTab toast={toast} />}
           {tab === "feeds" && <FeedsTab toast={toast} />}
+          {tab === "ads" && <AdsTab toast={toast} />}
         </div>
       </SidebarInset>
       {toastState && <Toast text={toastState.t} ok={toastState.ok} />}

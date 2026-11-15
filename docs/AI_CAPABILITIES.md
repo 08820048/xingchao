@@ -109,6 +109,7 @@
 | `/申诉 <理由>` | —（私聊指令：AI 私聊仅超管可用，被处罚者多为普通成员，故未接入 AI 工具；处理见下一行） | 被处罚者 | 对敏感词处罚有异议时私聊说明理由 |
 | `/申诉列表` `/申诉查看 <编号>` `/申诉通过 <编号> [备注]` `/申诉驳回 <编号> [理由]` | `list_appeals` / `resolve_appeal` | 超管 | 「有没有待处理的申诉」「通过 5 号申诉」「驳回 5 号，理由：确实是广告」 |
 | `/欢迎语 查看/设置/开/关` | `get_welcome` / `set_welcome` / `set_welcome_enabled` | 超管 | 「把欢迎语改成……」 |
+| `/广告` / `/广告 报价` / `/广告 设置\|合作\|动作\|冷却\|通知` | `get_ad_policy`（所有人）、`set_ad_policy`（超管） | 见左 | 「你们接广告吗」「广告怎么收费」「把广告报价改成单次 50」「把 12345 加进广告合作方」 |
 | `/公告 <内容>` / `/公告 列表` | `publish_group_notice` / `get_group_notices` | 超管 | 「发个公告说周五维护」 |
 | —（内置能力） | `send_group_message` | 超管 | 「在群 123 里说一句：今晚八点活动开始」 |
 | `/定时任务 列表` | `list_scheduled_tasks` / `create_scheduled_task` / `delete_scheduled_task` / `toggle_scheduled_task` | 超管 | 「现在有哪些定时任务」「每天 9 点在群里提醒大家签到」「把 3 号任务停掉」 |

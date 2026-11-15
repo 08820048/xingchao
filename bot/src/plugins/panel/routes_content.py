@@ -21,6 +21,16 @@ from .common import (
 )
 
 
+async def _welcome_text() -> str:
+    """当前欢迎语（读不到就返回空串，仅用于「是否含 {ad} 占位符」提示）。"""
+    try:
+        from src.plugins import groupadmin as groupadmin_plugin
+
+        return await groupadmin_plugin.get_welcome_text()
+    except Exception:
+        return ""
+
+
 def register(app) -> None:
     @app.get("/panel/api/replies")
     async def panel_replies_get(request: Request) -> JSONResponse:
@@ -127,6 +137,100 @@ def register(app) -> None:
             logger.exception("面板保存欢迎配置失败")
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         return JSONResponse({"ok": True, "data": {"message": "进群欢迎配置已保存并生效"}})
+
+    @app.get("/panel/api/ads")
+    async def panel_ads_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import ads as ads_plugin
+
+        cfg = await ads_plugin.ad_config()
+        return JSONResponse(
+            {
+                "ok": True,
+                "data": {
+                    "enabled": cfg["ad_enabled"],
+                    "text": cfg["ad_text"],
+                    "price": cfg["ad_price"],
+                    "contact": cfg["ad_contact"],
+                    "partners": cfg["ad_partners"],
+                    "action": cfg["ad_action"],
+                    "actions": ads_plugin.ACTION_LABEL,
+                    "notify": cfg["ad_notify"],
+                    "cooldown": cfg["ad_cooldown"],
+                    "welcome_line": ads_plugin.AD_WELCOME_LINE,
+                    "welcome_has_placeholder": "{ad}" in await _welcome_text(),
+                },
+            }
+        )
+
+    @app.post("/panel/api/ads")
+    async def panel_ads_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import ads as ads_plugin
+
+        body = await request.json()
+        updates: dict[str, str] = {}
+        if "enabled" in body:
+            if not isinstance(body["enabled"], bool):
+                return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
+            updates["ad_enabled"] = "true" if body["enabled"] else "false"
+        if "notify" in body:
+            if not isinstance(body["notify"], bool):
+                return JSONResponse({"ok": False, "error": "notify 应为布尔值"}, status_code=400)
+            updates["ad_notify"] = "true" if body["notify"] else "false"
+        if "text" in body:
+            text = str(body["text"]).strip()
+            if not text:
+                return JSONResponse({"ok": False, "error": "招商说明不能为空"}, status_code=400)
+            if len(text) > ads_plugin.MAX_AD_TEXT:
+                return JSONResponse(
+                    {"ok": False, "error": f"招商说明过长（上限 {ads_plugin.MAX_AD_TEXT} 字）"},
+                    status_code=400,
+                )
+            updates["ad_text"] = text
+        if "price" in body:
+            price = str(body["price"]).strip()
+            if len(price) > ads_plugin.MAX_AD_PRICE:
+                return JSONResponse(
+                    {"ok": False, "error": f"报价过长（上限 {ads_plugin.MAX_AD_PRICE} 字）"},
+                    status_code=400,
+                )
+            updates["ad_price"] = price
+        if "contact" in body:
+            contact = str(body["contact"]).strip().lstrip("@")
+            if contact and not contact.isdigit():
+                return JSONResponse({"ok": False, "error": "联系人应为 QQ 号"}, status_code=400)
+            updates["ad_contact"] = contact
+        if "action" in body:
+            action = str(body["action"]).strip()
+            if action not in ads_plugin.ACTION_LABEL:
+                return JSONResponse(
+                    {"ok": False, "error": "action 应为 reply / silent / log"}, status_code=400
+                )
+            updates["ad_action"] = action
+        if "cooldown" in body:
+            try:
+                seconds = int(body["cooldown"])
+            except (TypeError, ValueError):
+                return JSONResponse({"ok": False, "error": "cooldown 应为秒数"}, status_code=400)
+            updates["ad_cooldown"] = str(max(0, min(seconds, 86400)))
+        if "partners" in body:
+            if not isinstance(body["partners"], list):
+                return JSONResponse({"ok": False, "error": "partners 应为数组"}, status_code=400)
+            partners = ads_plugin.parse_partners(body["partners"])
+            updates["ad_partners"] = json.dumps(partners)
+        if not updates:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        store = get_store()
+        try:
+            for key, value in updates.items():
+                await store.set_kv(key, value)
+        except Exception:
+            logger.exception("面板保存广告配置失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        return JSONResponse({"ok": True, "data": {"message": "广告配置已保存并生效"}})
 
     @app.get("/panel/api/report")
     async def panel_report_get(request: Request) -> JSONResponse:

@@ -19,6 +19,7 @@ export type Status = {
   vision_guard_enabled: boolean;
   proactive_enabled: boolean;
   blog_enabled: boolean;
+  ad_enabled: boolean;
   log_files: string[];
   today: string;
 };
@@ -136,6 +137,18 @@ export function Dashboard({
             <Switch
               checked={status.blog_enabled}
               onCheckedChange={(v) => setModule("blog", v)}
+            />
+          </div>
+          <div className="border-input flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">广告招商</p>
+              <p className="text-muted-foreground text-xs">
+                群内自发广告自动撤回并引导商务合作，合作方放行
+              </p>
+            </div>
+            <Switch
+              checked={status.ad_enabled}
+              onCheckedChange={(v) => setModule("ads", v)}
             />
           </div>
         </CardPanel>

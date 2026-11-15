@@ -47,6 +47,7 @@ data/xingchao.db + data/replies.json + data/logs/
 - 二维码引流风控（默认开，面板「仪表盘 → 图片与二维码审核」可配）：本地解码图片中的二维码
   （不耗 AI，AI 不可用也生效），命中微信群 / 微信个人号 / 企业微信 / QQ 群等引流码时
   撤回 + 禁言（默认 15 分钟）+ 通知超管；拦截类型、禁言时长可随时调整
+- 广告招商与群内广告治理（面板「广告」页 + `/广告`）：`/广告` 输出合作说明、报价与联系人，有人问「能发广告吗」会直接把这份说明发给他；进群欢迎可用 `{ad}` 占位符插入一句「如果你认为你的产品有价值，请联系管理员进行广告报价」；群里出现自发广告时按规则识别（不耗 AI），默认撤回并在群里提醒走商务合作、私聊通知超管，合作方名单（`/广告 合作 添加 <QQ>`）发言一律放行；处理记录进「违规记录」，可申诉
 - 群聊感知（白名单群，`/模块 感知 开|关`）：机器人在内存里保留每群最近的聊天（含图片说明、
   引用、@、机器人自己的发言），被 @ 时据此回答「刚才在聊什么 / 这张图是什么」；用户 @ 时附带或
   引用的图片会即时识别；不落盘，重启清空，消息被撤回即移除
@@ -163,6 +164,7 @@ xingchao/
 │           ├── awareness.py / proactive.py / feedback.py     # 群聊感知 / 主动发言 / 表情反馈
 │           ├── expressions.py / stickers.py / selfie.py / voice.py  # 表情 / 表情包 / 自拍 / 语音
 │           ├── sensitive.py / appeals.py / visionguard.py / ocr.py / urlsafety.py  # 内容安全
+│           ├── ads.py        # 广告招商与群内自发广告治理
 │           ├── linkpreview.py / blog.py / github.py / feeds.py  # 链接解读 / 博客知识 / GitHub / 内容推送
 │           ├── scheduler.py / weeklyreport.py / presence.py / updates.py / backup.py  # 定时 / 周报 / 上下线 / 公告 / 备份
 │           ├── webtools.py / reminders.py / polls.py / imagegen.py  # 搜索天气汇率 / 个人提醒 / 投票 / 绘图

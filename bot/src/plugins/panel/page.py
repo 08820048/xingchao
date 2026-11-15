@@ -123,6 +123,7 @@ async function loadStatus() {
     <div><span>词条数</span><b>${d.replies}</b></div>
     <div><span>关键词模块</span><b class="tag ${d.reply_enabled?'':'off'}">${d.reply_enabled?'开启':'关闭'}</b></div>
     <div><span>进群欢迎</span><b class="tag ${d.welcome_enabled?'':'off'}">${d.welcome_enabled?'开启':'关闭'}</b></div>
+    <div><span>广告招商</span><b class="tag ${d.ad_enabled?'':'off'}">${d.ad_enabled?'开启':'关闭'}</b></div>
     <div><span>插件</span><b style="font-size:13px">${d.plugins.join(' / ')}</b></div>
   </div></div>`));
 }

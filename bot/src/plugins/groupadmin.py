@@ -3,7 +3,8 @@
 - 目标用户通过 @提及 指定（/禁言 @某人 10）
 - /recall 可回复目标消息后发送，或直接带 message_id
 - 机器人小号必须是群管理员，API 失败（权限不足等）时友好提示，不抛崩
-- 新人进群欢迎（白名单群），可通过 /plugin welcome on|off 开关（持久化 kv）
+- 新人进群欢迎（白名单群），可通过 /plugin welcome on|off 开关（持久化 kv）；
+  占位符 {at}/{qq}/{group}，以及 {ad}（展开成一行广告招商提示，文案见 ads.py）
 """
 
 from __future__ import annotations
@@ -244,13 +245,19 @@ async def handle_welcome(matcher: Matcher, args: Message = CommandArg()) -> None
         await _send(
             welcome_cmd,
             "用法：/欢迎语 开|关、/欢迎语 查看、/欢迎语 设置 <欢迎语>\n"
-            "占位符：{at}=@新人，{qq}=新人QQ，{group}=群号",
+            f"占位符：{WELCOME_PLACEHOLDERS}",
         )
 
 
 DEFAULT_WELCOME_TEXT = (
     "欢迎进群～发送 /帮助 查看我能做什么。\n"
-    "我会记住大家聊过的兴趣爱好来更好地聊天，发送 /记忆 可查看、/忘记我 可清除并停止记录。"
+    "我会记住大家聊过的兴趣爱好来更好地聊天，发送 /记忆 可查看、/忘记我 可清除并停止记录。\n"
+    "{ad}"
+)
+
+WELCOME_PLACEHOLDERS = (
+    "{at} = @新人，{qq} = 新人 QQ，{group} = 群号，"
+    "{ad} = 广告招商提示（内容可在广告系统里配）"
 )
 
 
@@ -264,8 +271,9 @@ async def get_welcome_text() -> str:
     return value if value else DEFAULT_WELCOME_TEXT
 
 
-def render_welcome(text: str, user_id: int, group_id: int) -> Message:
-    """渲染欢迎语：{at} = @新人，{qq} = 新人 QQ，{group} = 群号。"""
+def render_welcome(text: str, user_id: int, group_id: int, ad_line: str = "") -> Message:
+    """渲染欢迎语：{at} = @新人，{qq} = 新人 QQ，{group} = 群号，{ad} = 广告招商提示。"""
+    text = text.replace("{ad}", ad_line)
     msg = Message()
     for i, part in enumerate(text.split("{at}")):
         if i:
@@ -280,7 +288,12 @@ async def handle_welcome_notice(bot: Bot, event: GroupIncreaseNoticeEvent) -> No
         return  # 机器人自己进群不欢迎
     if not await is_welcome_enabled():
         return
-    message = render_welcome(await get_welcome_text(), event.user_id, event.group_id)
+    from src.plugins import ads as ads_plugin
+
+    message = render_welcome(
+        await get_welcome_text(), event.user_id, event.group_id,
+        ad_line=await ads_plugin.ad_welcome_line(),
+    )
     try:
         await bot.call_api("send_group_msg", group_id=event.group_id, message=message)
     except MatcherException:

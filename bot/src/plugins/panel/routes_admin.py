@@ -191,14 +191,15 @@ def register(app) -> None:
         body = await request.json()
         key = str(body.get("key", ""))
         enabled = body.get("enabled")
-        if key not in ("reply", "welcome", "link", "vision", "proactive", "blog") or not isinstance(enabled, bool):
+        if key not in ("reply", "welcome", "link", "vision", "proactive", "blog", "ads") or not isinstance(enabled, bool):
             return JSONResponse(
-                {"ok": False, "error": "key 应为 reply/welcome/link/vision/proactive/blog，enabled 应为布尔值"}, status_code=400
+                {"ok": False, "error": "key 应为 reply/welcome/link/vision/proactive/blog/ads，enabled 应为布尔值"}, status_code=400
             )
         kv_key = {
             "link": "link_preview_enabled",
             "vision": "vision_guard_enabled",
             "proactive": "proactive_enabled",
+            "ads": "ad_enabled",
         }.get(key, f"{key}_enabled")
         try:
             await get_store().set_kv(kv_key, "true" if enabled else "false")
@@ -214,6 +215,7 @@ def register(app) -> None:
             "vision": "图片识别与违规处理",
             "proactive": "群聊主动性",
             "blog": "博客知识关联推荐",
+            "ads": "广告招商",
         }
         return JSONResponse(
             {"ok": True, "data": {"message": f"{labels[key]}已{'开启' if enabled else '关闭'}"}}

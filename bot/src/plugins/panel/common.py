@@ -128,6 +128,7 @@ async def _status_payload() -> dict[str, Any]:
     vision_guard_enabled = await store.get_kv("vision_guard_enabled")
     proactive_enabled = await store.get_kv("proactive_enabled")
     blog_enabled = await store.get_kv("blog_enabled")
+    ad_enabled = await store.get_kv("ad_enabled")
     log_dir = cfg.xingchao_log_dir
     log_files = sorted(log_dir.glob("group-*.jsonl")) if log_dir.exists() else []
     names = sorted(
@@ -147,6 +148,7 @@ async def _status_payload() -> dict[str, Any]:
         "vision_guard_enabled": vision_guard_enabled != "false",
         "proactive_enabled": proactive_enabled != "false",
         "blog_enabled": blog_enabled != "false",
+        "ad_enabled": ad_enabled != "false",
         "log_files": [f.name for f in log_files],
         "today": datetime.now().astimezone().strftime("%Y-%m-%d"),
     }

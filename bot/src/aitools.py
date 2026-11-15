@@ -335,6 +335,75 @@ async def _t_welcome_toggle(bot, event, args) -> str:
     return f"新人进群欢迎已{'开启' if enable else '关闭'}。"
 
 
+async def _t_ad_policy(bot, event, args) -> str:
+    from src.plugins import ads as ads_plugin
+
+    cfg = await ads_plugin.ad_config()
+    return _j({
+        "招商开启": cfg["ad_enabled"],
+        "招商说明": cfg["ad_text"],
+        "报价": cfg["ad_price"],
+        "联系人QQ": cfg["ad_contact"],
+        "合作方QQ": cfg["ad_partners"],
+        "命中处理": ads_plugin.ACTION_LABEL.get(cfg["ad_action"], cfg["ad_action"]),
+        "命中通知超管": cfg["ad_notify"],
+        "提示冷却秒": cfg["ad_cooldown"],
+    })
+
+
+async def _t_ad_set(bot, event, args) -> str:
+    from src.plugins import ads as ads_plugin
+
+    updates: list[str] = []
+    store = get_store()
+    if "enabled" in args and args["enabled"] is not None:
+        enable = bool(args["enabled"])
+        await store.set_kv("ad_enabled", "true" if enable else "false")
+        updates.append(f"招商{'开启' if enable else '关闭'}")
+    if args.get("text"):
+        text = str(args["text"]).strip()
+        if len(text) > ads_plugin.MAX_AD_TEXT:
+            return f"错误：招商说明过长（上限 {ads_plugin.MAX_AD_TEXT} 字）。"
+        await store.set_kv("ad_text", text)
+        updates.append("招商说明已更新")
+    if args.get("price"):
+        price = str(args["price"]).strip()
+        if len(price) > ads_plugin.MAX_AD_PRICE:
+            return f"错误：报价过长（上限 {ads_plugin.MAX_AD_PRICE} 字）。"
+        await store.set_kv("ad_price", price)
+        updates.append("报价已更新")
+    if args.get("contact"):
+        contact = str(args["contact"]).strip().lstrip("@")
+        if not contact.isdigit():
+            return "错误：contact 应为 QQ 号。"
+        await store.set_kv("ad_contact", contact)
+        updates.append(f"联系人设为 {contact}")
+    if args.get("action"):
+        key = ads_plugin._ACTION_ALIASES.get(str(args["action"]).strip().lower())
+        key = key or ads_plugin._ACTION_ALIASES.get(str(args["action"]).strip())
+        if not key:
+            return "错误：action 只能是 reply / silent / log。"
+        await store.set_kv("ad_action", key)
+        updates.append(f"命中处理设为{ads_plugin.ACTION_LABEL[key]}")
+    if args.get("partner_add"):
+        partners = await ads_plugin.ad_partners()
+        uid = int(args["partner_add"])
+        if uid not in partners:
+            partners.append(uid)
+            await ads_plugin.save_partners(partners)
+            updates.append(f"{uid} 加入合作方")
+    if args.get("partner_remove"):
+        partners = await ads_plugin.ad_partners()
+        uid = int(args["partner_remove"])
+        if uid in partners:
+            partners.remove(uid)
+            await ads_plugin.save_partners(partners)
+            updates.append(f"{uid} 移出合作方")
+    if not updates:
+        return "错误：没有可修改的字段。"
+    return "；".join(updates) + "。"
+
+
 async def _t_notice_publish(bot, event, args) -> str:
     content = str(args.get("content", "")).strip()
     group_id = args.get("group_id") or getattr(event, "group_id", None)
@@ -1202,6 +1271,20 @@ def build_tools() -> list[tuple[dict, Any]]:
         _tool("set_blog_enabled", "开启/关闭博客知识关联推荐（关闭后 AI 不再优先推荐博客内容）",
               {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]},
               "superuser", _t_blog_toggle),
+        _tool("get_ad_policy", "查看群广告招商政策（招商说明、报价、联系人、合作方名单与命中处理方式）；有人问“你们接广告吗/广告怎么收费”时先调用本工具",
+              {"type": "object", "properties": {}, "required": []},
+              "all", _t_ad_policy),
+        _tool("set_ad_policy", "修改广告招商政策（招商说明/报价/联系人/开关/命中处理/reply 静默 log/合作方增删）",
+              {"type": "object", "properties": {
+                  "enabled": {"type": "boolean", "description": "广告招商功能开关"},
+                  "text": {"type": "string", "description": "招商说明正文"},
+                  "price": {"type": "string", "description": "报价单正文"},
+                  "contact": {"type": "string", "description": "广告对接人 QQ 号"},
+                  "action": {"type": "string", "enum": ["reply", "silent", "log"], "description": "群里检测到广告时的处理：reply=撤回并提示 / silent=只撤回 / log=只通知超管"},
+                  "partner_add": {"type": "integer", "description": "加入广告合作方的 QQ（其发言不会被当广告撤回）"},
+                  "partner_remove": {"type": "integer", "description": "移出广告合作方的 QQ"},
+              }, "required": []},
+              "superuser", _t_ad_set),
         _tool("get_welcome", "查看进群欢迎语及开关状态",
               {"type": "object", "properties": {}, "required": []},
               "superuser", _t_welcome_view),

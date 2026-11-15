@@ -25,3 +25,4 @@ logs/
 .idea/
 .vscode/
 napcat/cache/
+.alma-snapshots
