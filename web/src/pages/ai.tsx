@@ -109,6 +109,147 @@ function ActivityCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   );
 }
 
+
+type SearchData = {
+  chain: string[];
+  providers: { key: string; label: string; ready: boolean; note: string }[];
+  daily_limit: number;
+  used_today: number;
+  cache_ttl: number;
+  need_content: boolean;
+  native_search: boolean;
+  native_ready: boolean;
+};
+
+function SearchCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [d, setD] = useState<SearchData | null>(null);
+  const [test, setTest] = useState("");
+  const [sample, setSample] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: SearchData }>("/panel/api/search").then((r) => {
+      if (r.ok) setD(r.data);
+    });
+  }, []);
+  useEffect(load, [load]);
+  if (!d) return <Spinner className="m-8" />;
+
+  const save = async (body: Record<string, unknown>, okMsg = "已保存") => {
+    setBusy(true);
+    const r = await post("/panel/api/search", body);
+    setBusy(false);
+    if (r.ok) { toast(r.data?.message || okMsg); load(); } else toast(r.error || "保存失败", false);
+  };
+
+  const toggle = (key: string) => {
+    const on = d.chain.includes(key);
+    const chain = on ? d.chain.filter((k) => k !== key) : [...d.chain, key];
+    if (!chain.length) { toast("至少保留一个搜索源", false); return; }
+    save({ chain });
+  };
+
+  const move = (key: string, dir: -1 | 1) => {
+    const chain = [...d.chain];
+    const i = chain.indexOf(key);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= chain.length) return;
+    [chain[i], chain[j]] = [chain[j], chain[i]];
+    save({ chain });
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">联网搜索</CardTitle>
+        <CardDescription>
+          按顺序尝试，前一个失败自动换下一个。DeepSeek 官方搜索最稳（复用 AI 密钥，失败不计费），
+          DuckDuckGo 是网页抓取，服务器 IP 常被判定成机器人
+        </CardDescription>
+      </CardHeader>
+      <CardPanel className="grid gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="grid gap-0.5">
+            <Label>原生联网搜索</Label>
+            <span className="text-muted-foreground text-xs">
+              让 DeepSeek 模型自己判断要不要联网、边想边搜，回答带引用
+              {d.native_search && !d.native_ready ? "（当前不可用：需 DeepSeek 模型 + 官方地址 + 密钥）" : ""}
+            </span>
+          </div>
+          <Switch
+            checked={d.native_search}
+            onCheckedChange={(v) => save({ native_search: v })}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label>搜索源顺序（点名称启停，箭头调顺序）</Label>
+          {d.providers.map((p) => {
+            const on = d.chain.includes(p.key);
+            const idx = d.chain.indexOf(p.key);
+            return (
+              <div key={p.key} className="border-input flex flex-wrap items-center gap-2 rounded-lg border p-2.5">
+                <Badge variant={on ? "default" : "secondary"}>{on ? `#${idx + 1}` : "未启用"}</Badge>
+                <span className="text-sm">{p.label}</span>
+                <span className={`text-xs ${p.ready ? "text-muted-foreground" : "text-destructive"}`}>
+                  {p.note}
+                </span>
+                <div className="ml-auto flex items-center gap-1">
+                  {on && (
+                    <>
+                      <Button size="sm" variant="outline" disabled={busy || idx === 0} onClick={() => move(p.key, -1)}>↑</Button>
+                      <Button size="sm" variant="outline" disabled={busy || idx === d.chain.length - 1} onClick={() => move(p.key, 1)}>↓</Button>
+                    </>
+                  )}
+                  <Button size="sm" variant={on ? "outline" : "default"} disabled={busy} onClick={() => toggle(p.key)}>
+                    {on ? "停用" : "启用"}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sd-limit">每日上限（次）</Label>
+            <Input id="sd-limit" type="number" defaultValue={d.daily_limit}
+              onBlur={(e) => save({ daily_limit: +e.target.value || 0 }) } />
+            <span className="text-muted-foreground text-xs">今日已用 {d.used_today} 次（只有成功才计数）</span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="sd-cache">结果缓存（秒）</Label>
+            <Input id="sd-cache" type="number" defaultValue={d.cache_ttl}
+              onBlur={(e) => save({ cache_ttl: +e.target.value || 0 })} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>抓取正文</Label>
+            <div className="flex h-8 items-center gap-2">
+              <Switch checked={d.need_content} onCheckedChange={(v) => save({ need_content: v })} />
+              <span className="text-muted-foreground text-xs">更详尽但更慢</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="sd-test">测试一次</Label>
+          <div className="flex gap-2">
+            <Input id="sd-test" placeholder="搜索词，如 DeepSeek" value={test}
+              onChange={(e) => setTest(e.target.value)} />
+            <Button variant="outline" disabled={busy} onClick={async () => {
+              setBusy(true); setSample("");
+              const r = await post("/panel/api/search", { test: test.trim() || "DeepSeek" });
+              setBusy(false);
+              if (r.ok) { toast(r.data.message); setSample(r.data.sample || ""); }
+              else toast(r.error || "测试失败", false);
+            }}>测试</Button>
+          </div>
+          {sample && <pre className="bg-muted/50 max-h-56 overflow-auto rounded-lg p-3 text-xs whitespace-pre-wrap">{sample}</pre>}
+        </div>
+      </CardPanel>
+    </Card>
+  );
+}
+
 type PersonaData = {
   card: Record<string, string>;
   labels: Record<string, string>;
@@ -283,6 +424,7 @@ export function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
   return (
     <div className="grid gap-4">
       <ActivityCard toast={toast} />
+      <SearchCard toast={toast} />
       <PersonaCard toast={toast} />
       <MemoryCard toast={toast} />
 

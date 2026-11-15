@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -128,6 +129,89 @@ def register(app) -> None:
             logger.exception("面板保存 AI 配置失败")
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         return JSONResponse({"ok": True, "data": {"message": "AI 配置已保存并生效"}})
+
+    @app.get("/panel/api/search")
+    async def panel_search_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import ai as ai_plugin
+        from src.plugins import webtools
+
+        chain = await webtools.search_chain()
+        cfg = await ai_plugin.ai_config()
+        return JSONResponse({
+            "ok": True,
+            "data": {
+                "chain": chain,
+                "providers": await webtools.provider_status(),
+                "daily_limit": int(await webtools._kv("search_daily_limit")),
+                "used_today": await webtools._used_today(),
+                "cache_ttl": int(await webtools._kv("search_cache_ttl")),
+                "need_content": bool(await webtools._kv("search_need_content")),
+                "native_search": bool(cfg["ai_native_search"]),
+                "native_ready": await ai_plugin.native_search_ready(cfg),
+            },
+        })
+
+    @app.post("/panel/api/search")
+    async def panel_search_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import webtools
+
+        body = await request.json()
+        store = get_store()
+        updates: dict[str, str] = {}
+
+        if "chain" in body:
+            chain = webtools._parse_chain(body["chain"])
+            if not chain:
+                return JSONResponse({"ok": False, "error": "至少保留一个搜索源"}, status_code=400)
+            updates["search_providers"] = json.dumps(chain)
+        if "daily_limit" in body:
+            try:
+                limit = int(body["daily_limit"])
+            except (TypeError, ValueError):
+                return JSONResponse({"ok": False, "error": "每日上限应为整数"}, status_code=400)
+            if not (0 <= limit <= 100000):
+                return JSONResponse({"ok": False, "error": "每日上限应在 0-100000 之间"}, status_code=400)
+            updates["search_daily_limit"] = str(limit)
+        if "cache_ttl" in body:
+            try:
+                ttl = int(body["cache_ttl"])
+            except (TypeError, ValueError):
+                return JSONResponse({"ok": False, "error": "缓存时长应为秒数"}, status_code=400)
+            updates["search_cache_ttl"] = str(max(0, min(ttl, 86400)))
+        for flag, key in (("need_content", "search_need_content"),
+                          ("native_search", "ai_native_search")):
+            if flag in body:
+                if not isinstance(body[flag], bool):
+                    return JSONResponse({"ok": False, "error": f"{flag} 应为布尔值"}, status_code=400)
+                updates[key] = "true" if body[flag] else "false"
+
+        if "test" in body:
+            query = str(body["test"]).strip() or "DeepSeek"
+            webtools._reset_state()  # 测试不受缓存影响
+            results, note = await webtools.search(query)
+            if results is None:
+                return JSONResponse({"ok": False, "error": note}, status_code=200)
+            return JSONResponse({
+                "ok": True,
+                "data": {
+                    "message": f"搜索成功，返回 {len(results)} 条" if results else "搜索源正常，但没有结果",
+                    "sample": webtools.format_results(results[:3]) if results else "",
+                },
+            })
+
+        if not updates:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        try:
+            for key, value in updates.items():
+                await store.set_kv(key, value)
+        except Exception:
+            logger.exception("面板保存搜索配置失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        return JSONResponse({"ok": True, "data": {"message": "搜索配置已保存并生效"}})
 
     @app.post("/panel/api/ai/models")
     async def panel_ai_models(request: Request) -> JSONResponse:

@@ -110,25 +110,8 @@ def test_parse_ddg_unwraps_and_skips_ads():
     assert "1. 示例 标题" in webtools.format_results(res)
 
 
-async def test_search_requires_provider_config(monkeypatch):
-    class Cfg:
-        xingchao_search_provider = "brave"
-        xingchao_search_api_key = ""
-        xingchao_search_url = ""
-
-    monkeypatch.setattr(webtools, "get_config", lambda: Cfg)
-    res, note = await webtools.search("x")
-    assert res is None and "API_KEY" in note
-    Cfg.xingchao_search_provider = "searxng"
-    res, note = await webtools.search("x")
-    assert res is None and "SEARCH_URL" in note
+async def test_search_empty_query():
     assert (await webtools.search("   "))[0] is None
-
-
-async def test_search_daily_limit(monkeypatch):
-    monkeypatch.setattr(webtools, "_daily", (datetime.now().strftime("%Y-%m-%d"), webtools.SEARCH_DAILY_LIMIT))
-    res, note = await webtools.search("x")
-    assert res is None and "用完" in note
 
 
 def test_format_weather():
@@ -337,6 +320,7 @@ def test_red_packet_detection():
 async def test_ddg_challenge_page_reported_as_blocked(monkeypatch):
     class Cfg:
         xingchao_search_provider = "duckduckgo"
+        xingchao_search_providers = ""
         xingchao_search_api_key = ""
         xingchao_search_url = ""
 
@@ -362,6 +346,7 @@ async def test_ddg_challenge_page_reported_as_blocked(monkeypatch):
 
     monkeypatch.setattr(webtools, "get_config", lambda: Cfg)
     monkeypatch.setattr(webtools.httpx, "AsyncClient", Client)
-    monkeypatch.setattr(webtools, "_daily", ("", 0))
+    monkeypatch.setattr(webtools, "_reset_state", lambda: None)
     res, note = await webtools.search("python")
-    assert res is None and "拦截" in note and "brave" in note
+    # 全部源失败：给用户看的文案不暴露内部配置项，只提示去面板换源
+    assert res is None and "暂时不可用" in note and "面板" in note

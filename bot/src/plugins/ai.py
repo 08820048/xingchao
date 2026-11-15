@@ -39,7 +39,8 @@ from src.store import get_store
 
 # ---------------------------------------------------------------- 配置（kv）
 
-_KV_KEYS = ("ai_enabled", "ai_model", "ai_vision_model", "ai_system_prompt", "ai_ctx_rounds", "ai_limit_group", "ai_limit_user")
+_KV_KEYS = ("ai_enabled", "ai_model", "ai_vision_model", "ai_system_prompt", "ai_ctx_rounds",
+            "ai_limit_group", "ai_limit_user", "ai_native_search")
 
 DEFAULTS: dict[str, Any] = {
     "ai_enabled": True,
@@ -61,7 +62,41 @@ DEFAULTS: dict[str, Any] = {
     "ai_ctx_rounds": 5,
     "ai_limit_group": 100,
     "ai_limit_user": 20,
+    # 原生联网搜索：DeepSeek 服务端工具（deepseek_web_search），模型自己决定搜不搜、
+    # 直接带引用作答。仅当模型/地址是 DeepSeek 时生效；不支持会被自动关掉（见 _NATIVE_SEARCH_TOOL）
+    "ai_native_search": True,
 }
+
+# DeepSeek 服务端搜索工具：声明在 tools 里即可，由服务端执行，客户端不用实现
+_NATIVE_SEARCH_TOOL = {"type": "deepseek_web_search"}
+_native_search_supported = True  # 服务端拒绝一次后置 False，避免每轮都试
+
+
+async def native_search_ready(cfg: dict[str, Any]) -> bool:
+    """当前是否可以用 DeepSeek 原生联网搜索。
+
+    条件：开关打开 + 模型是 deepseek 系 + 地址指向 api.deepseek.com + 有密钥。
+    自定义 OpenAI 兼容中转站不支持这个工具，一律不声明。
+    """
+    global _native_search_supported
+    if not _native_search_supported:
+        return False
+    if not bool(cfg.get("ai_native_search")):
+        return False
+    if not str(cfg.get("ai_model", "")).lower().startswith("deepseek"):
+        return False
+    base, key = await _ai_creds()
+    if not key or "deepseek.com" not in (base or "").lower():
+        return False
+    return True
+
+
+def _drop_native_tool(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    if not tools:
+        return tools
+    kept = [t for t in tools if t.get("type") != "deepseek_web_search"]
+    return kept or None
+
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEEPSEEK_DEFAULT_MODEL = "deepseek-chat"
@@ -350,6 +385,8 @@ CAPABILITY_RULES = (
     "4. 权限边界：{permission}\n"
     "5. 参数不明确（没说禁言谁、多久、哪个群）就一句话追问，不要瞎猜，也不要直接拒绝。\n"
     "6. 工具失败如实说明原因（例如“需要先把我设为群管理员”），不编造结果。\n"
+    "   联网搜索失败时尤其重要：说一句“搜不到/网络有问题”，绝不能用记忆里的旧信息冒充\n"
+    "   刚搜到的结果，也不要编造链接和数字。\n"
     "7. 被问“你会什么”时用自己的语气挑几件有意思的说，一两句即可，不要罗列工具名、"
     "不要粘贴 /帮助 菜单；只有明确索要完整菜单时才调用 get_help。\n"
 )
@@ -442,6 +479,20 @@ async def _build_scene(bot, event: MessageEvent) -> str:
     return "\n".join(lines)
 
 
+def _log_citations(msg: Any) -> None:
+    """DeepSeek 原生搜索的引用在 message.annotations 里；记一条日志便于排查。"""
+    annotations = getattr(msg, "annotations", None) or []
+    if not annotations:
+        return
+    urls: list[str] = []
+    for a in annotations:
+        cite = (a or {}).get("url_citation") if isinstance(a, dict) else None
+        if isinstance(cite, dict) and cite.get("url"):
+            urls.append(str(cite["url"]))
+    if urls:
+        logger.info(f"AI 原生搜索命中 {len(urls)} 条来源：{urls[0]}")
+
+
 async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: str | None = None) -> str | None:
     """调用 LLM（带工具调用循环）；返回回复文本，失败/被拦截返回 None（静默处理）。
 
@@ -523,12 +574,30 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
     reply: str | None = None
     try:
         # 工具调用循环：LLM 可连续调用工具，最多 MAX_TOOL_ROUNDS 轮
+        tool_schemas: list[dict[str, Any]] | None = [pair[0] for pair in permitted] or None
+        if await native_search_ready(cfg):
+            # 原生搜索声明在最前：模型自己决定要不要联网、是否深挖，回答自带引用
+            tool_schemas = [_NATIVE_SEARCH_TOOL, *(tool_schemas or [])]
         for _ in range(MAX_TOOL_ROUNDS + 1):
-            completion = await client.chat.completions.create(
-                model=cfg["ai_model"], messages=messages,
-                tools=[pair[0] for pair in permitted] or None, temperature=0.7,
-            )
+            try:
+                completion = await client.chat.completions.create(
+                    model=cfg["ai_model"], messages=messages,
+                    tools=tool_schemas, temperature=0.7,
+                )
+            except Exception as e:
+                if not any(t.get("type") == "deepseek_web_search" for t in (tool_schemas or [])):
+                    raise
+                # 中转站/旧接口不认服务端工具：去掉它重试一次，并记住别再试
+                global _native_search_supported
+                _native_search_supported = False
+                logger.warning(f"原生联网搜索不可用，已关闭并重试：{type(e).__name__}: {e}")
+                tool_schemas = _drop_native_tool(tool_schemas)
+                completion = await client.chat.completions.create(
+                    model=cfg["ai_model"], messages=messages,
+                    tools=tool_schemas, temperature=0.7,
+                )
             msg = completion.choices[0].message
+            _log_citations(msg)
             tool_calls = getattr(msg, "tool_calls", None)
             if not tool_calls:
                 reply = (msg.content or "").strip()

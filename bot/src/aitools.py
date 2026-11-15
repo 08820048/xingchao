@@ -1166,7 +1166,7 @@ def build_tools() -> list[tuple[dict, Any]]:
         _tool("set_voice_character", "切换/查看 QQ AI 语音角色（character 留空列出可选角色；可填序号或名称）",
               {"type": "object", "properties": {"character": {"type": "string"}}, "required": []},
               "superuser", _t_voice_character),
-        _tool("web_search", "联网搜索网页（需要最新信息、新闻、版本号、你不确定的事实时使用；返回标题/摘要/链接，回答时说明信息来自网络搜索）",
+        _tool("web_search", "联网搜索网页（需要最新信息、新闻、版本号、你不确定的事实时使用；返回标题/摘要/发布时间/链接，回答时说明信息来自网络搜索；搜不到就如实说搜不到，不要编造结果）",
               {"type": "object", "properties": {"query": {"type": "string", "description": "搜索关键词"}}, "required": ["query"]},
               "all", _t_web_search),
         _tool("get_weather", "查询城市天气（当前 + 未来三天；用户问“北京天气怎么样/明天下雨吗”时使用）",

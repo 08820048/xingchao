@@ -54,6 +54,20 @@
   「要 XX 可以找我」式的功能推销。问「你能做什么」时用自己的语气举例介绍，
   只有明确索要完整菜单/指令列表时才调用 `get_help` 或提示发送 `/帮助`。
   被问「你是谁」时介绍自己这个人，最多带一句是开发者做的，不背能力清单。
+- **联网搜索的两条通路**：
+  1. **工具通路**（`web_search` / `/搜索`）：`webtools.search()` 按**降级链**依次尝试
+     `deepseek → duckduckgo → brave → searxng`，前一个失败自动换下一个，全都失败才返回
+     友好提示（不暴露内部配置名）。DeepSeek 源调 `POST api.deepseek.com/v1/tools/search`
+     （结构化结果：`summary` 600–800 字给模型读、`snippet` 100–200 字给人看、`date`、`authority`），
+     复用 AI 的 DeepSeek 密钥；官方按成功请求计费，失败/空结果不计费。
+     链由 kv `search_providers` > env `XINGCHAO_SEARCH_PROVIDERS` > 单源 `XINGCHAO_SEARCH_PROVIDER`
+     > 默认链决定，面板「AI → 联网搜索」可改，即时生效。
+  2. **原生通路**（`deepseek_web_search`）：`ai_native_search` 打开且模型/地址确为 DeepSeek 时，
+     `chat()` 在 `tools` 里声明服务端工具，由 DeepSeek 服务端执行搜索/读页，答案自带引用
+     （引用在 `message.annotations`）。模型自己决定搜不搜、是否深挖，客户端不执行任何工具。
+     中转站或旧接口不认这个工具时会自动去掉并重试一次，之后不再声明（`_native_search_supported`）。
+  两条通路的计数与缓存：只有**成功**的搜索计入每日额度（`search_counter` 存 kv，重启不清零，
+  默认 300 次），同一 query 在 `search_cache_ttl`（默认 600 秒）内复用结果。
 - **工具执行**：处理器签名统一为 `async def _t_xxx(bot, event, args) -> str`，
   返回值是给 LLM 的中文摘要（不是给用户看的原文）。
 - **纯 @ 唤起**：用户只 @ 机器人、不带文字时，AI 插件会注入
@@ -102,6 +116,7 @@
 | `/签名 <内容>` | `set_bot_signature` | 超管 | 「把你的签名改成……」 |
 | `/音色`（QQ AI 语音角色部分） | `set_voice_character` | 超管 | 「换个语音角色」「用 xx 的声音」 |
 | `/搜索 <关键词>`（别名 `/search`） | `web_search` | 所有人 | 「帮我搜一下 xxx」「最新的 Python 版本是多少」 |
+| —（模型自行决定） | DeepSeek 原生 `deepseek_web_search` 服务端工具 | 所有人 | 「最近有什么大新闻」「这个库最新版多少」——模型自己联网、答案带引用 |
 | `/天气 <城市>` | `get_weather` | 所有人 | 「北京天气怎么样」「明天上海下雨吗」 |
 | —（内置能力） | `get_exchange_rate` | 所有人 | 「100 美元多少人民币」 |
 | `/提醒 <时间> <内容>` `/提醒列表` `/取消提醒 <编号>` | `create_reminder` / `list_my_reminders` / `cancel_reminder` | 所有人（只能管自己的） | 「明天早上 8 点提醒我开会」「半小时后叫我」「我有哪些提醒」 |

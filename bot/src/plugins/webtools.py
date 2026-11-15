@@ -1,10 +1,14 @@
 """联网小工具：网页搜索、天气、汇率。给 AI 补上"知道此刻外面发生了什么"的能力。
 
-- 搜索（/搜索 <关键词>；AI 工具 web_search）：提供商由环境变量 XINGCHAO_SEARCH_PROVIDER 决定
-    * duckduckgo（默认，无需密钥，解析 html.duckduckgo.com；页面结构变了会返回空结果）
+- 搜索（/搜索 <关键词>；AI 工具 web_search）：按**降级链**依次尝试多个源，前一个失败自动换下一个
+    * deepseek（默认，复用 AI 的 DeepSeek 密钥，POST api.deepseek.com/v1/tools/search，
+      返回结构化结果：摘要、正文摘要、发布日期、权威度；失败不计费）
+    * duckduckgo（免密钥，解析 html.duckduckgo.com；机房 IP 常被判为机器人，仅作备选）
     * brave（需 XINGCHAO_SEARCH_API_KEY）
     * searxng（需 XINGCHAO_SEARCH_URL，指向自建实例，需开启 json 输出）
-  全局每日调用上限 300 次，超限返回提示而不是继续请求
+  链由面板「AI → 联网搜索」或 XINGCHAO_SEARCH_PROVIDERS 决定；每日上限、缓存时长也可配
+  （kv，即时生效，无需重启）。只有**成功**的搜索才计入当日额度，重启不清零；
+  同一 query 在缓存期内复用结果，不打网络
 - 天气（/天气 <城市>；AI 工具 get_weather）：wttr.in，无需密钥，当前 + 未来三天
 - 汇率（AI 工具 get_exchange_rate）：api.frankfurter.dev（欧洲央行参考汇率，每个工作日更新），无需密钥
 
@@ -14,7 +18,9 @@
 from __future__ import annotations
 
 import html
+import json
 import re
+import time
 from datetime import datetime
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlparse
@@ -34,23 +40,175 @@ MAX_RESULTS = 5
 TIMEOUT = 12
 UA = "Mozilla/5.0 (compatible; XingchaoBot/1.0; +https://xingchao.dev)"
 
-_daily: tuple[str, int] = ("", 0)
+# 可用搜索源。deepseek 走 DeepSeek 官方搜索 API（结构化结果、带摘要与权威度，
+# 失败不计费）；其余三个沿用原来的抓取/第三方 API 实现。
+PROVIDERS = ("deepseek", "duckduckgo", "brave", "searxng")
+PROVIDER_LABEL = {
+    "deepseek": "DeepSeek 官方搜索",
+    "duckduckgo": "DuckDuckGo（网页抓取）",
+    "brave": "Brave Search API",
+    "searxng": "SearXNG 自建实例",
+}
+DEFAULT_CHAIN = ("deepseek", "duckduckgo")
+
+# 面板可改（kv），空值回落到环境变量 / 默认链
+DEFAULTS: dict[str, object] = {
+    "search_providers": "",        # JSON 数组，降级链顺序
+    "search_daily_limit": SEARCH_DAILY_LIMIT,
+    "search_cache_ttl": 600,       # 同 query 结果复用秒数，0 = 不缓存
+    "search_need_content": False,  # deepseek 是否顺带抓正文（更慢更占带宽）
+}
+
+CACHE_MAX = 200
+_cache: dict[str, tuple[float, list[dict[str, str]]]] = {}
 
 
-def _bump_daily() -> bool:
-    """今日搜索次数 +1；超限返回 False。"""
-    global _daily
+def _reset_state() -> None:
+    """测试用：清空结果缓存。"""
+    _cache.clear()
+
+
+async def _kv(key: str) -> Any:
+    from src.store import get_store
+
+    raw = await get_store().get_kv(key)
+    default = DEFAULTS[key]
+    if raw is None or raw == "":
+        return default
+    if isinstance(default, bool):
+        return raw == "true"
+    if isinstance(default, int):
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return default
+    return raw
+
+
+def _parse_chain(raw: object) -> list[str]:
+    """解析搜索源链：JSON 数组 / 逗号分隔 / 单个名字。"""
+    items: list[object]
+    if isinstance(raw, (list, tuple)):
+        items = list(raw)
+    else:
+        text = str(raw or "").strip()
+        if not text:
+            return []
+        try:
+            data = json.loads(text)
+        except (TypeError, ValueError):
+            data = None
+        items = data if isinstance(data, list) else [p for p in re.split(r"[,，\s]+", text) if p]
+    out: list[str] = []
+    for item in items:
+        name = str(item).strip().lower()
+        if name in PROVIDERS and name not in out:
+            out.append(name)
+    return out
+
+
+async def search_chain() -> list[str]:
+    """生效的搜索源顺序：面板 kv > env XINGCHAO_SEARCH_PROVIDERS > 单源 env > 默认链。"""
+    chain = _parse_chain(await _kv("search_providers"))
+    if chain:
+        return chain
+    cfg = get_config()
+    chain = _parse_chain(getattr(cfg, "xingchao_search_providers", ""))
+    if chain:
+        return chain
+    single = _parse_chain(getattr(cfg, "xingchao_search_provider", ""))
+    return single or list(DEFAULT_CHAIN)
+
+
+async def deepseek_creds() -> tuple[str, str]:
+    """DeepSeek 搜索用的 (base, key)。
+
+    搜索 API 只在 api.deepseek.com 上提供，所以复用 AI 的 DeepSeek 密钥：
+    优先「DeepSeek 提供商」单独填的密钥，其次默认提供商指向 deepseek 时的密钥。
+    """
+    try:
+        from src.plugins import ai as ai_plugin
+
+        ds = await ai_plugin.deepseek_settings()
+        if ds["api_key"]:
+            return "https://api.deepseek.com", ds["api_key"]
+        base, key = await ai_plugin._ai_creds()
+        if key and "deepseek.com" in (base or ""):
+            return "https://api.deepseek.com", key
+    except Exception:
+        logger.debug("读取 DeepSeek 搜索凭据失败", exc_info=True)
+    return "", ""
+
+
+async def provider_status() -> list[dict[str, Any]]:
+    """每个搜索源当前是否可用（面板展示用）。"""
+    cfg = get_config()
+    _, key = await deepseek_creds()
+    out = []
+    for name in PROVIDERS:
+        if name == "deepseek":
+            ready = bool(key)
+            note = "已配置 DeepSeek 密钥" if ready else "缺少 DeepSeek API 密钥"
+        elif name == "brave":
+            ready = bool(cfg.xingchao_search_api_key)
+            note = "已配置" if ready else "需要 XINGCHAO_SEARCH_API_KEY"
+        elif name == "searxng":
+            ready = bool(cfg.xingchao_search_url)
+            note = "已配置" if ready else "需要 XINGCHAO_SEARCH_URL"
+        else:
+            ready, note = True, "无需密钥（可能被 DDG 拦截）"
+        out.append({"key": name, "label": PROVIDER_LABEL[name], "ready": ready, "note": note})
+    return out
+
+
+async def _used_today() -> int:
+    from src.store import get_store
+
+    raw = await get_store().get_kv("search_counter") or ""
+    day, _, count = raw.partition(":")
+    if day != datetime.now().strftime("%Y-%m-%d"):
+        return 0
+    try:
+        return max(0, int(count or 0))
+    except ValueError:
+        return 0
+
+
+async def _bump_daily() -> bool:
+    """成功搜索后计数 +1（持久化到 kv，重启不清零）；超限返回 False。
+
+    只有真正拿到结果才计数——失败的请求不消耗当天额度。
+    """
+    from src.store import get_store
+
+    limit = int(await _kv("search_daily_limit"))
     day = datetime.now().strftime("%Y-%m-%d")
-    d, n = _daily
-    if d != day:
-        d, n = day, 0
-    if n >= SEARCH_DAILY_LIMIT:
+    used = await _used_today()
+    if limit and used >= limit:
         return False
-    _daily = (d, n + 1)
+    await get_store().set_kv("search_counter", f"{day}:{used + 1}")
     return True
 
 
-# ---------------------------------------------------------------- 搜索
+def _cache_get(key: str, ttl: int) -> list[dict[str, str]] | None:
+    if ttl <= 0:
+        return None
+    hit = _cache.get(key)
+    if not hit:
+        return None
+    ts, results = hit
+    if time.time() - ts > ttl:
+        _cache.pop(key, None)
+        return None
+    return results
+
+
+def _cache_put(key: str, results: list[dict[str, str]]) -> None:
+    if len(_cache) >= CACHE_MAX:
+        oldest = min(_cache.items(), key=lambda kv: kv[1][0])[0]
+        _cache.pop(oldest, None)
+    _cache[key] = (time.time(), results)
+
 
 _TAG = re.compile(r"<[^>]+>")
 _DDG_LINK = re.compile(r'<a[^>]*class="result__a"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>', re.S)
@@ -89,7 +247,41 @@ class SearchBlocked(Exception):
     """搜索站点返回了机器人验证页（而不是搜索结果）。"""
 
 
-async def _search_ddg(client: httpx.AsyncClient, q: str) -> list[dict[str, str]]:
+async def _search_deepseek(client: httpx.AsyncClient, q: str) -> list[dict[str, str]]:
+    """DeepSeek 官方搜索 API（结构化结果，失败请求不计费）。"""
+    base, key = await deepseek_creds()
+    if not key:
+        raise RuntimeError("未配置 DeepSeek 密钥")
+    r = await client.post(
+        base.rstrip("/") + "/v1/tools/search",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json={
+            "query": q,
+            "count": MAX_RESULTS,
+            "need_content": bool(await _kv("search_need_content")),
+        },
+    )
+    r.raise_for_status()
+    out: list[dict[str, str]] = []
+    for it in ((r.json() or {}).get("results") or [])[:MAX_RESULTS]:
+        title = _clean(it.get("title", ""))
+        url = str(it.get("url") or "")
+        if not title or not url.startswith("http"):
+            continue
+        entry: dict[str, str] = {
+            "title": title,
+            "url": url,
+            # snippet 短（100-200 字）适合展示，summary 长（600-800 字）更适合给模型读
+            "snippet": _clean(it.get("snippet", "")),
+            "summary": _clean(it.get("summary", "")),
+            "date": str(it.get("date") or ""),
+            "site": _clean(it.get("site_name") or ""),
+        }
+        out.append(entry)
+    return out
+
+
+async def _search_duckduckgo(client: httpx.AsyncClient, q: str) -> list[dict[str, str]]:
     r = await client.post("https://html.duckduckgo.com/html/", data={"q": q})
     r.raise_for_status()
     res = parse_ddg(r.text)
@@ -98,11 +290,14 @@ async def _search_ddg(client: httpx.AsyncClient, q: str) -> list[dict[str, str]]
     return res
 
 
-async def _search_brave(client: httpx.AsyncClient, q: str, key: str) -> list[dict[str, str]]:
+async def _search_brave(client: httpx.AsyncClient, q: str) -> list[dict[str, str]]:
     r = await client.get(
         "https://api.search.brave.com/res/v1/web/search",
         params={"q": q, "count": MAX_RESULTS},
-        headers={"X-Subscription-Token": key, "Accept": "application/json"},
+        headers={
+            "X-Subscription-Token": get_config().xingchao_search_api_key,
+            "Accept": "application/json",
+        },
     )
     r.raise_for_status()
     items = ((r.json() or {}).get("web") or {}).get("results") or []
@@ -112,7 +307,8 @@ async def _search_brave(client: httpx.AsyncClient, q: str, key: str) -> list[dic
     ]
 
 
-async def _search_searxng(client: httpx.AsyncClient, q: str, base: str) -> list[dict[str, str]]:
+async def _search_searxng(client: httpx.AsyncClient, q: str) -> list[dict[str, str]]:
+    base = get_config().xingchao_search_url
     r = await client.get(base.rstrip("/") + "/search", params={"q": q, "format": "json"})
     r.raise_for_status()
     items = (r.json() or {}).get("results") or []
@@ -122,41 +318,92 @@ async def _search_searxng(client: httpx.AsyncClient, q: str, base: str) -> list[
     ]
 
 
+_RUNNERS = {
+    "deepseek": _search_deepseek,
+    "duckduckgo": _search_duckduckgo,
+    "brave": _search_brave,
+    "searxng": _search_searxng,
+}
+
+
+async def _run_provider(name: str, query: str) -> list[dict[str, str]]:
+    async with httpx.AsyncClient(
+        timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": UA}
+    ) as client:
+        return await _RUNNERS[name](client, query)
+
+
 async def search(query: str) -> tuple[list[dict[str, str]] | None, str]:
-    """返回 (结果列表, 提示)。结果为 None 表示失败，提示里是原因。"""
+    """按降级链搜索，返回 (结果列表, 提示)。
+
+    None = 所有源都失败（提示是给用户看的友好文案，不含内部配置名）。
+    [] = 所有源都正常但没有结果。成功的搜索才计入当日额度。
+    """
     query = " ".join(query.split())[:120]
     if not query:
         return None, "搜索词不能为空"
-    cfg = get_config()
-    provider = (cfg.xingchao_search_provider or "duckduckgo").lower()
-    if provider == "brave" and not cfg.xingchao_search_api_key:
-        return None, "搜索未配置：brave 需要 XINGCHAO_SEARCH_API_KEY"
-    if provider == "searxng" and not cfg.xingchao_search_url:
-        return None, "搜索未配置：searxng 需要 XINGCHAO_SEARCH_URL"
-    if not _bump_daily():
-        return None, f"今天的联网搜索次数已用完（{SEARCH_DAILY_LIMIT} 次），明天再试"
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": UA}) as client:
-            if provider == "brave":
-                res = await _search_brave(client, query, cfg.xingchao_search_api_key)
-            elif provider == "searxng":
-                res = await _search_searxng(client, query, cfg.xingchao_search_url)
-            else:
-                res = await _search_ddg(client, query)
-    except SearchBlocked as e:
-        logger.warning(f"联网搜索被拦截（{provider}）：{e}")
-        return None, "搜索被 DuckDuckGo 拦截了（机器人验证），管理员需要改用 brave 或 searxng（见 .env.example）"
-    except Exception as e:
-        logger.warning(f"联网搜索失败（{provider}）：{type(e).__name__}: {e}")
-        return None, f"搜索服务暂时连不上（{type(e).__name__}），如果一直这样，管理员需要检查服务器网络或换搜索提供商"
-    return res, ""
+
+    chain = await search_chain()
+    if not chain:
+        return None, "搜索暂不可用：管理员还没有配置搜索源。"
+
+    limit = int(await _kv("search_daily_limit"))
+    if limit and await _used_today() >= limit:
+        return None, f"今天的联网搜索次数已用完（{limit} 次），明天再试"
+
+    ttl = int(await _kv("search_cache_ttl"))
+    cache_key = f"{'|'.join(chain)}::{query}".lower()
+    cached = _cache_get(cache_key, ttl)
+    if cached is not None:
+        return cached, ""
+
+    errors: list[str] = []
+    succeeded = False  # 至少有一个源正常响应（哪怕结果为空）
+    for name in chain:
+        try:
+            results = await _run_provider(name, query)
+        except SearchBlocked as e:
+            logger.warning(f"联网搜索被拦截（{name}）：{e}")
+            errors.append(f"{name}:被拦截")
+            continue
+        except Exception as e:
+            logger.warning(f"联网搜索失败（{name}）：{type(e).__name__}: {e}")
+            errors.append(f"{name}:{type(e).__name__}")
+            continue
+
+        succeeded = True
+        if results:
+            await _bump_daily()
+            _cache_put(cache_key, results)
+            return results, ""
+        errors.append(f"{name}:无结果")
+
+    # 有源正常回答了"没结果" -> 就是真没搜到，别报成服务故障
+    if succeeded:
+        _cache_put(cache_key, [])
+        return [], ""
+    logger.warning(f"联网搜索全部失败：{'；'.join(errors)}")
+    return None, (
+        "联网搜索暂时不可用，稍后再试；"
+        "如果一直这样，管理员可以在面板「AI → 联网搜索」里换个搜索源"
+    )
 
 
 def format_results(results: list[dict[str, str]]) -> str:
     lines = []
     for i, r in enumerate(results, 1):
-        lines.append(f"{i}. {r['title']}\n   {r['snippet'][:120]}\n   {r['url']}" if r["snippet"]
-                     else f"{i}. {r['title']}\n   {r['url']}")
+        head = f"{i}. {r['title']}"
+        if r.get("site") and r["site"] not in r["title"]:
+            head += f"（{r['site']}）"
+        block = [head]
+        # 优先用长摘要（deepseek 的 summary），退回短摘要
+        body = (r.get("summary") or r.get("snippet") or "").strip()[:400]
+        if body:
+            block.append(f"   {body}")
+        if r.get("date"):
+            block.append(f"   发布：{r['date'][:10]}")
+        block.append(f"   {r['url']}")
+        lines.append("\n".join(block))
     return "\n".join(lines)
 
 

@@ -37,8 +37,12 @@ class Config(BaseModel):
     xingchao_panel_password: str = ""  # Web 管理面板密码；留空则启动时随机生成并打印在日志
     xingchao_ai_base_url: str = ""  # OpenAI 兼容 API 地址（B.AI: https://api.b.ai/v1）
     xingchao_ai_api_key: str = ""  # 对应 API Key；两者任一为空则 AI 功能自动禁用
-    # 联网搜索：duckduckgo（无需密钥，默认）/ brave（需 API Key）/ searxng（需实例地址）
-    xingchao_search_provider: str = "duckduckgo"
+    # 联网搜索：deepseek（用 DeepSeek 官方搜索 API，推荐）/ duckduckgo（爬 HTML，可能被拦截）/
+    # brave（需 API Key）/ searxng（需实例地址）
+    # xingchao_search_providers 为逗号分隔的降级链（如 "deepseek,duckduckgo"），
+    # 留空则用 xingchao_search_provider 单源；面板「AI → 联网搜索」可覆盖，无需重启
+    xingchao_search_provider: str = ""  # 单源写法；留空则用默认降级链
+    xingchao_search_providers: str = ""
     xingchao_search_api_key: str = ""
     xingchao_search_url: str = ""
     xingchao_developer_id: int = 2217021563  # 开发者 QQ（AI 介绍开发者时使用并自动 @）
