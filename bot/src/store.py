@@ -108,6 +108,19 @@ CREATE TABLE IF NOT EXISTS blog_posts (
     excerpt TEXT DEFAULT '',
     fetched_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS kb_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    keywords TEXT DEFAULT '',
+    hits INTEGER DEFAULT 0,
+    source TEXT DEFAULT 'manual',
+    created_by INTEGER DEFAULT 0,
+    created_at TEXT,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_kb_group ON kb_entries (group_id);
 """
 
 
@@ -798,6 +811,81 @@ class Store:
         cur = await conn.execute(sql, params)
         await conn.commit()
         return cur.rowcount > 0
+
+    # ---------------------------------------------------------------- 群知识库
+
+    async def add_kb_entry(
+        self, group_id: int, question: str, answer: str, keywords: str = "",
+        source: str = "manual", created_by: int = 0,
+    ) -> int:
+        """新增一条群知识（FAQ / 群规）。question 与 answer 都必填。"""
+        conn = await self._ensure()
+        now = datetime.now().astimezone().isoformat(timespec="seconds")
+        cur = await conn.execute(
+            "INSERT INTO kb_entries (group_id, question, answer, keywords, hits, source,"
+            " created_by, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)",
+            (group_id, question[:200], answer[:2000], keywords[:300], source, created_by, now, now),
+        )
+        await conn.commit()
+        return int(cur.lastrowid)
+
+    async def list_kb_entries(self, group_id: int | None = None) -> list[dict]:
+        conn = await self._ensure()
+        sql = ("SELECT id, group_id, question, answer, keywords, hits, source, created_by,"
+               " created_at, updated_at FROM kb_entries")
+        params: tuple = ()
+        if group_id is not None:
+            sql += " WHERE group_id = ?"
+            params = (group_id,)
+        sql += " ORDER BY hits DESC, id ASC"
+        async with conn.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+        return [
+            {"id": r[0], "group_id": r[1], "question": r[2], "answer": r[3], "keywords": r[4],
+             "hits": r[5], "source": r[6], "created_by": r[7], "created_at": r[8], "updated_at": r[9]}
+            for r in rows
+        ]
+
+    async def get_kb_entry(self, entry_id: int) -> dict | None:
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT id, group_id, question, answer, keywords, hits, source, created_by,"
+            " created_at, updated_at FROM kb_entries WHERE id = ?", (entry_id,),
+        ) as cur:
+            r = await cur.fetchone()
+        if not r:
+            return None
+        return {"id": r[0], "group_id": r[1], "question": r[2], "answer": r[3], "keywords": r[4],
+                "hits": r[5], "source": r[6], "created_by": r[7], "created_at": r[8], "updated_at": r[9]}
+
+    async def update_kb_entry(self, entry_id: int, **fields) -> bool:
+        allowed = {"question", "answer", "keywords"}
+        sets, vals = [], []
+        for key in allowed & set(fields):
+            value = fields[key]
+            limit = {"question": 200, "answer": 2000, "keywords": 300}[key]
+            sets.append(f"{key} = ?")
+            vals.append(str(value)[:limit])
+        if not sets:
+            return False
+        sets.append("updated_at = ?")
+        vals.append(datetime.now().astimezone().isoformat(timespec="seconds"))
+        vals.append(entry_id)
+        conn = await self._ensure()
+        cur = await conn.execute(f"UPDATE kb_entries SET {', '.join(sets)} WHERE id = ?", tuple(vals))
+        await conn.commit()
+        return (cur.rowcount or 0) > 0
+
+    async def delete_kb_entry(self, entry_id: int) -> bool:
+        conn = await self._ensure()
+        cur = await conn.execute("DELETE FROM kb_entries WHERE id = ?", (entry_id,))
+        await conn.commit()
+        return (cur.rowcount or 0) > 0
+
+    async def bump_kb_hits(self, entry_id: int) -> None:
+        conn = await self._ensure()
+        await conn.execute("UPDATE kb_entries SET hits = hits + 1 WHERE id = ?", (entry_id,))
+        await conn.commit()
 
     async def close(self) -> None:
         if self._conn is not None:

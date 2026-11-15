@@ -12,9 +12,8 @@ from src.plugins import recall
 
 @pytest.fixture(autouse=True)
 async def _isolate(monkeypatch, store):
-    import src.store as store_mod
-
-    monkeypatch.setattr(store_mod, "get_store", lambda: store)
+    # recall.py 在模块顶部绑定了 get_store，patch 模块自身的名字才有效
+    monkeypatch.setattr(recall, "get_store", lambda: store)
     recall._reset_state()
 
     async def enabled():

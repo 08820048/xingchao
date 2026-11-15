@@ -130,6 +130,97 @@ def register(app) -> None:
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         return JSONResponse({"ok": True, "data": {"message": "AI 配置已保存并生效"}})
 
+    @app.get("/panel/api/kb")
+    async def panel_kb_get(request: Request, group_id: int | None = None) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import kb
+
+        data = await kb.panel_payload(group_id)
+        data["suggestions"] = await kb.suggest(group_id) if group_id else []
+        return JSONResponse({"ok": True, "data": data})
+
+    @app.post("/panel/api/kb")
+    async def panel_kb_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import kb
+
+        body = await request.json()
+        store = get_store()
+        action = str(body.get("action") or "").strip()
+
+        if action in ("add", "update", "delete"):
+            group_id = body.get("group_id")
+            if action != "delete":
+                if not isinstance(group_id, int) or not group_id:
+                    return JSONResponse({"ok": False, "error": "group_id 不合法"}, status_code=400)
+            if action == "add":
+                question = str(body.get("question") or "").strip()
+                answer = str(body.get("answer") or "").strip()
+                if not (question and answer):
+                    return JSONResponse({"ok": False, "error": "问题与答案都不能为空"}, status_code=400)
+                entry_id = await store.add_kb_entry(
+                    group_id, question[:200], answer[:2000],
+                    str(body.get("keywords") or "")[:300], source="panel",
+                )
+                return JSONResponse({"ok": True, "data": {"message": f"已添加知识 #{entry_id}", "id": entry_id}})
+            entry_id = body.get("id")
+            if not isinstance(entry_id, int):
+                return JSONResponse({"ok": False, "error": "id 不合法"}, status_code=400)
+            if action == "delete":
+                ok = await store.delete_kb_entry(entry_id)
+                return JSONResponse({"ok": ok, "data": {"message": "已删除"}} if ok
+                                    else {"ok": False, "error": "没有这条知识"})
+            fields = {k: body[k] for k in ("question", "answer", "keywords") if k in body}
+            ok = await store.update_kb_entry(entry_id, **fields)
+            return JSONResponse({"ok": ok, "data": {"message": "已保存"}} if ok
+                                else {"ok": False, "error": "没有可更新的字段"})
+
+        if action == "test":
+            query = str(body.get("query") or "").strip()
+            group_id = body.get("group_id")
+            if not (query and isinstance(group_id, int) and group_id):
+                return JSONResponse({"ok": False, "error": "需要 query 与 group_id"}, status_code=400)
+            entry = await kb.match(group_id, query, min_score=0.0)
+            return JSONResponse({"ok": True, "data": {
+                "message": "命中" if entry else "没有命中",
+                "entry": entry,
+            }})
+
+        updates: dict[str, str] = {}
+        for flag, field in (("enabled", "kb_enabled"), ("auto_answer", "kb_auto_answer"),
+                            ("require_question", "kb_require_question")):
+            if flag in body:
+                if not isinstance(body[flag], bool):
+                    return JSONResponse({"ok": False, "error": f"{flag} 应为布尔值"}, status_code=400)
+                updates[field] = "true" if body[flag] else "false"
+        for key, field, low, high in (("cooldown", "kb_cooldown", 0, 86400),
+                                      ("suggest_min", "kb_suggest_min", 1, 50)):
+            if key in body:
+                try:
+                    val = int(body[key])
+                except (TypeError, ValueError):
+                    return JSONResponse({"ok": False, "error": f"{key} 应为整数"}, status_code=400)
+                if not (low <= val <= high):
+                    return JSONResponse({"ok": False, "error": f"{key} 应在 {low}-{high} 之间"}, status_code=400)
+                updates[field] = str(val)
+        if "min_score" in body:
+            try:
+                val = float(body["min_score"])
+            except (TypeError, ValueError):
+                return JSONResponse({"ok": False, "error": "min_score 不合法"}, status_code=400)
+            updates["kb_min_score"] = str(round(max(0.5, min(val, 20.0)), 2))
+        if not updates:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        try:
+            for key, value in updates.items():
+                await store.set_kv(key, value)
+        except Exception:
+            logger.exception("面板保存知识库配置失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        return JSONResponse({"ok": True, "data": {"message": "知识库配置已保存并生效"}})
+
     @app.get("/panel/api/recall")
     async def panel_recall_get(request: Request) -> JSONResponse:
         if not _authorized(request):

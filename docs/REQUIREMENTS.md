@@ -612,3 +612,27 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - 开关与配置（kv，面板「AI」页可改）：`recall_enabled`、`recall_days`（默认 90）、
   `recall_max_docs`、`recall_results`、`recall_min_score`；`/模块 回忆 开|关` 亦可
 - 面板 API：`GET/POST /panel/api/recall`（状态 / 开关 / 天数 / 保留条数 / 立即重建索引）
+
+### 17.20 群知识库 `kb.py`
+
+- 目的：群里反复被问的事（群规、内测申请、报名入口）不必每次重打；命中直接回答。
+  与 17.19 群聊回忆配合：回忆解决「翻旧账」，知识库解决「答新问」
+- 存储：SQLite `kb_entries`（id / group_id / question / answer / keywords / hits /
+  source / created_by / created_at / updated_at），**按群隔离**，只存管理员写入的问答，
+  不存聊天原文
+- 命中判定：复用 `src/textindex.py` 分词；命中问题原文按词项权重求和，命中人工关键词
+  ×1.5（同义说法更可信）；覆盖率分母封顶 4（问句往往只含一两个核心词）
+- 已知取舍：n-gram 在临界区间分不开「内测怎么搞」（该命中）与「今天会员日吗」
+  （对「怎么加入会员群」不该命中），两者得分相同 → 默认阈值取 1.8（宁可命中），
+  用三重兜底：`kb_require_question` 只答像提问的消息、回答里带上命中的问题
+  （错了一眼可见）、面板可调 `kb_min_score` 且可见每条 hits
+- 克制策略：同群回答冷却 `kb_cooldown`（默认 300 秒）；陈述句不抢答；
+  `kb_auto_answer` 可整体关掉只留手动查询
+- 问题发现 `suggest()`：从 17.19 的群聊索引里取最近 72 小时像提问的短消息，
+  归一化（去客套前缀/标点）后聚类，出现次数达 `kb_suggest_min`（默认 2）且
+  尚未能被命中才作为候选；面板一键采纳，避免手工录入没人愿意做
+- 指令（超管）：`/知识 添加 问题 | 答案 [| 关键词]`、`/知识 列表`、`/知识 删除 <编号>`、
+  `/知识 改 <编号> <答案>`、`/知识 测试 <一句话>`、`/知识 建议`、`/知识 开|关`
+- AI 工具：`search_group_kb`（所有人）、`add_group_kb` / `suggest_group_kb`（超管）
+- 面板：`GET/POST /panel/api/kb`（条目增删改、命中测试、开关、阈值、冷却、候选）；
+  独立「知识库」页；`/模块 知识 开|关` 亦可

@@ -834,6 +834,48 @@ async def _t_recall_chat(bot, event, args) -> str:
     return await recall.recall_text(bot, int(group_id), query, days=days)
 
 
+async def _t_kb_search(bot, event, args) -> str:
+    from src.plugins import kb
+
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not group_id:
+        return "错误：群知识库只在群聊里可用，或需显式提供 group_id。"
+    query = str(args.get("query", "")).strip()
+    if not query:
+        return "错误：需要 query。"
+    entry = await kb.match(int(group_id), query, min_score=0.0)
+    if entry is None:
+        return f"知识库里没有和「{query}」相关的内容。"
+    return f"知识 #{entry['id']}：{entry['question']}\n答案：{entry['answer']}"
+
+
+async def _t_kb_add(bot, event, args) -> str:
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not group_id:
+        return "错误：需要在群聊中添加，或显式提供 group_id。"
+    question = str(args.get("question", "")).strip()
+    answer = str(args.get("answer", "")).strip()
+    if not (question and answer):
+        return "错误：question 与 answer 都必填。"
+    entry_id = await get_store().add_kb_entry(
+        int(group_id), question[:200], answer[:2000], str(args.get("keywords", ""))[:300],
+        source="ai", created_by=int(event.user_id),
+    )
+    return f"已添加群知识 #{entry_id}：{question}"
+
+
+async def _t_kb_suggest(bot, event, args) -> str:
+    from src.plugins import kb
+
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not group_id:
+        return "错误：需要群号。"
+    items = await kb.suggest(int(group_id))
+    if not items:
+        return "最近没有反复被问、又不在知识库里的问题。"
+    return _j({"候选问题": items[:10]})
+
+
 async def _t_web_search(bot, event, args) -> str:
     from src.plugins import webtools
     return await webtools.search_text(str(args.get("query", "")))
@@ -1183,6 +1225,23 @@ def build_tools() -> list[tuple[dict, Any]]:
         _tool("set_voice_character", "切换/查看 QQ AI 语音角色（character 留空列出可选角色；可填序号或名称）",
               {"type": "object", "properties": {"character": {"type": "string"}}, "required": []},
               "superuser", _t_voice_character),
+        _tool("search_group_kb", "查询本群知识库（群规、常见问题、报名/内测入口等）；用户问到群内规则或「以前说过的答案」时先用本工具查一次",
+              {"type": "object", "properties": {
+                  "query": {"type": "string", "description": "要查的内容，如「怎么申请内测」"},
+                  "group_id": {"type": "integer", "description": "群号，群聊中可省略"},
+              }, "required": ["query"]},
+              "all", _t_kb_search),
+        _tool("add_group_kb", "把一条问答加进本群知识库（之后有人问就会自动回答）",
+              {"type": "object", "properties": {
+                  "question": {"type": "string", "description": "问题，如「怎么申请内测」"},
+                  "answer": {"type": "string", "description": "答案"},
+                  "keywords": {"type": "string", "description": "额外的同义关键词，空格分隔"},
+                  "group_id": {"type": "integer"},
+              }, "required": ["question", "answer"]},
+              "superuser", _t_kb_add),
+        _tool("suggest_group_kb", "列出最近被反复问、但知识库还没收录的问题（可直接加进知识库）",
+              {"type": "object", "properties": {"group_id": {"type": "integer"}}, "required": []},
+              "superuser", _t_kb_suggest),
         _tool("recall_chat", "检索本群过去的聊天记录（用户说“上次谁说过××”“之前发过的那个链接/表格”“前几天聊的那个事”时使用；query 填关键词，days 填回溯天数如 7=一周、30=一个月，不填用默认 90 天）",
               {"type": "object", "properties": {
                   "query": {"type": "string", "description": "关键词，尽量用具体的名词"},
