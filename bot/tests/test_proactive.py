@@ -1,5 +1,6 @@
 import time
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
@@ -186,3 +187,108 @@ async def test_decide_and_act_without_context_skips(monkeypatch):
     _stub_ai(monkeypatch, '{"action":"reply","text":"嗨"}')
     bot = FakeBot()
     assert await pa.decide_and_act(bot, 99, 1, "discussion") == "skip" and bot.calls == []
+
+
+# ---------------------------------------------------------------- 与群知识库协作
+
+def test_prompt_injects_kb_standard_answer():
+    prompt = pa.build_prompt(
+        "1 [10:00] 甲: 怎么申请内测", "help",
+        kb_answer="怎么申请内测\n私聊管理员报 QQ",
+    )
+    assert "群里的标准答案" in prompt
+    assert "私聊管理员报 QQ" in prompt
+    assert "没人问就照常 skip" in prompt
+
+
+def test_prompt_without_kb_answer_has_no_section():
+    prompt = pa.build_prompt("1 [10:00] 甲: 随便聊聊", "discussion")
+    assert "群里的标准答案" not in prompt
+
+
+def test_kb_answered_registry():
+    from src.plugins import kb
+
+    kb._reset_state()
+    assert kb.was_answered(5, 900) is False
+    kb.mark_answered(5, 900)
+    assert kb.was_answered(5, 900) is True
+    assert kb.was_answered(5, 901) is False        # 别的消息
+    assert kb.was_answered(6, 900) is False        # 别的群
+    assert kb.was_answered(5, None) is False
+    kb._reset_state()
+
+
+def test_kb_answered_registry_expires(monkeypatch):
+    from src.plugins import kb
+
+    kb._reset_state()
+    kb.mark_answered(5, 900)
+    assert kb.was_answered(5, 900, window=0) is False   # 窗口为 0 视为过期
+    kb._reset_state()
+
+
+async def test_peek_does_not_count_hits(store, monkeypatch):
+    from src.plugins import kb
+
+    monkeypatch.setattr(kb, "get_store", lambda: store)
+    kb._reset_state()
+    entry_id = await store.add_kb_entry(555, "怎么申请内测", "私聊管理员", "内测")
+    hit = await kb.peek(555, "怎么申请内测")
+    assert hit is not None
+    assert (await store.get_kb_entry(entry_id))["hits"] == 0   # peek 不计数
+
+
+async def test_proactive_skips_message_just_answered_by_kb(store, monkeypatch):
+    """模拟同一条提问先被知识库回答，主动发言不该再插一次。"""
+    from src.plugins import kb
+
+    monkeypatch.setattr(kb, "get_store", lambda: store)
+    monkeypatch.setattr(kb, "get_store", lambda: store, raising=False)
+    kb._reset_state()
+    monkeypatch.setattr(pa, "get_store", lambda: store)
+    monkeypatch.setattr(pa, "proactive_enabled", _async_true)
+    monkeypatch.setattr(pa, "group_mode", _async_normal)
+    monkeypatch.setattr(pa, "_param", _async_burst)
+    monkeypatch.setattr(pa, "_kv", _async_kv)
+
+    kb.mark_answered(5, 777)          # 刚才那条提问已由知识库回答
+    called: list[str] = []
+
+    async def fake_decide(*a, **kw):
+        called.append("decide")
+        return "reply"
+
+    monkeypatch.setattr(pa, "decide_and_act", fake_decide)
+
+    ev = SimpleNamespace(
+        user_id=10001, group_id=5, message_id=777, to_me=False,
+        message=Message([MessageSegment.text("怎么申请内测")]),
+        sender=SimpleNamespace(card="小明", nickname="小明"),
+    )
+
+    class B:
+        self_id = "9"
+
+    await pa.handle_proactive(B(), ev, SimpleNamespace(send=_noop))
+    assert called == []                # 完全没有进入决策
+
+
+async def _async_true():
+    return True
+
+
+async def _async_normal(_gid):
+    return "normal"
+
+
+async def _async_burst(_gid, _name, _mode=None):
+    return 5
+
+
+async def _async_kv(_key):
+    return 0
+
+
+async def _noop(*_a, **_kw):
+    return None

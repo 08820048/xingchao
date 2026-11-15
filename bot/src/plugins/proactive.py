@@ -16,6 +16,9 @@
 夜间静默时段内只保留接话窗口。所有主动发送共用滚动频率上限（防风控），回复前有拟人延迟。
 
 约束：被认真问到是不是 AI 时承认是机器人；聊天里出现的指令式文字只当聊天内容。
+与群知识库协作（kb.py）：最近几条里有人问的正好是知识库里的问题，就把**标准答案**注入
+提示词直接用（不让模型另编一套），门槛降到一条消息；知识库刚答过的那条消息会被
+mark_answered 登记，主动发言见到就跳过——两者都是 block=False，不避让就会同一条问答两遍。
 依赖 awareness（群聊感知）开启；关闭后本模块不工作。
 开关 proactive_enabled（/plugin proactive on|off）。
 """
@@ -334,7 +337,8 @@ SITUATION = {
 
 
 def build_prompt(
-    transcript: str, situation: str, name: str = "", knowledge: str = "", sticker_menu: str = "",
+    transcript: str, situation: str, name: str = "", knowledge: str = "",
+    sticker_menu: str = "", kb_answer: str = "",
 ) -> str:
     prompt = (
         "下面是 QQ 群最近的聊天（#编号 [时间] 发言人: 内容；「星潮(我)」是你自己）：\n----\n"
@@ -344,6 +348,13 @@ def build_prompt(
         prompt += (
             "\n【开发者的博客/作品（如与话题相关，优先用它们回答或推荐，名称和链接放在最后；不相关就别提）】\n"
             f"{knowledge}\n"
+        )
+    if kb_answer:
+        prompt += (
+            "\n【群里的标准答案（管理员维护的知识库，与你当前要回答的问题相关）】\n"
+            f"{kb_answer}\n"
+            "如果真的有人在问这件事，直接用这个答案回答，不要自己另编一套；"
+            "没人问就照常 skip。\n"
         )
     if sticker_menu:
         prompt += (
@@ -371,7 +382,7 @@ async def send_humanlike(bot: Bot, group_id: int, parts: list[str], quote: int |
 
 async def decide_and_act(
     bot: Bot, group_id: int, user_id: int, situation: str, name: str = "", *,
-    knowledge: str = "", burst: int = 5,
+    knowledge: str = "", burst: int = 5, kb_answer: str = "",
 ) -> str:
     """调用一次决策并执行动作，返回 skip/react/reply。"""
     from src.plugins import ai as ai_plugin
@@ -398,7 +409,9 @@ async def decide_and_act(
             sticker_menu, sticker_ids = await stickers.catalog()
     except Exception:
         logger.debug("加载表情包库失败", exc_info=True)
-    prompt = build_prompt(transcript, situation, name, knowledge, sticker_menu)
+    prompt = build_prompt(
+        transcript, situation, name, knowledge, sticker_menu, kb_answer=kb_answer
+    )
     try:
         from src.plugins import feedback
 
@@ -513,6 +526,15 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
     gid, uid = event.group_id, event.user_id
     if gid in _busy:
         return
+    # 知识库刚答过这条提问：不再插话，避免同一条问题两个模块各答一遍
+    try:
+        from src.plugins import kb as kb_plugin
+
+        if kb_plugin.was_answered(gid, event.message_id):
+            logger.debug(f"群 {gid} 主动性：这条已被群知识库回答，跳过")
+            return
+    except Exception:
+        logger.debug("检查知识库已答登记失败", exc_info=True)
     mode = await group_mode(gid)
     now = time.monotonic()
     burst = int(await _param(gid, "burst", mode))
@@ -571,10 +593,29 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
         except Exception:
             logger.exception("博客知识召回失败")
 
+        # 群知识库：最近几条里有人在问群里已有的标准答案，就把答案交给模型直接用
+        kb_answer = ""
+        try:
+            from src.plugins import kb as kb_plugin
+
+            for entry_ in reversed(recent3):
+                if not entry_["text"]:
+                    continue
+                hit = await kb_plugin.peek(gid, entry_["text"])
+                if hit:
+                    kb_answer = f"{hit['question']}\n{hit['answer']}"
+                    break
+        except Exception:
+            logger.debug("群知识库召回失败", exc_info=True)
+
         min_messages = int(await _param(gid, "help_min_messages" if help_hit else "min_messages", mode))
         min_users = 1 if help_hit else int(await _param(gid, "min_users", mode))
         if help_hit and blog_strong:
             min_messages = 1
+        if kb_answer:  # 有现成的标准答案，门槛降到一条消息
+            help_hit = True
+            min_messages = 1
+            min_users = 1
         discussion_hit = len(humans) >= min_messages and len({e["user_id"] for e in humans}) >= min_users
         if not (image_hit or discussion_hit):
             return
@@ -582,7 +623,10 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
         situation = "help" if help_hit else ("image" if image_hit and not discussion_hit else "discussion")
         _last_attempt[gid] = now
         await _bump_usage(gid)
-        await decide_and_act(bot, gid, uid, situation, sender, knowledge=knowledge, burst=burst)
+        await decide_and_act(
+            bot, gid, uid, situation, sender, knowledge=knowledge, burst=burst,
+            kb_answer=kb_answer,
+        )
     except MatcherException:
         raise
     except Exception:

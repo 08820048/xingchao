@@ -60,11 +60,35 @@ MAX_QUESTION = 100
 MAX_ANSWER = 200
 SUGGEST_LOOKBACK_HOURS = 72
 _last_answer: dict[int, float] = {}
+# 最近被本模块回答过的消息：{group_id: {message_id: ts}}
+# proactive 用它避让，避免同一条提问被"知识库 + 主动发言"各答一次
+_answered_msg: dict[int, dict[int, float]] = {}
+ANSWERED_TTL = 180
 
 
 def _reset_state() -> None:
-    """测试用：清空回答冷却与候选缓存。"""
+    """测试用：清空回答冷却与已答登记。"""
     _last_answer.clear()
+    _answered_msg.clear()
+
+
+def mark_answered(group_id: int, message_id: int | None) -> None:
+    if not message_id:
+        return
+    bucket = _answered_msg.setdefault(group_id, {})
+    now = time.time()
+    for mid, ts in list(bucket.items()):
+        if now - ts > ANSWERED_TTL:
+            bucket.pop(mid, None)
+    bucket[int(message_id)] = now
+
+
+def was_answered(group_id: int, message_id: int | None, window: int = ANSWERED_TTL) -> bool:
+    """这条消息是否刚被知识库回答过（proactive 避让用）。"""
+    if not message_id:
+        return False
+    ts = _answered_msg.get(group_id, {}).get(int(message_id))
+    return bool(ts and time.time() - ts <= window)
 
 
 async def _kv(key: str) -> Any:
@@ -151,6 +175,13 @@ async def match(group_id: int, text: str, *, min_score: float | None = None) -> 
     threshold = float(await _kv("kb_min_score")) if min_score is None else min_score
     score, entry = ranked[0]
     return entry if score >= threshold else None
+
+
+async def peek(group_id: int, text: str) -> dict | None:
+    """只查不计数（供主动发言注入标准答案，不计入命中次数）。"""
+    if not await is_enabled():
+        return None
+    return await match(group_id, text)
 
 
 async def answer_for(group_id: int, text: str) -> dict | None:
@@ -271,6 +302,7 @@ async def handle_kb(bot: Bot, event: GroupMessageEvent, matcher: Matcher) -> Non
         return
     _last_answer[event.group_id] = now
     await _notify_answer(matcher, event, entry)
+    mark_answered(event.group_id, event.message_id)
 
 
 # ---------------------------------------------------------------- 指令

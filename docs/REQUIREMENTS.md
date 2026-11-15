@@ -655,3 +655,15 @@ CREATE TABLE IF NOT EXISTS msg_stat (
   按群 kv 去重，每群每天最多一次
 - 面板：`GET/POST /panel/api/worklog`（开关、播报设置、近 7 天动作分布与分群条数、
   台账预览）；独立「工作台账」页；`/模块 台账 开|关`
+
+### 17.22 主动发言与群知识库协作（`proactive.py` + `kb.py`）
+
+- 问题：`kb`(priority 6)、`linkpreview`(6)、`ai`(11)、`proactive`(12) 全部 `block=False`，
+  同一条提问有可能被「知识库」和「主动发言」各答一次，群里看起来像复读
+- 避让：`kb.mark_answered(group_id, message_id)` 在回答后登记（TTL 180 秒）；
+  `proactive` 处理入口先查 `kb.was_answered`，刚被答过的消息直接跳过
+- 标准答案注入：`proactive` 在 help 判定阶段对最近 3 条人类消息调用 `kb.peek()`
+  （只查**不计数**，避免把主动发言算成命中），命中就把「问题 + 答案」注入提示词，
+  并明确要求「有人问就直接用这个答案，没人问就 skip」，防止模型另编一套
+- 门槛调整：有标准答案时按「有人在问」处理，`min_messages = min_users = 1`，
+  不必等群里攒够几条消息才肯回答
