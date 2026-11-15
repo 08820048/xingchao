@@ -817,6 +817,23 @@ async def _t_voice_character(bot, event, args) -> str:
     return await voice.choose_character(bot, gid, str(args.get("character", "")))
 
 
+async def _t_recall_chat(bot, event, args) -> str:
+    from src.plugins import recall
+
+    group_id = args.get("group_id") or getattr(event, "group_id", None)
+    if not group_id:
+        return "错误：群聊回忆只能在群聊里用，或显式提供 group_id。"
+    query = str(args.get("query", "")).strip()
+    if not query:
+        return "错误：需要 query（要回忆的关键词）。"
+    days = args.get("days")
+    try:
+        days = int(days) if days is not None else None
+    except (TypeError, ValueError):
+        days = None
+    return await recall.recall_text(bot, int(group_id), query, days=days)
+
+
 async def _t_web_search(bot, event, args) -> str:
     from src.plugins import webtools
     return await webtools.search_text(str(args.get("query", "")))
@@ -1166,6 +1183,13 @@ def build_tools() -> list[tuple[dict, Any]]:
         _tool("set_voice_character", "切换/查看 QQ AI 语音角色（character 留空列出可选角色；可填序号或名称）",
               {"type": "object", "properties": {"character": {"type": "string"}}, "required": []},
               "superuser", _t_voice_character),
+        _tool("recall_chat", "检索本群过去的聊天记录（用户说“上次谁说过××”“之前发过的那个链接/表格”“前几天聊的那个事”时使用；query 填关键词，days 填回溯天数如 7=一周、30=一个月，不填用默认 90 天）",
+              {"type": "object", "properties": {
+                  "query": {"type": "string", "description": "关键词，尽量用具体的名词"},
+                  "days": {"type": "integer", "description": "回溯天数；用户说“上周”填 7，“上个月”填 30"},
+                  "group_id": {"type": "integer", "description": "群号，群聊中可省略"},
+              }, "required": ["query"]},
+              "all", _t_recall_chat),
         _tool("web_search", "联网搜索网页（需要最新信息、新闻、版本号、你不确定的事实时使用；返回标题/摘要/发布时间/链接，回答时说明信息来自网络搜索；搜不到就如实说搜不到，不要编造结果）",
               {"type": "object", "properties": {"query": {"type": "string", "description": "搜索关键词"}}, "required": ["query"]},
               "all", _t_web_search),

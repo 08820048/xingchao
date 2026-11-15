@@ -143,7 +143,7 @@ async def handle_group(args: Message = CommandArg()) -> None:
 _PLUGIN_ALIASES = {
     "回复": "reply", "链接": "link", "主动": "proactive", "博客": "blog", "签到": "sign",
     "在线状态": "online", "链接安全": "urlsafe", "识别文字": "ocr", "感知": "awareness",
-    "广告": "ad", "广告招商": "ad",
+    "广告": "ad", "广告招商": "ad", "回忆": "recall",
 }
 
 _PLUGIN_KEYS = {
@@ -160,6 +160,7 @@ _PLUGIN_KEYS = {
     "ocr": ("ocr_guard_enabled", "图片文字检测（识别图片里的字并过敏感词）"),
     "awareness": ("awareness_enabled", "群聊感知（让机器人看见群里最近的聊天与图片）"),
     "ad": ("ad_enabled", "广告招商与群内自发广告处理"),
+    "recall": ("recall_enabled", "群聊回忆（检索群里以前说过的话）"),
 }
 
 
@@ -169,7 +170,7 @@ async def handle_plugin(args: Message = CommandArg()) -> None:
     if parts:
         parts[0] = _PLUGIN_ALIASES.get(parts[0], parts[0])
     if len(parts) != 2 or parts[1] not in ("on", "off") or parts[0] not in _PLUGIN_KEYS:
-        await _send(plugin_admin, "用法：/模块 回复|链接|视觉|主动|博客|感知|识别文字|签到|在线状态|链接安全|广告 开|关")
+        await _send(plugin_admin, "用法：/模块 回复|链接|视觉|主动|博客|感知|识别文字|签到|在线状态|链接安全|广告|回忆 开|关")
         return
     key, label = _PLUGIN_KEYS[parts[0]]
     enable = parts[1] == "on"

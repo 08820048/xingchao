@@ -110,6 +110,86 @@ function ActivityCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
 }
 
 
+
+type RecallData = {
+  enabled: boolean;
+  stats: { groups: Record<string, number>; total: number; files: number; oldest: string; newest: string };
+  max_docs: number;
+  days: number;
+};
+
+function RecallCard({ toast }: { toast: (t: string, ok?: boolean) => void }) {
+  const [d, setD] = useState<RecallData | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => {
+    api<{ ok: boolean; data: RecallData }>("/panel/api/recall").then((r) => {
+      if (r.ok) setD(r.data);
+    });
+  }, []);
+  useEffect(load, [load]);
+  if (!d) return <Spinner className="m-8" />;
+
+  const save = async (body: Record<string, unknown>) => {
+    setBusy(true);
+    const r = await post("/panel/api/recall", body);
+    setBusy(false);
+    if (r.ok) { toast(r.data?.message || "已保存"); load(); } else toast(r.error || "操作失败", false);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">群聊回忆</CardTitle>
+        <CardDescription>
+          把群里以前说过的话变成可检索的记忆：`/回忆 关键词` 就能翻回旧消息。
+          索引只在内存里（与聊天原文只落日志的约定一致），重启后从日志重建
+        </CardDescription>
+      </CardHeader>
+      <CardPanel className="grid gap-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="grid gap-0.5">
+            <Label>启用</Label>
+            <span className="text-muted-foreground text-xs">
+              已索引 {d.stats.total} 条 · {Object.keys(d.stats.groups).length} 个群 · {d.stats.files} 个日志文件
+              {d.stats.newest ? ` · 最新 ${d.stats.newest.slice(0, 16)}` : ""}
+            </span>
+          </div>
+          <Switch checked={d.enabled} onCheckedChange={(v) => save({ enabled: v })} />
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rc-days">默认回溯天数</Label>
+            <Input id="rc-days" type="number" defaultValue={d.days}
+              onBlur={(e) => save({ days: +e.target.value || 90 })} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rc-max">每群保留条数</Label>
+            <Input id="rc-max" type="number" defaultValue={d.max_docs}
+              onBlur={(e) => save({ max_docs: +e.target.value || 20000 })} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>&nbsp;</Label>
+            <Button variant="outline" disabled={busy} onClick={() => save({ refresh: true })}>
+              立即重建索引
+            </Button>
+          </div>
+        </div>
+
+        {Object.keys(d.stats.groups).length > 0 && (
+          <div className="text-muted-foreground flex flex-wrap gap-2 text-xs">
+            {Object.entries(d.stats.groups).map(([gid, n]) => (
+              <span key={gid} className="border-input rounded-md border px-2 py-0.5">
+                {groupLabel(gid)}：{n} 条
+              </span>
+            ))}
+          </div>
+        )}
+      </CardPanel>
+    </Card>
+  );
+}
+
 type SearchData = {
   chain: string[];
   providers: { key: string; label: string; ready: boolean; note: string }[];
@@ -425,6 +505,7 @@ export function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
     <div className="grid gap-4">
       <ActivityCard toast={toast} />
       <SearchCard toast={toast} />
+      <RecallCard toast={toast} />
       <PersonaCard toast={toast} />
       <MemoryCard toast={toast} />
 

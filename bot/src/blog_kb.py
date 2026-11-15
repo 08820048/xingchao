@@ -162,29 +162,13 @@ CATEGORY_ALIASES: dict[str, list[str]] = {
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
-_ASCII_TERM_RE = re.compile(r"[a-z][a-z0-9+#._-]{1,}")
-_CJK_RUN_RE = re.compile(r"[\u4e00-\u9fff]+")
-_CJK_FILLER_RE = re.compile(r"[啊呀吧呢吗哦噢嗯诶唉嘛嘞]+")
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
 _CONTENT_NS = "{http://purl.org/rss/1.0/modules/content/}encoded"
 
-# 停用词：疑问词 / 口语 / 泛词，避免「怎么、如何、兄弟们」这类词误命中
-_STOPWORDS = {
-    "如何", "怎么", "怎样", "什么", "为什么", "为何", "哪里", "哪个", "哪些", "是否",
-    "有没有", "能不能", "可不可以", "请问", "请教", "求助", "求解", "推荐", "一个",
-    "一下", "这个", "那个", "这些", "那些", "我们", "你们", "他们", "自己", "现在",
-    "今天", "明天", "昨天", "已经", "就是", "不是", "还是", "但是", "因为", "所以",
-    "如果", "然后", "感觉", "觉得", "知道", "不会", "不能", "需要", "问题", "东西",
-    "时候", "可以", "应该", "可能", "真的", "兄弟们", "兄弟", "大佬", "老哥", "谢谢",
-    "不错", "好用", "怎么办", "咋办", "咋整", "有点", "其实", "大家", "各位", "没有",
-    "the", "and", "for", "with", "this", "that", "you", "are", "how", "what",
-}
-
-# 中文停用词（长词优先）用于切分，避免「是什么/什么东西」这类跨词碎片进入索引
-_CJK_STOP_SPLIT_RE = re.compile(
-    "|".join(map(re.escape, sorted(
-        (w for w in _STOPWORDS if not w.isascii()), key=len, reverse=True
-    )))
-)
+# 分词与停用词与群聊检索共用（src/textindex.py），口径只维护一份
+from src.textindex import term_weight as _term_weight  # noqa: E402
+from src.textindex import terms as _terms  # noqa: E402
 
 
 def html_to_text(raw: str) -> str:
@@ -197,36 +181,6 @@ def html_to_text(raw: str) -> str:
     text = _TAG_RE.sub(" ", text)
     text = html.unescape(text)
     return _WS_RE.sub(" ", text).strip()
-
-
-def _terms(text: str) -> set[str]:
-    """提取可匹配词：英文单词（≥2） + 中文 2-4 字 n-gram。
-
-    中文先按语气助词与停用词切分，再生成 n-gram，避免跨词碎片（如“是什么”）。
-    """
-    lowered = text.lower()
-    out: set[str] = set()
-    for m in _ASCII_TERM_RE.finditer(lowered):
-        word = m.group(0).strip("._+#-")
-        if len(word) >= 2 and word not in _STOPWORDS:
-            out.add(word)
-    for m in _CJK_RUN_RE.finditer(lowered):
-        for chunk in _CJK_FILLER_RE.split(m.group(0)):
-            for run in _CJK_STOP_SPLIT_RE.split(chunk):
-                for n in (2, 3, 4):
-                    if len(run) < n:
-                        continue
-                    for i in range(len(run) - n + 1):
-                        term = run[i:i + n]
-                        if term not in _STOPWORDS:
-                            out.add(term)
-    return out
-
-
-def _term_weight(term: str) -> float:
-    if term.isascii():
-        return min(len(term), 6) * 0.9
-    return len(term) * 1.4
 
 
 # ---------------------------------------------------------------- Feed 抓取 / 解析

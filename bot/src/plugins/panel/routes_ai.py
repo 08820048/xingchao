@@ -130,6 +130,62 @@ def register(app) -> None:
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         return JSONResponse({"ok": True, "data": {"message": "AI 配置已保存并生效"}})
 
+    @app.get("/panel/api/recall")
+    async def panel_recall_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import recall
+
+        return JSONResponse({
+            "ok": True,
+            "data": {
+                "enabled": await recall.is_enabled(),
+                "stats": recall.stats_sync(),
+                "max_docs": int(await recall._kv("recall_max_docs")),
+                "days": int(await recall._kv("recall_days")),
+            },
+        })
+
+    @app.post("/panel/api/recall")
+    async def panel_recall_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import recall
+
+        body = await request.json()
+        store = get_store()
+        updates: dict[str, str] = {}
+        if "enabled" in body:
+            if not isinstance(body["enabled"], bool):
+                return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
+            updates["recall_enabled"] = "true" if body["enabled"] else "false"
+        for key, field in (("days", "recall_days"), ("max_docs", "recall_max_docs")):
+            if key in body:
+                try:
+                    val = int(body[key])
+                except (TypeError, ValueError):
+                    return JSONResponse({"ok": False, "error": f"{key} 应为整数"}, status_code=400)
+                if not (1 <= val <= 100000):
+                    return JSONResponse({"ok": False, "error": f"{key} 应在 1-100000 之间"}, status_code=400)
+                updates[field] = str(val)
+        if body.get("refresh"):
+            added = await recall.refresh()
+            if not updates:
+                st = recall.stats_sync()
+                return JSONResponse({"ok": True, "data": {
+                    "message": f"已索引 {added} 条新消息，共 {st['total']} 条",
+                    "stats": st,
+                }})
+        if not updates:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        try:
+            for key, value in updates.items():
+                await store.set_kv(key, value)
+        except Exception:
+            logger.exception("面板保存群聊回忆配置失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        return JSONResponse({"ok": True, "data": {"message": "群聊回忆配置已保存并生效"}})
+
     @app.get("/panel/api/search")
     async def panel_search_get(request: Request) -> JSONResponse:
         if not _authorized(request):
