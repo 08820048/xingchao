@@ -170,6 +170,7 @@ async def answer_for(group_id: int, text: str) -> dict | None:
         return None
     try:
         await get_store().bump_kb_hits(entry["id"])
+        await get_store().incr_action(group_id, "kb_answer")
     except Exception:
         logger.debug("知识命中计数失败", exc_info=True)
     return entry

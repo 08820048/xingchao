@@ -633,6 +633,12 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
 
     _append_history(group_key, "user", history_user_text or text, cfg["ai_ctx_rounds"])
     _append_history(group_key, "assistant", reply, cfg["ai_ctx_rounds"])
+    # 工作台账：记一次「回答了一个问题」（只计数，不存内容；私聊记为 0 群）
+    try:
+        stat_group = event.group_id if isinstance(event, GroupMessageEvent) else 0
+        await get_store().incr_action(stat_group, "ai_reply")
+    except Exception:
+        logger.debug("AI 回答计数失败", exc_info=True)
     if len(reply) > MAX_REPLY_CHARS:
         reply = reply[:MAX_REPLY_CHARS] + "\n…（内容过长已截断）"
     return reply

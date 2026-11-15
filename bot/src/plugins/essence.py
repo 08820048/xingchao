@@ -16,10 +16,12 @@ from typing import Any
 from nonebot import on_command
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
+from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
 from src.permission import SUPERUSER
+from src.store import get_store
 
 NOMINATE_DAILY_LIMIT = 3
 _nominated: dict[int, float] = {}                # message_id → ts
@@ -34,12 +36,19 @@ def _err(e: Exception) -> str:
     return text[:80]
 
 
-async def set_essence(bot: Bot, message_id: int) -> tuple[bool, str]:
+async def set_essence(
+    bot: Bot, message_id: int, group_id: int | None = None,
+) -> tuple[bool, str]:
     try:
         await bot.call_api("set_essence_msg", message_id=message_id)
-        return True, "已设为精华 ⭐"
     except Exception as e:
         return False, _err(e)
+    if group_id:
+        try:
+            await get_store().incr_action(group_id, "essence_set")
+        except Exception:
+            logger.debug("精华计数失败", exc_info=True)
+    return True, "已设为精华 ⭐"
 
 
 async def delete_essence(bot: Bot, message_id: int) -> tuple[bool, str]:
@@ -96,11 +105,11 @@ essence_list_cmd = on_command("精华列表", rule=SUPERUSER, priority=1, block=
 
 @essence_cmd.handle()
 async def handle_set(matcher: Matcher, bot: Bot, event: MessageEvent, args: Message = CommandArg()) -> None:
-    mid, _ = _target(event, args)
+    mid, gid = _target(event, args)
     if mid is None:
         await matcher.send("用法：回复要设为精华的消息并发送 /精华；或 /精华 <message_id> <群号>")
         return
-    ok, msg = await set_essence(bot, mid)
+    ok, msg = await set_essence(bot, mid, gid)
     await matcher.send(("✅ " if ok else "⚠️ ") + msg)
 
 

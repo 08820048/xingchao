@@ -266,3 +266,8 @@ async def handle_link_preview(bot: Bot, event: GroupMessageEvent, matcher: Match
         raise
     except Exception:
         logger.exception("链接解读回复发送失败")
+        return
+    try:
+        await get_store().incr_action(event.group_id, "link_preview")
+    except Exception:
+        logger.debug("链接解读计数失败", exc_info=True)

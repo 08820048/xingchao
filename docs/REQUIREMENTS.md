@@ -636,3 +636,22 @@ CREATE TABLE IF NOT EXISTS msg_stat (
 - AI 工具：`search_group_kb`（所有人）、`add_group_kb` / `suggest_group_kb`（超管）
 - 面板：`GET/POST /panel/api/kb`（条目增删改、命中测试、开关、阈值、冷却、候选）；
   独立「知识库」页；`/模块 知识 开|关` 亦可
+
+### 17.21 工作台账 `worklog.py`
+
+- 动机：删广告、拦违规码、答问题都发生在群里却几乎不可见，导致「它好像啥也没干」，
+  只剩签到有存在感。台账按周把做过的事摊开，用真实数字把价值显性化
+- 数据来源（不新增隐私面）：
+  - `punishments`（新增 `start`/`end` 日期区间参数）：按 `source` 归类为
+    违规言论 / 违规图片 / 引流二维码 / 群内广告，并统计禁言人次
+  - `action_stat`（新表，只计数不含内容）：`ai_reply` / `kb_answer` / `recall_query` /
+    `link_preview` / `essence_set`；未知动作照原样列出，不吞数据
+  - 打点位置：`ai.chat` 成功回复后、`kb.answer_for` 命中后、`recall.search` 真正翻到结果时、
+    `linkpreview` 成功回复后、`essence.set_essence` 成功且知道群号时。
+    全部 `try/except` 包住，计数失败绝不影响业务
+- 输出：`/台账 [天数]`（1–90，默认 7）；群内按当前群统计，超管私聊为全部群合计；
+  含环比（与上一个等长区间比较）；没有任何记录时**明确说「很安静」**，不编数字
+- 每周播报：`worklog_weekly`（**默认关**，避免又多一条刷屏）、星期/时间/范围可配，
+  按群 kv 去重，每群每天最多一次
+- 面板：`GET/POST /panel/api/worklog`（开关、播报设置、近 7 天动作分布与分群条数、
+  台账预览）；独立「工作台账」页；`/模块 台账 开|关`

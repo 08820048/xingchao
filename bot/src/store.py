@@ -121,6 +121,13 @@ CREATE TABLE IF NOT EXISTS kb_entries (
     updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_kb_group ON kb_entries (group_id);
+CREATE TABLE IF NOT EXISTS action_stat (
+    day TEXT NOT NULL,
+    group_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    count INTEGER DEFAULT 0,
+    PRIMARY KEY (day, group_id, action)
+);
 """
 
 
@@ -594,17 +601,28 @@ class Store:
         return int(row[0]) if row else 0
 
     async def list_punishments(
-        self, limit: int = 100, group_id: int | None = None
+        self, limit: int = 100, group_id: int | None = None,
+        start: str | None = None, end: str | None = None,
     ) -> list[dict]:
+        """处罚记录（默认最近 limit 条）。
+
+        start/end 为 YYYY-MM-DD 闭区间，用于工作台账按周汇总。
+        """
         conn = await self._ensure()
         sql = (
             "SELECT id, ts, group_id, user_id, word, action, mute_minutes, reason,"
-            " appeal_status, appeal_text, source FROM punishments"
+            " appeal_status, appeal_text, source FROM punishments WHERE 1=1"
         )
-        params: list[int] = []
+        params: list = []
         if group_id is not None:
-            sql += " WHERE group_id = ?"
+            sql += " AND group_id = ?"
             params.append(group_id)
+        if start:
+            sql += " AND substr(ts, 1, 10) >= ?"
+            params.append(start)
+        if end:
+            sql += " AND substr(ts, 1, 10) <= ?"
+            params.append(end)
         sql += " ORDER BY id DESC LIMIT ?"
         params.append(limit)
         async with conn.execute(sql, params) as cur:
@@ -886,6 +904,50 @@ class Store:
         conn = await self._ensure()
         await conn.execute("UPDATE kb_entries SET hits = hits + 1 WHERE id = ?", (entry_id,))
         await conn.commit()
+
+    # ---------------------------------------------------------------- 动作计数（工作台账）
+
+    async def incr_action(self, group_id: int, action: str, day: str | None = None) -> None:
+        """记一次「机器人为群做了什么」（只计数，不含任何内容）。
+
+        action 用统一的小写标识，如 kb_answer / recall_query / ai_reply /
+        ad_blocked / link_preview / essence_set / join_approved。
+        """
+        day = day or datetime.now().astimezone().strftime("%Y-%m-%d")
+        conn = await self._ensure()
+        await conn.execute(
+            "INSERT INTO action_stat (day, group_id, action, count) VALUES (?, ?, ?, 1)"
+            " ON CONFLICT(day, group_id, action) DO UPDATE SET count = count + 1",
+            (day, int(group_id), str(action)[:40]),
+        )
+        await conn.commit()
+
+    async def action_totals(
+        self, start: str, end: str, group_id: int | None = None,
+    ) -> dict[str, int]:
+        """[start, end] 闭区间内各动作的次数合计。"""
+        conn = await self._ensure()
+        sql = "SELECT action, SUM(count) FROM action_stat WHERE day >= ? AND day <= ?"
+        params: list = [start, end]
+        if group_id is not None:
+            sql += " AND group_id = ?"
+            params.append(int(group_id))
+        sql += " GROUP BY action"
+        async with conn.execute(sql, tuple(params)) as cur:
+            return {str(r[0]): int(r[1]) for r in await cur.fetchall()}
+
+    async def action_by_group(self, start: str, end: str) -> dict[int, dict[str, int]]:
+        """同一区间内按群分组的动作次数。"""
+        conn = await self._ensure()
+        async with conn.execute(
+            "SELECT group_id, action, SUM(count) FROM action_stat"
+            " WHERE day >= ? AND day <= ? GROUP BY group_id, action",
+            (start, end),
+        ) as cur:
+            out: dict[int, dict[str, int]] = {}
+            for gid, action, count in await cur.fetchall():
+                out.setdefault(int(gid), {})[str(action)] = int(count)
+            return out
 
     async def close(self) -> None:
         if self._conn is not None:

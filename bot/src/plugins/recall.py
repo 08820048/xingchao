@@ -278,9 +278,15 @@ async def search(
         days = int(await _kv("recall_days"))
     if limit is None:
         limit = int(await _kv("recall_results"))
-    return search_sync(
+    hits = search_sync(
         group_id, query, days=days, limit=limit, min_score=float(await _kv("recall_min_score")),
     )
+    if hits:  # 只统计真正翻到东西的次数，避免把"随手一试"也算成价值
+        try:
+            await get_store().incr_action(group_id, "recall_query")
+        except Exception:
+            logger.debug("回忆查询计数失败", exc_info=True)
+    return hits
 
 
 async def _display_name(bot: Bot | None, group_id: int, user_id: int) -> str:

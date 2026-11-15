@@ -130,6 +130,58 @@ def register(app) -> None:
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         return JSONResponse({"ok": True, "data": {"message": "AI 配置已保存并生效"}})
 
+    @app.get("/panel/api/worklog")
+    async def panel_worklog_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import worklog
+
+        data = await worklog.panel_payload()
+        data["preview"] = await worklog.build_worklog(None, days=7)
+        return JSONResponse({"ok": True, "data": data})
+
+    @app.post("/panel/api/worklog")
+    async def panel_worklog_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        body = await request.json()
+        store = get_store()
+        updates: dict[str, str] = {}
+        for flag, field in (("enabled", "worklog_enabled"), ("weekly", "worklog_weekly")):
+            if flag in body:
+                if not isinstance(body[flag], bool):
+                    return JSONResponse({"ok": False, "error": f"{flag} 应为布尔值"}, status_code=400)
+                updates[field] = "true" if body[flag] else "false"
+        if "weekday" in body:
+            try:
+                wd = int(body["weekday"])
+            except (TypeError, ValueError):
+                return JSONResponse({"ok": False, "error": "weekday 应为 0-6"}, status_code=400)
+            if not 0 <= wd <= 6:
+                return JSONResponse({"ok": False, "error": "weekday 应为 0-6"}, status_code=400)
+            updates["worklog_weekday"] = str(wd)
+        if "time" in body:
+            import re as _re
+
+            t = str(body["time"]).strip()
+            if not _re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", t):
+                return JSONResponse({"ok": False, "error": "时间格式应为 HH:MM"}, status_code=400)
+            updates["worklog_time"] = t
+        if "scope" in body:
+            scope = str(body["scope"]).strip()
+            if scope != "all" and not (scope.isdigit() and int(scope) in merged_whitelist()):
+                return JSONResponse({"ok": False, "error": "scope 应为 all 或白名单群号"}, status_code=400)
+            updates["worklog_scope"] = scope
+        if not updates:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        try:
+            for key, value in updates.items():
+                await store.set_kv(key, value)
+        except Exception:
+            logger.exception("面板保存工作台账配置失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        return JSONResponse({"ok": True, "data": {"message": "工作台账配置已保存并生效"}})
+
     @app.get("/panel/api/kb")
     async def panel_kb_get(request: Request, group_id: int | None = None) -> JSONResponse:
         if not _authorized(request):
