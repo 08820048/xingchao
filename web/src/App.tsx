@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, BookOpen, BookMarked, ClipboardList, Gavel, LogOut, Megaphone, MessageSquareText, Newspaper, ShieldAlert, Clock3, Sparkles, UserCog, UserPlus, Users, Wrench } from "lucide-react";
+import { Activity, BookOpen, BookMarked, ClipboardList, Gavel, LogOut, Megaphone, MessageSquareText, Newspaper, ShieldAlert, Clock3, Sparkles, UserCog, UserPlus, Users, Wrench, ShieldCheck } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { RepliesTab } from "@/pages/replies";
@@ -17,6 +17,7 @@ import { FeedsTab } from "@/pages/feeds";
 import { AdsTab } from "@/pages/ads";
 import { KnowledgeTab } from "@/pages/knowledge";
 import { WorklogTab } from "@/pages/worklog";
+import { TopicsTab } from "@/pages/topics";
 import { GroupsTab, SuperusersTab } from "@/pages/groups";
 import { ThemeToggle } from "@/components/theme";
 import { Toast } from "@/components/toast";
@@ -39,6 +40,7 @@ const NAV = [
   { id: "ads", label: "广告", icon: Megaphone },
   { id: "knowledge", label: "知识库", icon: BookMarked },
   { id: "worklog", label: "工作台账", icon: Wrench },
+  { id: "topics", label: "话题规约", icon: ShieldCheck },
 ] as const;
 
 function PanelApp() {
@@ -152,6 +154,7 @@ function PanelApp() {
           {tab === "ads" && <AdsTab toast={toast} />}
           {tab === "knowledge" && <KnowledgeTab toast={toast} />}
           {tab === "worklog" && <WorklogTab toast={toast} />}
+          {tab === "topics" && <TopicsTab toast={toast} />}
         </div>
       </SidebarInset>
       {toastState && <Toast text={toastState.t} ok={toastState.ok} />}

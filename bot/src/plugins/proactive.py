@@ -526,6 +526,16 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
     gid, uid = event.group_id, event.user_id
     if gid in _busy:
         return
+    # 话题规约：这条消息碰到划定的话题就完全不接，也不评价
+    try:
+        from src.plugins import topics as topics_plugin
+
+        if text and await topics_plugin.should_stay_out(text):
+            logger.debug(f"群 {gid} 主动性：命中话题规约，跳过")
+            return
+    except Exception:
+        logger.debug("话题规约检查失败", exc_info=True)
+
     # 知识库刚答过这条提问：不再插话，避免同一条问题两个模块各答一遍
     try:
         from src.plugins import kb as kb_plugin

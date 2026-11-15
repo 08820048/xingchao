@@ -499,6 +499,17 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
     history_user_text：写入历史上下文的用户消息文本（默认用 text）。
     纯 @ 唤起时传入标记文本，避免把内部元提示写入上下文。
     """
+    # 话题规约：命中就不调模型，直接回固定话术。放在最前面，
+    # 既不消耗额度，也保证模型根本没有机会碰这些话题。
+    try:
+        from src.plugins import topics
+
+        blocked = await topics.refusal(text)
+        if blocked:
+            return blocked
+    except Exception:
+        logger.exception("话题规约检查失败（放行）")
+
     cfg = await ai_config()
     client = await get_client()
     if client is None:
@@ -536,8 +547,15 @@ async def chat(event: MessageEvent, text: str, bot=None, *, history_user_text: s
         persona_text = await persona.persona_block(recent_n)
     except Exception:
         logger.exception("人设注入失败")
+    try:
+        from src.plugins import topics as topics_plugin
+
+        topic_baseline = topics_plugin.prompt_baseline()
+    except Exception:
+        topic_baseline = ""
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": cfg["ai_system_prompt"]},
+        *([{"role": "system", "content": topic_baseline}] if topic_baseline else []),
         *([{"role": "system", "content": persona_text}] if persona_text else []),
         {"role": "system", "content": _capability_prompt(is_superuser)},
         {"role": "system", "content": scene},

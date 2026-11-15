@@ -130,6 +130,70 @@ def register(app) -> None:
             return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
         return JSONResponse({"ok": True, "data": {"message": "AI 配置已保存并生效"}})
 
+    @app.get("/panel/api/topics")
+    async def panel_topics_get(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import topics
+
+        return JSONResponse({"ok": True, "data": await topics.panel_payload()})
+
+    @app.post("/panel/api/topics")
+    async def panel_topics_post(request: Request) -> JSONResponse:
+        if not _authorized(request):
+            return _unauthorized()
+        from src.plugins import topics
+
+        body = await request.json()
+        store = get_store()
+        updates: dict[str, str] = {}
+        if "enabled" in body:
+            if not isinstance(body["enabled"], bool):
+                return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
+            updates["topics_enabled"] = "true" if body["enabled"] else "false"
+        for item in body.get("categories") or []:
+            key = str(item.get("key") or "")
+            if key not in topics.CATEGORIES:
+                return JSONResponse({"ok": False, "error": f"未知分类 {key}"}, status_code=400)
+            if "enabled" in item:
+                if not isinstance(item["enabled"], bool):
+                    return JSONResponse({"ok": False, "error": "enabled 应为布尔值"}, status_code=400)
+                updates[f"topics_{key}_enabled"] = "true" if item["enabled"] else "false"
+            if "words" in item:
+                words = str(item["words"] or "").strip()
+                if len(words) > topics.MAX_WORDS:
+                    return JSONResponse(
+                        {"ok": False, "error": f"词表过长（上限 {topics.MAX_WORDS} 字）"},
+                        status_code=400,
+                    )
+                updates[f"topics_{key}_words"] = words
+            if "reply" in item:
+                reply = str(item["reply"] or "").strip()
+                if not reply:
+                    return JSONResponse({"ok": False, "error": "话术不能为空"}, status_code=400)
+                if len(reply) > topics.MAX_REPLY_CHARS:
+                    return JSONResponse(
+                        {"ok": False, "error": f"话术过长（上限 {topics.MAX_REPLY_CHARS} 字）"},
+                        status_code=400,
+                    )
+                updates[f"topics_{key}_reply"] = reply
+        if body.get("test"):
+            hit = await topics.classify_async(str(body["test"]))
+            return JSONResponse({"ok": True, "data": {
+                "message": f"命中「{topics.CATEGORIES[hit[0]]}」（{hit[1]}）" if hit else "没有命中",
+                "hit": {"category": hit[0], "word": hit[1]} if hit else None,
+                "reply": await topics.reply_for(hit[0]) if hit else "",
+            }})
+        if not updates:
+            return JSONResponse({"ok": False, "error": "没有可保存的字段"}, status_code=400)
+        try:
+            for key, value in updates.items():
+                await store.set_kv(key, value)
+        except Exception:
+            logger.exception("面板保存话题规约失败")
+            return JSONResponse({"ok": False, "error": "写入失败"}, status_code=500)
+        return JSONResponse({"ok": True, "data": {"message": "话题规约已保存并生效"}})
+
     @app.get("/panel/api/worklog")
     async def panel_worklog_get(request: Request) -> JSONResponse:
         if not _authorized(request):
