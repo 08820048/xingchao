@@ -38,6 +38,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.config import get_config
 from src.permission import GROUP_WHITELIST
 from src.store import get_store
 
@@ -113,9 +114,13 @@ async def ad_config() -> dict[str, Any]:
 
 
 def default_contact() -> str:
-    """广告联系人兜底：第一个超管 QQ。"""
-    ids = sorted(int(u) for u in get_driver().config.superusers)
-    return str(ids[0]) if ids else str(get_driver().config.superusers or "")
+    """广告联系人兜底：开发者 QQ（xingchao_developer_id）。
+
+    不要用「超管列表里的第一个」——超管是权限概念，可以有好几个（小号、协管），
+    而对外联系人只能有一个。按数字排序取第一个曾经取到过小号（524430556 < 2217021563），
+    群里看到的报价联系人就成了错的人。
+    """
+    return str(get_config().xingchao_developer_id)
 
 
 def parse_partners(raw: object) -> list[int]:

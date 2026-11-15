@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.config import get_config
 from src.plugins import ads
 
 
@@ -96,7 +97,8 @@ async def test_config_defaults_and_roundtrip(store):
     cfg = await ads.ad_config()
     assert cfg["ad_enabled"] is True
     assert cfg["ad_action"] == "reply"
-    assert cfg["ad_contact"] == "1"  # 兜底用首个超管
+    # 兜底用开发者 QQ，不是「超管列表里数字最小的那个」
+    assert cfg["ad_contact"] == str(get_config().xingchao_developer_id)
     assert cfg["ad_partners"] == []
 
     await store.set_kv("ad_action", "silent")
@@ -243,3 +245,33 @@ def test_welcome_render_expands_ad_line():
     assert "{ad}" not in text
     # 占位符缺省（没传 ad_line）时只是被替换成空串，不会把 {ad} 露给新人
     assert "{ad}" not in render_welcome("你好{ad}", 1, 2).extract_plain_text()
+
+
+def test_default_contact_uses_developer_id_not_smallest_superuser():
+    """兜底联系人必须是开发者 QQ。
+
+    曾经的实现是「超管列表里数字最小的那个」，于是当超管里有一个数字更小的
+    小号（524430556 < 2217021563）时，群里看到的报价联系人就变成了小号。
+    超管是权限概念（可以有好几个），对外联系人只能有一个。
+    """
+    from nonebot import get_driver
+
+    from src.plugins import ads
+
+    driver = get_driver()
+    old = set(driver.config.superusers)
+    try:
+        driver.config.superusers = {"524430556", "2217021563"}
+        assert ads.default_contact() == str(get_config().xingchao_developer_id)
+        assert ads.default_contact() != "524430556"
+    finally:
+        driver.config.superusers = old
+
+
+def test_ad_notice_and_welcome_use_developer_contact(store):
+    """所有对外露出的联系人都应是同一个（开发者 QQ）。"""
+    import src.plugins.ads as ads_mod
+
+    expected = str(get_config().xingchao_developer_id)
+    assert ads_mod.default_contact() == expected
+    assert ads_mod.welcome_line(ads_mod.default_contact()).endswith(f"（管理员 QQ：{expected}）")
