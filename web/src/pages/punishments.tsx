@@ -20,6 +20,7 @@ type Punishment = {
   appeal_status: string;
   appeal_text: string;
   source: string;
+  counted: boolean;
 };
 
 type PunishmentsData = {
@@ -223,9 +224,16 @@ export function PunishmentsTab({ toast }: { toast: (t: string, ok?: boolean) => 
                       {p.reason || "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={p.appeal_status === "pending" ? "info" : "secondary"}>
-                        {APPEAL_LABEL[p.appeal_status] ?? p.appeal_status}
-                      </Badge>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge variant={p.appeal_status === "pending" ? "info" : "secondary"}>
+                          {APPEAL_LABEL[p.appeal_status] ?? p.appeal_status}
+                        </Badge>
+                        {p.counted === false && (
+                          <Badge variant="secondary" title="AI 复核不可用时兜底撤回，不计入升级处罚次数">
+                            未计次
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

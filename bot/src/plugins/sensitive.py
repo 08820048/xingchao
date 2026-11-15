@@ -454,6 +454,39 @@ _MAX_MUTE_MINUTES = 30 * 24 * 60  # QQ 禁言上限 30 天
 _ESCALATION_BASE_MINUTES = 10  # 未配置基础禁言时，第 2 次起翻倍的基数
 
 
+def strike_note(
+    strike: int, days: int, decision: str, escalation_enabled: bool,
+) -> str:
+    """群内处罚提示里的「第几次违规」后缀。
+
+    - 确认违规：第 1 次也要显示（不显示会被当成统计没生效）
+    - 兜底撤回（AI 复核不可用）：说明本次未计入，避免看起来像统计坏了
+    - 升级处罚被主动关闭：不提示次数
+    """
+    if strike >= 1:
+        return f"（{days} 天内第 {strike} 次违规）"
+    if decision == "unknown":
+        return "（AI 复核不可用，本次未计入违规次数）"
+    if not escalation_enabled:
+        return ""
+    return ""
+
+
+def punishment_notice(
+    user_id: int, *, strike: int, days: int, decision: str, escalation_enabled: bool,
+    kicked: bool, muted: bool, mute_minutes: int, recalled: bool,
+) -> str:
+    """群内 @ 被处罚者的说明文案（回复里已有 @，这里只出正文）。"""
+    note = strike_note(strike, days, decision, escalation_enabled)
+    if kicked:
+        return f"{user_id} 多次发送敏感违禁词{note}，已被移出群聊。"
+    if muted:
+        return f"你因发送了敏感违禁词被禁言 {mute_minutes} 分钟{note}，请记得阅读并遵守群规！"
+    if recalled:
+        return f"你因发送了敏感违禁词，消息已被撤回{note}，请记得阅读并遵守群规！"
+    return "你因发送了敏感违禁词，请记得阅读并遵守群规！"
+
+
 def escalation_plan(strike: int, base_minutes: int) -> tuple[str, int]:
     """第 strike 次（从 1 起）违规的处理，返回 (kind, mute_minutes)。
 
@@ -672,13 +705,11 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
 
     # 群内 @ 被处罚者并说明原因，避免莫名其妙被禁言
     if recalled or muted or kicked:
-        strike_note = f"（{cfg['sensitive_strike_days']} 天内第 {strike} 次违规）" if strike > 1 else ""
-        if kicked:
-            reason = f"{event.user_id} 多次发送敏感违禁词{strike_note}，已被移出群聊。"
-        elif muted:
-            reason = f"你因发送了敏感违禁词被禁言{strike_note}，请记得阅读并遵守群规！"
-        else:
-            reason = "你因发送了敏感违禁词，消息已被撤回，请记得阅读并遵守群规！"
+        reason = punishment_notice(
+            event.user_id, strike=strike, days=cfg["sensitive_strike_days"],
+            decision=decision, escalation_enabled=bool(cfg["sensitive_escalation"]),
+            kicked=kicked, muted=muted, mute_minutes=mute_minutes, recalled=recalled,
+        )
         try:
             tail = "\n（如认为误判，可私聊机器人直接发送申诉理由，7 天内有效）"
             await bot.call_api(
@@ -722,6 +753,10 @@ async def handle_sensitive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
             extra += f"\n⚠️ 按规则本应踢出，但{kick_held}，已改为最长禁言"
         if strike:
             extra += f"\n本群 {cfg['sensitive_strike_days']} 天内第 {strike} 次违规"
+        elif decision == "unknown":
+            extra += "\n（AI 复核不可用，本次未计入违规次数，不触发升级处罚）"
+        elif not cfg["sensitive_escalation"]:
+            extra += "\n（升级处罚已关闭，不统计违规次数）"
         review_line = (
             f"AI 复核: {review_reason}\n"
             if cfg["sensitive_review"] and decision == "violation" and review_reason

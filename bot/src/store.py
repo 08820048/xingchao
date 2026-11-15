@@ -611,7 +611,7 @@ class Store:
         conn = await self._ensure()
         sql = (
             "SELECT id, ts, group_id, user_id, word, action, mute_minutes, reason,"
-            " appeal_status, appeal_text, source FROM punishments WHERE 1=1"
+            " appeal_status, appeal_text, source, counted FROM punishments WHERE 1=1"
         )
         params: list = []
         if group_id is not None:
@@ -632,6 +632,7 @@ class Store:
                 "id": r[0], "ts": r[1], "group_id": r[2], "user_id": r[3], "word": r[4],
                 "action": r[5], "mute_minutes": r[6], "reason": r[7],
                 "appeal_status": r[8], "appeal_text": r[9], "source": r[10],
+                "counted": bool(r[11]),
             }
             for r in rows
         ]
