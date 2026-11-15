@@ -21,6 +21,8 @@ type AiConfig = {
   model: string;
   vision_model: string;
   system_prompt: string;
+  default_system_prompt: string;
+  is_default_prompt: boolean;
   ctx_rounds: number;
   limit_group: number;
   limit_user: number;
@@ -503,12 +505,32 @@ export function AiTab({ toast }: { toast: (t: string, ok?: boolean) => void }) {
             </Button>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="prompt">系统提示词（人设）</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="prompt">系统提示词（人设）</Label>
+              <div className="flex items-center gap-2">
+                {!cfg.is_default_prompt && <Badge variant="secondary">已自定义</Badge>}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    const r = await post("/panel/api/ai", { action: "reset_prompt" });
+                    if (r.ok) { toast("已恢复默认人设提示词"); load(); }
+                    else toast(r.error || "操作失败", false);
+                  }}
+                >
+                  恢复默认
+                </Button>
+              </div>
+            </div>
             <Textarea
-              rows={4}
+              rows={10}
               value={cfg.system_prompt}
               onChange={(e) => setCfg({ ...cfg, system_prompt: e.target.value })}
             />
+            <p className="text-muted-foreground text-xs">
+              提示词只描述「你是个什么样的人」。别把它写成岗位说明书（岗位、职能、能力清单），
+              那会让机器人句句离不开群管设定。能力清单由程序自动注入，不需要写在这里
+            </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
             <div className="flex flex-col gap-1.5">

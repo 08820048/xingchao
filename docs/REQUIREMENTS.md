@@ -515,7 +515,8 @@ CREATE TABLE IF NOT EXISTS msg_stat (
     set_group_business / list_replies / reload_replies
 - 权限：请求前按事件发起者是否超管过滤工具；越权调用返回错误说明
 - 工具执行异常转述给 LLM（如机器人非群管理员），由 AI 向用户解释
-- 系统提示词告知工具能力；敏感操作（禁言/踢人/改配置）要求 AI 先确认
+- 系统提示词只描述「是个什么样的人」，不写岗位与能力清单（工具 schema 已随请求传给模型）；
+  敏感操作（禁言/踢人/改配置）要求 AI 先确认
 
 ### 17.13 入群申请智能审批 + 退群通知管理员 `request.py`
 

@@ -45,6 +45,8 @@ def register(app) -> None:
                     "model": cfg["ai_model"],
                     "vision_model": cfg["ai_vision_model"],
                     "system_prompt": cfg["ai_system_prompt"],
+                    "default_system_prompt": ai_plugin.DEFAULTS["ai_system_prompt"],
+                    "is_default_prompt": cfg["ai_system_prompt"] == ai_plugin.DEFAULTS["ai_system_prompt"],
                     "ctx_rounds": cfg["ai_ctx_rounds"],
                     "limit_group": cfg["ai_limit_group"],
                     "limit_user": cfg["ai_limit_user"],
@@ -62,6 +64,9 @@ def register(app) -> None:
         body = await request.json()
         store = get_store()
         updates: dict[str, str] = {}
+        if body.get("action") == "reset_prompt":
+            # 一键恢复默认人格提示词（改过旧版“群管机器人”文案的部署用它重置）
+            updates["ai_system_prompt"] = ai_plugin.DEFAULTS["ai_system_prompt"]
         # 连接凭据（可选更新；api_key 留空 = 保持不变）
         if "base_url" in body:
             base = str(body["base_url"]).strip()
