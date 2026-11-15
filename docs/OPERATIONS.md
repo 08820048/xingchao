@@ -280,7 +280,9 @@ npx wrangler pages deploy dist --project-name=xingchao --branch=main
 
 ## 11. 版本更新公告
 
-- 每次发版（部署）前，在 `bot/src/changelog.json` **最前面**追加一条记录：
+- **发版由维护者明确指示后执行**：日常提交/推送不单独开新版本号，也不往 `changelog.json`
+  追加记录；一次发版通常包含这一批里的全部改动，合并成**一条**版本更新（不要一个功能一个版本号）
+- 维护者说发版时，在 `bot/src/changelog.json` **最前面**追加一条记录：
   `version`、`date`、`added` / `improved` / `fixed`（用户能感知的改动，写人话，别写内部实现）
 - 部署后机器人连上 NapCat 时，若最新版本与上次已公告版本不同，会自动向白名单群推送一条规范公告
   （同时代替「已上线」通知）；推送成功后记录版本，不会重复发
