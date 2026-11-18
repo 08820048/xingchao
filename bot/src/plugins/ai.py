@@ -463,11 +463,13 @@ async def _build_scene(bot, event: MessageEvent) -> str:
                 "（若用户要求禁言/解除禁言/踢出某人，优先使用这些 QQ）"
             )
         if event.reply is not None:
-            reply_text = event.reply.message.extract_plain_text().strip()[:100]
+            # 正文已由 quote_block 放进用户那一轮（那里模型才看得准），
+            # 这里只留元信息：谁发的、能用于撤回
+            _uid, who = _quote_sender(event, bot)
             lines.append(
-                f"本条消息引用了 message_id={event.reply.message_id} 的消息"
-                + (f"（内容：{reply_text}）" if reply_text else "")
-                + "（若用户要求撤回，默认撤回这条引用消息）"
+                f"本条消息引用了 {who} 发的消息（message_id={event.reply.message_id}；"
+                "原文见用户消息里的引用块）"
+                "（若用户要求撤回，默认撤回这条引用消息）"
             )
     lines.append(
         f"开发者信息：QQ {cfg.xingchao_developer_id}，博客 {cfg.xingchao_developer_blog}，"
@@ -697,6 +699,50 @@ def _note_engaged(event: MessageEvent) -> None:
             logger.debug("开启接话窗口失败", exc_info=True)
 
 
+QUOTE_MAX_CHARS = 300   # 引用原文进 user 轮的字数上限（太长会挤掉真正的问句）
+
+
+def _quote_sender(event: MessageEvent, bot=None) -> tuple[int | None, str]:
+    """引用消息的 (发送者 QQ, 展示名)；机器人自己发的会标注「你自己」。"""
+    sender = getattr(event.reply, "sender", None) if event.reply is not None else None
+    uid = None
+    name = ""
+    if sender is not None:
+        uid = getattr(sender, "user_id", None)
+        name = str(getattr(sender, "card", "") or getattr(sender, "nickname", "") or "")
+        if uid is None and isinstance(sender, dict):
+            uid = sender.get("user_id")
+            name = str(sender.get("card") or sender.get("nickname") or "")
+    if uid is not None and bot is not None and str(uid) == str(bot.self_id):
+        return int(uid), f"{name or '你'}（你自己）"
+    return (int(uid) if uid is not None else None), (name or (str(uid) if uid else "某人"))
+
+
+async def quote_block(event: MessageEvent, bot=None) -> str:
+    """把「用户引用回复的那条消息」拼进用户这句话里。
+
+    为什么必须放在 user 轮，而不是只放场景 system 提示：
+    用户引用一条消息再 @ 我们时，他自己说的话往往极短（一个「0000」「这个怎么写」），
+    语义完全依赖被引用的那条。如果引用只出现在 system 场景里，模型很容易把用户那
+    几个字当成独立话题自由联想，答非所问。放进 user 轮，引用与用户的话就是一个整体。
+    """
+    if event.reply is None:
+        return ""
+    text = event.reply.message.extract_plain_text().strip()
+    _uid, who = _quote_sender(event, bot)
+    if not text:
+        return (
+            f"【用户引用了一条 {who} 发的消息，里面没有文字（可能是图片、表情或卡片）】\n"
+            "【下面是用户接着说的话】\n"
+        )
+    truncated = len(text) > QUOTE_MAX_CHARS
+    body = text[:QUOTE_MAX_CHARS] + ("…" if truncated else "")
+    return (
+        f"【用户引用了 {who} 的这条消息】\n{body}\n"
+        "【上面是引用内容，下面这行才是用户自己说的话；回答时请结合引用内容理解他的意思】\n"
+    )
+
+
 async def _attached_images_note(event: MessageEvent, bot=None) -> str:
     """识别用户 @ 时附带/引用的图片，并读取附带/引用的合并转发内容，生成给模型看的说明（没有则空串）。"""
     try:
@@ -768,6 +814,32 @@ async def handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         AI_REPLYING.reset(token)
 
 
+def compose_user_text(
+    *, raw_text: str, quote: str, img_note: str, pure_at: bool,
+) -> tuple[str, str | None]:
+    """拼出发给模型的「用户这一轮」文本，并决定写进历史的版本。
+
+    引用原文一律拼在最前面，和用户自己说的话保持在同一个 turn 里——
+    这是让模型读懂「引用 + 一句话」这类消息的关键。
+    """
+    if pure_at and quote:
+        text = quote + "（用户只引用了这条消息并叫了你，没有写别的，就针对引用内容回应）"
+    elif pure_at:
+        text = PURE_AT_PROMPT
+    elif not raw_text:
+        text = quote + "（用户 @ 了你并发来图片，没有写文字，请看图自然地回应）" + img_note
+    else:
+        text = quote + raw_text + img_note
+
+    if pure_at and not quote:
+        history_text: str | None = "@星潮"
+    elif img_note:
+        history_text = quote + (raw_text or "[发了图片]") + "[附图]"
+    else:
+        history_text = None
+    return text, history_text
+
+
 async def _handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     if not event.to_me:
         return
@@ -803,18 +875,11 @@ async def _handle_ai(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
     img_note = await _attached_images_note(event, bot) if has_images else ""
     if not raw_text and not img_note:
         pure_at = True  # 附图全部识别失败且没写文字：当作纯 @
-    if pure_at:
-        text = PURE_AT_PROMPT
-    elif not raw_text:
-        text = "（用户 @ 了你并发来图片，没有写文字，请看图自然地回应）" + img_note
-    else:
-        text = raw_text + img_note
-    if pure_at:
-        history_text: str | None = "@星潮"
-    elif img_note:
-        history_text = (raw_text or "[发了图片]") + "[附图]"
-    else:
-        history_text = None
+    # 引用回复的原文必须进 user 轮（见 quote_block 的说明）
+    quote = await quote_block(event, bot)
+    text, history_text = compose_user_text(
+        raw_text=raw_text, quote=quote, img_note=img_note, pure_at=pure_at,
+    )
     reply = await chat(event, text, bot=bot, history_user_text=history_text)
     if reply is None:
         if pure_at:
