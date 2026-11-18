@@ -3,6 +3,9 @@
 - 默认关闭。/入群验证 开|关；/入群验证 提醒|踢出（超时处理方式）；/入群验证 <分钟>（时限，1–60，默认 5）
   AI 工具：set_join_verify（超管）
 - 流程：白名单群有人入群 → 群里 @ 新人出题（如 "3+8=?"）→ 新人在群里发出正确数字即通过
+- 答案校验（严格）：只认「这条消息就是在报那个数」。容忍「答案是 11 哦」这类口语，
+  但任何算式一律不通过——1+2+…+9、1e9、0x9、9.0、9的平方根 都算答错。
+  （旧实现是「文本里有任意一个数字等于答案即通过」，等于门槛形同虚设）
 - 未通过有两种情形：超时没回答；或答错次数用完（发了数字但不对，最多 3 次，每次错都会 @ 提示剩余机会）
 - 处罚前先公示：判定未通过后，机器人先在群里 @ 该成员说明原因和即将执行的处理，
   再给 30 秒宽限（期间答对仍可通过），到点才执行：
@@ -39,6 +42,29 @@ GRACE_SECONDS = 30  # 群里公示后到真正处罚之间的宽限
 
 _NUM = re.compile(r"(?<!\d)(\d{1,3})(?!\d)")
 
+# 答案解析：只认「这条消息就是在报那个数」，而不是「哪个数字碰巧等于答案」。
+#
+# 旧的实现是「文本里任意一个独立数字等于答案即通过」，于是任何含目标数字的表达式都能混过去：
+# 答案 9 时回 1+2+3+4+5+6+7+8+9、1e9、0x9、9的平方根 之类全都能过——门槛形同虚设。
+# 现在改成白名单：先去掉常见的口语填充（"答案是"、"哦"、"吧"…），
+# 剩下的必须**整个就是**答案数字，一个别的字符都不许有。
+_FILLER = re.compile(
+    "|".join(sorted({
+        "答案是", "答案", "结果", "我算的", "我算出来", "算出来", "我猜", "应该是", "应该",
+        "等于", "就是", "大概是", "大概", "我觉得", "我认为", "是", "为", "了", "的",
+        "吧", "哦", "噢", "呀", "啊", "呢", "嘛", "哈", "嗯", "呐", "咯", "啦", "噢耶",
+        "请问", "回答", "我的答案", "我的", "我", "那", "这个", "这题", "题", "报",
+    }, key=len, reverse=True))
+)
+# 允许出现的其它字符：空白与常见标点（语气/停顿，不影响语义）
+_PUNCT = re.compile("[\\s！!？?。，,、～~…·:：;；\"'“”‘’]+")
+
+# 表达式特征：出现这些就基本不是"报答案"，而是拿运算糊弄（保留用于提示与判错）
+_EXPR = re.compile(
+    r"[\^*/÷×√∑∏()（）\[\]{}%％]|\d\s*[+\-]\s*\d|\d\s*[eE]\s*[+\-]?\d|0[xX][0-9a-fA-F]+"
+    r"|\d\s*[.．]\s*\d|平方|立方|根号|开方|次方|对数|阶乘|[a-zA-Z]\s*[\^)（(]"
+)
+
 
 @dataclass
 class Pending:
@@ -62,14 +88,39 @@ def make_question(rng: random.Random | None = None) -> tuple[str, int]:
     return f"{a}-{b}", a - b
 
 
+def normalize_answer(text: str) -> str:
+    """归一化一条待校验的回答：全角转半角、去口语填充与标点，只留核心内容。"""
+    import unicodedata
+
+    text = unicodedata.normalize("NFKC", text or "")
+    text = _FILLER.sub("", text)
+    return _PUNCT.sub("", text)
+
+
+def looks_like_expression(text: str) -> bool:
+    """这条消息看起来是在用算式糊弄，而不是直接报答案。"""
+    import unicodedata
+
+    return bool(_EXPR.search(unicodedata.normalize("NFKC", text or "")))
+
+
 def check_answer(text: str, answer: int) -> bool:
-    """消息里出现的独立数字中包含答案即通过（容忍"答案是 11"这类写法）。"""
-    return any(int(n) == answer for n in _NUM.findall(text))
+    """只有「整条消息就是在报这个数」才算通过。
+
+    容忍「答案是 11 哦」这类口语写法，但不接受任何表达式：
+    1+2+…+9、1e9、0x9、9.0、9的平方根 一律不通过。
+    """
+    core = normalize_answer(text)
+    if not core.isdigit():
+        return False          # 还有别的字符 → 是算式/文字，不是答案
+    return int(core) == answer
 
 
 def is_wrong_attempt(text: str, answer: int) -> bool:
-    """发了数字但没有一个是答案：算一次答错（纯聊天没有数字则不算）。"""
-    return bool(_NUM.findall(text)) and not check_answer(text, answer)
+    """发了一串数字但不对（或拿算式糊弄）：算一次答错。纯聊天没有数字则不算。"""
+    if not _NUM.findall(text):
+        return False
+    return not check_answer(text, answer)
 
 
 def due_for_warning(now: float) -> list[tuple[int, int]]:
@@ -151,6 +202,15 @@ async def _say_plain(bot: Bot, group_id: int, text: str) -> None:
         logger.exception("入群验证：群内通知发送失败")
 
 
+def wrong_answer_hint(question: str, left: int, text: str) -> str:
+    """答错时的提示文案。用算式糊弄时额外说明「直接回数字就行」。"""
+    if looks_like_expression(text):
+        return (
+            f"不用算，直接回复 {question} 的结果数字就行（还有 {left} 次机会）"
+        )
+    return f"答案不对哦，请再算一次 {question}（还有 {left} 次机会）"
+
+
 @verify_msg.handle()
 async def handle_answer(bot: Bot, event: GroupMessageEvent) -> None:
     key = (event.group_id, event.user_id)
@@ -167,8 +227,10 @@ async def handle_answer(bot: Bot, event: GroupMessageEvent) -> None:
         if p.attempts >= MAX_ATTEMPTS:
             await announce_failure(bot, key, f"答错了 {MAX_ATTEMPTS} 次")
         else:
-            await _say(bot, event.group_id, event.user_id,
-                       f"答案不对哦，请再算一次 {p.question}（还有 {MAX_ATTEMPTS - p.attempts} 次机会）")
+            await _say(
+                bot, event.group_id, event.user_id,
+                wrong_answer_hint(p.question, MAX_ATTEMPTS - p.attempts, text),
+            )
 
 
 # ---------------------------------------------------------------- 未通过：先公示，再处罚
