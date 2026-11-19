@@ -15,6 +15,7 @@ type JoinConfig = {
   question: string;
   fallback: string;
   keywords: string;
+  intent_keywords: string;
   leave_report: boolean;
   pending: { seq: number; group_id: number; user_id: number; comment: string }[];
 };
@@ -188,6 +189,17 @@ export function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void })
               onChange={(e) => setCfg({ ...cfg, keywords: e.target.value })}
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="ikw">来意关键词（没答对题但说明来意，命中即通过）</Label>
+            <Input
+              id="ikw"
+              value={cfg.intent_keywords}
+              onChange={(e) => setCfg({ ...cfg, intent_keywords: e.target.value })}
+            />
+            <p className="text-muted-foreground text-xs">
+              AI 可用时由模型判断来意，这一栏只在 AI 不可用时兜底
+            </p>
+          </div>
           <div className="border-input flex items-center justify-between rounded-lg border p-3">
             <div>
               <p className="text-sm font-medium">退群通知管理员</p>
@@ -203,6 +215,7 @@ export function JoinTab({ toast }: { toast: (t: string, ok?: boolean) => void })
           <Button disabled={saving} onClick={() => save({
             mode: cfg.mode, fallback: cfg.fallback,
             question: cfg.question, keywords: cfg.keywords,
+            intent_keywords: cfg.intent_keywords,
           })}>
             {saving && <Spinner />}保存策略（{isGroup ? `群 ${sel}` : "全局默认"}）
           </Button>

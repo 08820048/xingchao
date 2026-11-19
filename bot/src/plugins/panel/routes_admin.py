@@ -77,6 +77,7 @@ def register(app) -> None:
             "question": raw_cfg["join_question"],
             "fallback": raw_cfg["join_fallback"],
             "keywords": raw_cfg["join_keywords"],
+            "intent_keywords": raw_cfg["join_intent_keywords"],
             "leave_report": raw_cfg["leave_report"],
         }
         overrides = await request_plugin._group_overrides()
@@ -132,6 +133,11 @@ def register(app) -> None:
             if len(kws) > 500:
                 return JSONResponse({"ok": False, "error": "关键词过长"}, status_code=400)
             updates["join_keywords"] = kws
+        if "intent_keywords" in body:
+            ikws = str(body["intent_keywords"]).strip()
+            if len(ikws) > 1000:
+                return JSONResponse({"ok": False, "error": "来意关键词过长"}, status_code=400)
+            updates["join_intent_keywords"] = ikws
         if "leave_report" in body:
             if not isinstance(body["leave_report"], bool):
                 return JSONResponse({"ok": False, "error": "leave_report 应为布尔值"}, status_code=400)

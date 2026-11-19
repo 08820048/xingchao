@@ -44,6 +44,12 @@ DEFAULTS: dict[str, Any] = {
     "join_question": "GitHub是干什么的？",
     "join_fallback": "manual",  # AI 不可用时的兜底：manual | approve | reject
     "join_keywords": "github,git,代码托管,开源,托管平台,版本控制,程序员,代码仓库",
+    # 没答对验证题、但说明了真实入群目的（求助/找人/咨询…）也放行。
+    # 这里的关键词只在 AI 不可用时做规则兜底。
+    "join_intent_keywords": (
+        "找人做,做个网站,做网站,开发,外包,接单,定制,请教,求教,学习,交流,咨询,"
+        "合作,招聘,求职,找工作,找人,求助,想了解,想问,报价,价格"
+    ),
     "leave_report": True,  # 退群私聊通知超管开关
 }
 
@@ -115,16 +121,24 @@ async def _notify_superusers(bot: Bot, text: str) -> None:
             logger.exception(f"通知超管 {uid} 失败")
 
 
-def _rule_verdict(comment: str, keywords: str) -> str:
-    """程序规则兜底：返回 approve / manual。"""
+def _rule_verdict(comment: str, keywords: str, intent_keywords: str = "") -> tuple[str, str]:
+    """程序规则兜底：返回 (decision, kind)。
+
+    decision: approve / manual；kind: answer（答对验证题）/ intent（说明了来意）。
+    AI 不可用时靠这个保住「说明来意的真人」不被误挡。
+    """
     text = comment.strip().lower()
     if not text or len(text) < 2:
-        return "manual"
+        return "manual", ""
     for kw in keywords.split(","):
         kw = kw.strip().lower()
         if kw and kw in text:
-            return "approve"
-    return "manual"
+            return "approve", "answer"
+    for kw in intent_keywords.split(","):
+        kw = kw.strip().lower()
+        if kw and kw in text:
+            return "approve", "intent"
+    return "manual", ""
 
 
 async def _ai_verdict(bot: Bot, question: str, comment: str) -> str | None:
@@ -136,11 +150,22 @@ async def _ai_verdict(bot: Bot, question: str, comment: str) -> str | None:
         return None
     cfg = await ai_plugin.ai_config()
     system = (
-        "你是QQ群加群审批助手。加群验证问题是：「" + question + "」。"
-        "请判断申请人的回答是否与问题的正确含义相符（合理即可，不要求逐字准确）。"
-        '只输出一个 JSON 对象：{"decision":"approve"|"reject"|"manual","reason":"10字以内中文理由"}，'
-        "不要输出其他内容。回答正确或基本合理 → approve；明显错误/答非所问/敷衍 → reject；"
-        "无法判断 → manual。"
+        "你是 QQ 群加群审批助手。这个群的加群验证问题是：「" + question + "」。\n"
+        "申请人会在申请时填写一段回答。请判断能不能放他进来，只输出一个 JSON 对象"
+        "（不要代码块、不要多余文字）：\n"
+        '{"decision":"approve"|"reject"|"manual",'
+        '"kind":"answer"|"intent"|"spam"|"unclear","reason":"10字以内中文理由"}\n'
+        "按顺序判断：\n"
+        "1. 回答正确或基本符合验证问题的含义 → approve，kind=answer。\n"
+        "2. 没答对验证问题，但**说明了真实的入群目的** → 也 approve，kind=intent。\n"
+        "   这类是正常的求助与需求，例如：找人做网站或开发、请教技术问题、\n"
+        "   求职或招人、想找合作、咨询产品或报价、交流学习、找资料。\n"
+        "   只要来意具体、像真人打的字，就放行——**没答对题不是拒绝的理由**。\n"
+        "3. 广告引流、推销代充刷单、加微信领福利、明显群发模板、\n"
+        "   只丢一个数字或乱码 → reject，kind=spam。\n"
+        "4. 既没答对题、也看不出任何来意 → manual，kind=unclear。\n"
+        "拿不准时选 manual，不要为了通过而硬放行；\n"
+        "但也不要因为「没答对验证问题」就把说明了来意的真人挡在外面。"
     )
     try:
         completion = await client.chat.completions.create(
@@ -159,8 +184,11 @@ async def _ai_verdict(bot: Bot, question: str, comment: str) -> str | None:
         decision = data.get("decision")
         if decision not in ("approve", "reject", "manual"):
             return None
+        kind = data.get("kind")
+        if kind not in ("answer", "intent", "spam", "unclear"):
+            kind = ""
         reason = str(data.get("reason", ""))[:50]
-        return json.dumps({"decision": decision, "reason": reason}, ensure_ascii=False)
+        return json.dumps({"decision": decision, "kind": kind, "reason": reason}, ensure_ascii=False)
     except Exception:
         logger.exception("AI 审批判断失败")
         return None
@@ -177,6 +205,7 @@ async def _handle_request(bot: Bot, event: GroupRequestEvent) -> None:
 
     decision: str | None = None
     reason = ""
+    kind = ""
     ai_note = ""
 
     if mode == "auto_approve":
@@ -189,11 +218,17 @@ async def _handle_request(bot: Bot, event: GroupRequestEvent) -> None:
             ai_note = "（AI 不可用，走规则兜底）"
         else:
             data = json.loads(verdict)
-            decision, reason = data["decision"], data["reason"]
-        if decision is None:
-            decision = _rule_verdict(comment, str(cfg["join_keywords"]))
-            if decision == "approve":
-                reason = "规则兜底：回答含关键词"
+            decision, reason, kind = data["decision"], data["reason"], data.get("kind", "")
+        if decision is None or decision == "manual":
+            # 规则兜底：既认「答对验证题」，也认「说明了真实来意」
+            rule_decision, rule_kind = _rule_verdict(
+                comment, str(cfg["join_keywords"]), str(cfg.get("join_intent_keywords", "")),
+            )
+            if rule_decision == "approve":
+                decision, kind = rule_decision, rule_kind
+                reason = "规则兜底：" + ("回答含关键词" if rule_kind == "answer" else "说明了来意")
+            elif decision is None:
+                decision = "manual"
         if decision == "manual":
             decision = None  # 转人工
 
@@ -233,12 +268,22 @@ async def _handle_request(bot: Bot, event: GroupRequestEvent) -> None:
     except Exception:
         logger.exception("处理入群申请失败")
         return
-    logger.info(f"入群申请自动{('通过' if approve else '拒绝')}：user={event.user_id} 理由={reason}")
+    kind_note = {
+        "answer": "答对验证题",
+        "intent": "说明了来意",
+        "spam": "广告/模板",
+        "unclear": "看不出意图",
+    }.get(kind, "")
+    logger.info(
+        f"入群申请自动{('通过' if approve else '拒绝')}：user={event.user_id} "
+        f"理由={reason}{f'（{kind_note}）' if kind_note else ''}"
+    )
     await _notify_superusers(
         bot,
         f"{'✅ 已通过' if approve else '❌ 已拒绝'}入群申请\n"
         f"群号: {event.group_id}｜QQ: {event.user_id}\n"
-        f"回答: {comment or '（无）'}\n理由: {reason}{ai_note}",
+        f"回答: {comment or '（无）'}\n"
+        f"理由: {reason}{f'（{kind_note}）' if kind_note else ''}{ai_note}",
     )
 
 
