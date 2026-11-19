@@ -6,6 +6,11 @@
 - 答案校验（严格）：只认「这条消息就是在报那个数」。容忍「答案是 11 哦」这类口语，
   但任何算式一律不通过——1+2+…+9、1e9、0x9、9.0、9的平方根 都算答错。
   （旧实现是「文本里有任意一个数字等于答案即通过」，等于门槛形同虚设）
+- AI 放宽通道（joinverify_ai_pass，默认开）：真人也会答不上算术题，直接说「我进来找人做网站」
+  这种来意的，问一次 AI 判断是不是真人说明了真实目的，是就放行、不计答错。
+  只在「像人话」时才问（纯数字、算式不问），每人最多问 2 次，每群每日有额度
+  （joinverify_ai_daily_limit，默认 30，0=关闭）。AI 任何异常都**不放行**——宁可交管理员，
+  也不能因为它挂了而放机器人进来。
 - 未通过有两种情形：超时没回答；或答错次数用完（发了数字但不对，最多 3 次，每次错都会 @ 提示剩余机会）
 - 处罚前先公示：判定未通过后，机器人先在群里 @ 该成员说明原因和即将执行的处理，
   再给 30 秒宽限（期间答对仍可通过），到点才执行：
@@ -18,10 +23,12 @@
 
 from __future__ import annotations
 
+import json
 import random
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 
 from nonebot import on_command, on_message, on_notice
 from nonebot.adapters import Message
@@ -39,6 +46,12 @@ DEFAULT_MINUTES = 5
 SCAN_SECONDS = 5
 MAX_ATTEMPTS = 3    # 答错几次算未通过
 GRACE_SECONDS = 30  # 群里公示后到真正处罚之间的宽限
+
+# AI 放宽通道：答不上算术题、但确实是真人说明来意的，也放行。
+# 每题每人最多问 AI 几次（防刷），每群每天有总额度（控成本）。
+AI_PASS_MAX_TRIES = 2
+AI_PASS_DAILY_LIMIT = 30
+AI_PASS_MIN_CHARS = 4   # 太短的一句话不值得送 AI（"12"、"0000" 这种）
 
 _NUM = re.compile(r"(?<!\d)(\d{1,3})(?!\d)")
 
@@ -74,6 +87,9 @@ class Pending:
     attempts: int = 0               # 已答错次数
     punish_at: float | None = None  # 已在群里公示未通过，到此时刻执行处罚
     reason: str = ""
+    ai_tries: int = field(default=0)  # 已送 AI 复核次数（防刷）
+    ai_pass_enabled: bool = True       # 出题时从配置快照，避免答题途中改配置导致不一致
+    ai_daily_limit: int = AI_PASS_DAILY_LIMIT
 
 
 _pending: dict[tuple[int, int], Pending] = {}
@@ -133,20 +149,142 @@ def due_for_punish(now: float) -> list[tuple[int, int]]:
     return [k for k, p in _pending.items() if p.punish_at is not None and p.punish_at <= now]
 
 
+# ---------------------------------------------------------------- AI 放宽通道
+#
+# 算术题是防机器人的最低门槛，但真人也会答不上来：有的是手机端不会算，
+# 有的直接说明来意（"我进来找人做个网站"）。这类人本来就该放进来，
+# 一律按答错把人踢掉属于误杀。
+#
+# 做法：不是答案、但读起来像人在说话时，问一次 AI「这是不是真人说明了真实来意」。
+# 判定失败一律不放行（fail-closed），宁可交管理员也不要放机器人进来。
+
+_AI_PASS_SYSTEM = (
+    "你是 QQ 群入群验证的复核助手。新成员本应回答一道算术题，但有人答不上来，"
+    "会说明自己进群的来意。请判断这条消息是不是**真人**在说明**真实的入群目的**。\n"
+    '只输出一个 JSON：{"pass": true|false, "reason": "10字以内中文理由"}\n'
+    "判 true 的情形：说了具体来意（找人/请教/合作/求职/咨询/买东西/交流等），"
+    "语气自然，像普通人打字。\n"
+    "判 false 的情形：广告引流推销、纯乱码或复读题目、明显群发模板、"
+    "只丢一个数字或算式、完全没有来意、看不懂在说什么。\n"
+    "拿不准一律 false（宁可交给管理员）。"
+)
+
+_CJK = re.compile(r"[\u4e00-\u9fff]")
+
+
+def looks_like_natural_text(text: str) -> bool:
+    """这条消息像不像人在说话（而不是数字、算式、乱码）。
+
+    只有像人话的才值得送 AI 复核；"12"、"0000"、"e^2" 这类直接按答错处理。
+    """
+    text = (text or "").strip()
+    if len(text) < AI_PASS_MIN_CHARS:
+        return False
+    if looks_like_expression(text):
+        return False          # 拿算式糊弄，不送 AI，直接算答错
+    if len(_CJK.findall(text)) >= 2:
+        return True
+    letters = sum(1 for ch in text if ch.isascii() and ch.isalpha())
+    return letters >= 8       # 纯英文也允许，但要有一定长度
+
+
+async def _ai_budget_ok(group_id: int, limit: int) -> bool:
+    """每群每天最多问 AI 多少次；返回 False 表示今天额度用完。"""
+    if limit <= 0:
+        return False
+    store = get_store()
+    day = datetime.now().strftime("%Y-%m-%d")
+    raw = await store.get_kv(f"joinverify_ai_{group_id}") or ""
+    used_day, _, used = raw.partition(":")
+    count = int(used) if used_day == day and used.isdigit() else 0
+    if count >= limit:
+        return False
+    await store.set_kv(f"joinverify_ai_{group_id}", f"{day}:{count + 1}")
+    return True
+
+
+async def ai_judge_genuine(text: str) -> tuple[bool, str]:
+    """问 AI：这条消息是不是真人说明了真实来意。返回 (是否放行, 理由)。
+
+    任何异常都返回 False —— 复核通道是「多放人进来」的便利，
+    绝不能因为它挂掉而放机器人进来。
+    """
+    from src.plugins import ai as ai_plugin
+
+    try:
+        client = await ai_plugin.get_client()
+        if client is None:
+            return False, "AI 不可用"
+        cfg = await ai_plugin.ai_config()
+        completion = await client.chat.completions.create(
+            model=cfg["ai_model"],
+            messages=[
+                {"role": "system", "content": _AI_PASS_SYSTEM},
+                {"role": "user", "content": f"新成员的消息：{text[:300]}"},
+            ],
+            temperature=0.1,
+            max_tokens=200,
+        )
+        raw = (completion.choices[0].message.content or "").strip()
+    except Exception:
+        logger.exception("入群验证 AI 复核调用失败")
+        return False, "AI 调用失败"
+
+    m = re.search(r"\{.*\}", raw, re.S)
+    if not m:
+        return False, "AI 返回不可解析"
+    try:
+        data = json.loads(m.group())
+    except ValueError:
+        return False, "AI 返回不可解析"
+    if not isinstance(data, dict):
+        return False, "AI 返回不可解析"
+    passed = data.get("pass") is True
+    reason = str(data.get("reason") or "")[:40]
+    return passed, reason
+
+
+async def try_ai_pass(group_id: int, p: "Pending", text: str) -> tuple[bool, str]:
+    """走一遍放宽通道；命中返回 (True, 理由)，否则 (False, 原因)。"""
+    if not p.ai_pass_enabled:
+        return False, "未开启"
+    if p.ai_tries >= AI_PASS_MAX_TRIES:
+        return False, "本人已用满复核次数"
+    if not looks_like_natural_text(text):
+        return False, "不像人话"
+    p.ai_tries += 1
+    if not await _ai_budget_ok(group_id, p.ai_daily_limit):
+        return False, "本群今日复核额度已用完"
+    passed, reason = await ai_judge_genuine(text)
+    if passed:
+        logger.info(f"入群验证 AI 放行：group={group_id} 理由={reason} 文本={text[:60]}")
+    return passed, reason
+
+
 async def _cfg() -> dict:
     store = get_store()
     try:
         minutes = int(await store.get_kv("joinverify_minutes") or DEFAULT_MINUTES)
     except ValueError:
         minutes = DEFAULT_MINUTES
+    try:
+        ai_limit = int(await store.get_kv("joinverify_ai_daily_limit") or AI_PASS_DAILY_LIMIT)
+    except ValueError:
+        ai_limit = AI_PASS_DAILY_LIMIT
     return {
         "enabled": (await store.get_kv("joinverify_enabled")) == "true",
         "action": "kick" if (await store.get_kv("joinverify_action")) == "kick" else "notify",
         "minutes": min(60, max(1, minutes)),
+        # 默认开启：答不上算术题但说明了来意的真人应该放进来
+        "ai_pass": (await store.get_kv("joinverify_ai_pass")) != "false",
+        "ai_daily_limit": max(0, min(ai_limit, 10000)),
     }
 
 
-async def set_config(enabled: bool | None = None, action: str | None = None, minutes: int | None = None) -> str:
+async def set_config(
+    enabled: bool | None = None, action: str | None = None, minutes: int | None = None,
+    ai_pass: bool | None = None, ai_daily_limit: int | None = None,
+) -> str:
     store = get_store()
     if enabled is not None:
         await store.set_kv("joinverify_enabled", "true" if enabled else "false")
@@ -154,9 +292,18 @@ async def set_config(enabled: bool | None = None, action: str | None = None, min
         await store.set_kv("joinverify_action", action)
     if minutes is not None:
         await store.set_kv("joinverify_minutes", str(min(60, max(1, int(minutes)))))
+    if ai_pass is not None:
+        await store.set_kv("joinverify_ai_pass", "true" if ai_pass else "false")
+    if ai_daily_limit is not None:
+        await store.set_kv("joinverify_ai_daily_limit", str(max(0, min(int(ai_daily_limit), 10000))))
     c = await _cfg()
-    return (f"入群验证：{'开启' if c['enabled'] else '关闭'}｜超时处理：{'踢出' if c['action'] == 'kick' else '仅提醒超管'}"
-            f"｜时限 {c['minutes']} 分钟")
+    return (
+        f"入群验证：{'开启' if c['enabled'] else '关闭'}"
+        f"｜超时处理：{'踢出' if c['action'] == 'kick' else '仅提醒超管'}"
+        f"｜时限 {c['minutes']} 分钟"
+        f"｜AI 复核：{'开启' if c['ai_pass'] else '关闭'}"
+        f"（每群每日 {c['ai_daily_limit']} 次）"
+    )
 
 
 # ---------------------------------------------------------------- 事件
@@ -173,12 +320,21 @@ async def handle_join(bot: Bot, event: GroupIncreaseNoticeEvent) -> None:
     if not cfg["enabled"]:
         return
     q, ans = make_question()
-    _pending[(event.group_id, uid)] = Pending(ans, time.time() + cfg["minutes"] * 60, q)
+    _pending[(event.group_id, uid)] = Pending(
+        ans, time.time() + cfg["minutes"] * 60, q,
+        ai_pass_enabled=cfg["ai_pass"], ai_daily_limit=cfg["ai_daily_limit"],
+    )
     tail = "未通过会被请出群聊" if cfg["action"] == "kick" else "未通过会通知管理员"
     try:
         await bot.call_api(
             "send_group_msg", group_id=event.group_id,
-            message=MessageSegment.at(uid) + f" 欢迎！为防广告号，请在 {cfg['minutes']} 分钟内回复 {q} 的结果（发数字即可，共 {MAX_ATTEMPTS} 次作答机会），{tail}。",
+            message=(
+                MessageSegment.at(uid)
+                + f" 欢迎！为防广告号，请在 {cfg['minutes']} 分钟内回复 {q} 的结果"
+                f"（发数字即可，共 {MAX_ATTEMPTS} 次作答机会）"
+                + ("；算不出来就直接说说你进群想做什么，也行" if cfg["ai_pass"] else "")
+                + f"，{tail}。"
+            ),
         )
     except Exception:
         logger.exception("发送入群验证题失败")
@@ -222,6 +378,22 @@ async def handle_answer(bot: Bot, event: GroupMessageEvent) -> None:
         _pending.pop(key, None)
         await _say(bot, event.group_id, event.user_id, "验证通过，玩得开心～")
         return
+    # 放宽通道：答不上算术题、但确实在说明来意的真人，也放行（不走答错计数）
+    if p.punish_at is None and text.strip():
+        passed, reason = await try_ai_pass(event.group_id, p, text)
+        if passed:
+            _pending.pop(key, None)
+            await _say(
+                bot, event.group_id, event.user_id,
+                "验证通过，欢迎～（看得出你是真的想进群，先放你进来啦）",
+            )
+            return
+        if reason not in ("未开启", "不像人话"):
+            # 送过 AI 但没通过：如实说明，别让人反复试
+            logger.info(
+                f"入群验证 AI 未放行：group={event.group_id} user={event.user_id} 原因={reason}"
+            )
+
     if p.punish_at is None and is_wrong_attempt(text, p.answer):
         p.attempts += 1
         if p.attempts >= MAX_ATTEMPTS:
@@ -306,6 +478,12 @@ async def handle_cmd(matcher: Matcher, args: Message = CommandArg()) -> None:
         await matcher.finish(await set_config(action="notify"))
     if arg in ("踢出", "kick"):
         await matcher.finish(await set_config(action="kick"))
+    if arg in ("复核", "ai"):
+        c = await _cfg()
+        await matcher.finish(await set_config(ai_pass=not c["ai_pass"]))
     if arg.isdigit():
         await matcher.finish(await set_config(minutes=int(arg)))
-    await matcher.finish((await set_config()) + "\n用法：/入群验证 开|关｜提醒|踢出｜<分钟>")
+    await matcher.finish(
+        (await set_config())
+        + "\n用法：/入群验证 开|关｜提醒|踢出｜复核（AI 复核开关）｜<分钟>"
+    )
