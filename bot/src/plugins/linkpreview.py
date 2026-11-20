@@ -48,6 +48,7 @@ _VISIBLE_BLOCK_RE = re.compile(r"(?is)<(script|style|noscript|template)[^>]*>.*?
 _TAG_RE = re.compile(r"(?s)<[^>]+>")
 
 _USER_AGENT = "Mozilla/5.0 (compatible; XingchaoBot/1.0; +https://xingchao.dev)"
+_MAX_REDIRECTS = 5
 _MAX_BYTES = 512 * 1024  # 最多读取 512KB，避免大文件拖垮
 
 _last_reply: dict[int, float] = {}  # group_id -> monotonic 时间戳
@@ -161,29 +162,48 @@ def _extract_page_info(page: str) -> dict[str, str]:
     }
 
 
-async def _fetch_page_info(url: str) -> dict[str, str] | None:
+async def _url_allowed(url: str) -> bool:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
-        return None
-    if not await _host_allowed(parsed.hostname):
-        logger.debug(f"链接解读：拒绝内网/非法地址 {url}")
-        return None
+        return False
+    return await _host_allowed(parsed.hostname)
+
+
+async def _fetch_page_info(url: str) -> dict[str, str] | None:
     headers = {"User-Agent": _USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"}
     try:
-        async with get_http().stream("GET", url, headers=headers, timeout=10) as resp:
-            if resp.status_code >= 400:
+        # 不让 httpx 自动跟随跳转：每一跳都要重新做内网检查，否则公网短链 302 到
+        # 127.0.0.1 / 容器内网服务就能绕过，让机器人抓内网页面并把摘要发到群里。
+        for _ in range(_MAX_REDIRECTS + 1):
+            if not await _url_allowed(url):
+                logger.debug(f"链接解读：拒绝内网/非法地址 {url}")
                 return None
-            ctype = resp.headers.get("content-type", "").lower()
-            if "html" not in ctype and "xhtml" not in ctype:
-                return None
-            chunks: list[bytes] = []
-            size = 0
-            async for chunk in resp.aiter_bytes():
-                chunks.append(chunk)
-                size += len(chunk)
-                if size >= _MAX_BYTES:
-                    break
-            page = b"".join(chunks).decode(resp.encoding or "utf-8", errors="ignore")
+            async with get_http().stream(
+                "GET", url, headers=headers, timeout=10, follow_redirects=False
+            ) as resp:
+                if resp.is_redirect:
+                    location = resp.headers.get("location")
+                    if not location:
+                        return None
+                    url = str(resp.url.join(location))
+                    continue
+                if resp.status_code >= 400:
+                    return None
+                ctype = resp.headers.get("content-type", "").lower()
+                if "html" not in ctype and "xhtml" not in ctype:
+                    return None
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in resp.aiter_bytes():
+                    chunks.append(chunk)
+                    size += len(chunk)
+                    if size >= _MAX_BYTES:
+                        break
+                page = b"".join(chunks).decode(resp.encoding or "utf-8", errors="ignore")
+                break
+        else:
+            logger.debug(f"链接解读：跳转次数过多 {url}")
+            return None
     except Exception:
         logger.debug(f"链接解读：抓取失败 {url}", exc_info=True)
         return None
