@@ -25,6 +25,7 @@ from nonebot.adapters.onebot.v11 import Bot
 from nonebot.log import logger
 from nonebot.params import CommandArg
 
+from src.httpclient import get_http
 from src.background import periodic
 from src.permission import SUPERUSER
 from src.plugins.scheduler import _matches_today
@@ -91,8 +92,7 @@ def format_zaobao(parsed: dict[str, Any], page_url: str, bodies: list[str] | Non
 
 
 async def _http_get(url: str) -> httpx.Response:
-    async with httpx.AsyncClient(timeout=15, headers={"User-Agent": _UA}, follow_redirects=True) as c:
-        return await c.get(url)
+    return await get_http().get(url, headers={"User-Agent": _UA}, timeout=15)
 
 
 async def fetch_zaobao(params: dict, ai: bool, now: datetime) -> FeedContent | None:

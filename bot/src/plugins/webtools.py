@@ -32,6 +32,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.httpclient import get_http
 from src.config import get_config
 from src.permission import BASIC
 
@@ -445,10 +446,12 @@ async def weather_text(city: str) -> str:
     if not city:
         return "请告诉我要查哪个城市的天气。"
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": "curl/8"}) as client:
-            r = await client.get(f"https://wttr.in/{quote(city)}", params={"format": "j1", "lang": "zh"})
-            r.raise_for_status()
-            data = r.json()
+        r = await get_http().get(
+            f"https://wttr.in/{quote(city)}", params={"format": "j1", "lang": "zh"},
+            headers={"User-Agent": "curl/8"}, timeout=TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json()
     except Exception as e:
         logger.warning(f"天气查询失败：{type(e).__name__}: {e}")
         return "天气服务暂时不可用，稍后再试"
@@ -469,10 +472,12 @@ async def rate_text(src: str, dst: str, amount: float = 1.0) -> str:
     if not (0 < amount < 1e12):
         return "金额不合法。"
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
-            r = await client.get("https://api.frankfurter.dev/v1/latest", params={"base": src, "symbols": dst, "amount": amount})
-            r.raise_for_status()
-            data = r.json()
+        r = await get_http().get(
+            "https://api.frankfurter.dev/v1/latest",
+            params={"base": src, "symbols": dst, "amount": amount}, timeout=TIMEOUT,
+        )
+        r.raise_for_status()
+        data = r.json()
     except Exception as e:
         logger.warning(f"汇率查询失败：{type(e).__name__}: {e}")
         return "汇率服务暂时不可用，或不支持该币种。"

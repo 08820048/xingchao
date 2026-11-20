@@ -167,6 +167,7 @@ _WS_RE = re.compile(r"\s+")
 _CONTENT_NS = "{http://purl.org/rss/1.0/modules/content/}encoded"
 
 # 分词与停用词与群聊检索共用（src/textindex.py），口径只维护一份
+from src.httpclient import get_http
 from src.textindex import term_weight as _term_weight  # noqa: E402
 from src.textindex import terms as _terms  # noqa: E402
 
@@ -188,12 +189,9 @@ def html_to_text(raw: str) -> str:
 
 async def fetch_feed(timeout: float = 20.0) -> bytes:
     """抓取 RSS（仅访问固定域名 xuyi.dev）。"""
-    async with httpx.AsyncClient(
-        follow_redirects=True, timeout=timeout, headers={"User-Agent": USER_AGENT}
-    ) as client:
-        resp = await client.get(FEED_URL)
-        resp.raise_for_status()
-        data = resp.content
+    resp = await get_http().get(FEED_URL, headers={"User-Agent": USER_AGENT}, timeout=timeout)
+    resp.raise_for_status()
+    data = resp.content
     if len(data) > MAX_FEED_BYTES:
         raise ValueError(f"feed 体积异常（{len(data)} bytes）")
     return data
@@ -303,12 +301,9 @@ def parse_post_page(url: str, raw_html: str) -> dict[str, Any]:
 
 
 async def fetch_sitemap(timeout: float = 20.0) -> bytes:
-    async with httpx.AsyncClient(
-        follow_redirects=True, timeout=timeout, headers={"User-Agent": USER_AGENT}
-    ) as client:
-        resp = await client.get(SITEMAP_URL)
-        resp.raise_for_status()
-        return resp.content
+    resp = await get_http().get(SITEMAP_URL, headers={"User-Agent": USER_AGENT}, timeout=timeout)
+    resp.raise_for_status()
+    return resp.content
 
 
 async def fetch_pages(urls: list[str]) -> dict[str, dict[str, Any]]:

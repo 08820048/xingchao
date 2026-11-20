@@ -13,7 +13,6 @@ import time
 from datetime import datetime
 from typing import Any
 
-import httpx
 from nonebot import on_command
 from nonebot.adapters import Message
 from nonebot.exception import MatcherException
@@ -21,6 +20,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.httpclient import get_http
 from src.permission import BASIC
 
 _CACHE: dict[str, Any] = {"key": "", "items": [], "ts": 0.0}
@@ -59,10 +59,9 @@ async def fetch_trending(since: str = "daily", language: str = "") -> list[dict[
 
     url = f"https://github.com/trending/{language.strip()}?since={since}" \
         if language.strip() else f"https://github.com/trending?since={since}"
-    async with httpx.AsyncClient(timeout=15, headers={"User-Agent": _UA}, follow_redirects=True) as c:
-        resp = await c.get(url)
-        resp.raise_for_status()
-        items = _parse_trending(resp.text)
+    resp = await get_http().get(url, headers={"User-Agent": _UA}, timeout=15)
+    resp.raise_for_status()
+    items = _parse_trending(resp.text)
     if not items:
         raise ValueError("解析趋势页面失败（页面结构可能已变化）")
     _CACHE.update(key=key, items=items, ts=time.time())

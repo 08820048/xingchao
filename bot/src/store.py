@@ -139,6 +139,44 @@ CREATE INDEX IF NOT EXISTS idx_bot_events_ts ON bot_events (ts);
 """
 
 
+async def _add_columns(conn: aiosqlite.Connection, table: str, cols: tuple[tuple[str, str], ...]) -> None:
+    """幂等加列：已存在的列跳过（老库可能已经被旧的手写迁移加过）。"""
+    async with conn.execute(f"PRAGMA table_info({table})") as cur:
+        existing = {r[1] for r in await cur.fetchall()}
+    for col, ddl in cols:
+        if col not in existing:
+            await conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+
+
+async def _m1_punishment_columns(conn: aiosqlite.Connection) -> None:
+    # counted=是否计入升级；message_id=被处罚消息，用于申诉时读日志原文；
+    # appeal_note/resolved_by=处理备注与处理人；appeal_reminded=是否已催办
+    await _add_columns(conn, "punishments", (
+        ("counted", "INTEGER DEFAULT 1"),
+        ("message_id", "INTEGER"),
+        ("appeal_note", "TEXT DEFAULT ''"),
+        ("resolved_by", "TEXT DEFAULT ''"),
+        ("appeal_reminded", "INTEGER DEFAULT 0"),
+    ))
+
+
+# 结构迁移：_SCHEMA 只放「建表」（CREATE ... IF NOT EXISTS），对已有表的改动按顺序追加到这里。
+# 第 i 个（从 1 开始）执行完后 PRAGMA user_version = i；已执行过的不会再跑。只能追加，不要改旧条目。
+_MIGRATIONS: tuple = (
+    _m1_punishment_columns,
+)
+
+
+async def _migrate(conn: aiosqlite.Connection) -> None:
+    async with conn.execute("PRAGMA user_version") as cur:
+        version = int((await cur.fetchone())[0])
+    for i, step in enumerate(_MIGRATIONS[version:], start=version + 1):
+        await step(conn)
+        await conn.execute(f"PRAGMA user_version = {i}")
+        await conn.commit()
+        logger.info(f"数据库结构已迁移到 v{i}（{step.__name__}）")
+
+
 class Store:
     """惰性连接的 aiosqlite 封装。"""
 
@@ -162,19 +200,7 @@ class Store:
                 await conn.execute("PRAGMA synchronous=NORMAL")
                 await conn.execute("PRAGMA busy_timeout=5000")
                 await conn.executescript(_SCHEMA)
-                async with conn.execute("PRAGMA table_info(punishments)") as cur:
-                    cols = {r[1] for r in await cur.fetchall()}
-                # 迁移：新增列（counted=是否计入升级；message_id=被处罚消息，用于申诉时读日志原文；
-                # appeal_note/resolved_by=处理备注与处理人；appeal_reminded=是否已催办）
-                for col, ddl in (
-                    ("counted", "INTEGER DEFAULT 1"),
-                    ("message_id", "INTEGER"),
-                    ("appeal_note", "TEXT DEFAULT ''"),
-                    ("resolved_by", "TEXT DEFAULT ''"),
-                    ("appeal_reminded", "INTEGER DEFAULT 0"),
-                ):
-                    if col not in cols:
-                        await conn.execute(f"ALTER TABLE punishments ADD COLUMN {col} {ddl}")
+                await _migrate(conn)
                 await conn.commit()
                 self._conn = conn
                 logger.debug(f"SQLite 已连接：{self._path}")

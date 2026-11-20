@@ -7,6 +7,7 @@ import re
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from nonebot.log import logger
+from src.httpclient import get_http
 from src.permission import (
     merged_whitelist,
 )
@@ -507,11 +508,11 @@ def register(app) -> None:
             )
         if not base.startswith(("http://", "https://")):
             return JSONResponse({"ok": False, "error": "API 地址应以 http(s):// 开头"}, status_code=400)
-        import httpx
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(f"{base}/models", headers={"Authorization": f"Bearer {key}"})
+            resp = await get_http().get(
+                f"{base}/models", headers={"Authorization": f"Bearer {key}"}, timeout=15,
+            )
         except Exception as e:
             logger.warning(f"面板获取 AI 模型列表失败：{type(e).__name__}")
             return JSONResponse({"ok": False, "error": f"连接服务商失败：{type(e).__name__}"}, status_code=502)

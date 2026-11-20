@@ -19,7 +19,6 @@ import base64
 import re
 import time
 
-import httpx
 from nonebot import on_command, on_message
 from nonebot.adapters.onebot.v11 import (
     Bot,
@@ -32,6 +31,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.httpclient import get_http
 from src.markdown import md_to_qq
 from src.permission import BASIC, SUPERUSER, merged_whitelist
 from src.store import get_store
@@ -336,10 +336,9 @@ async def _record_bytes(bot: Bot, seg: MessageSegment) -> bytes | None:
         url = seg.data.get("url")
     if url and str(url).startswith(("http://", "https://")):
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
-                r = await client.get(str(url))
-                r.raise_for_status()
-                return r.content
+            r = await get_http().get(str(url), timeout=20)
+            r.raise_for_status()
+            return r.content
         except Exception:
             logger.warning("下载语音失败", exc_info=True)
     return None

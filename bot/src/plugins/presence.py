@@ -5,7 +5,7 @@
 - 下线：进程正常关闭（docker stop / 重启 / 部署）时，尽力向白名单群发「暂时下线」
 - 局限：NapCat 或 QQ 账号掉线、或进程被强杀时，机器人本身发不出消息，只能在恢复后补发「已上线」
   （含离线时长）；这类掉线请另用 Bot 邮件通知等外部手段监控
-- 心跳：后台每 30 秒写入 kv（presence_last_seen），用来估算离线时长
+- 心跳：bot 在线时每 30 秒写入 kv（presence_last_seen），连上时据此估算离线时长
 - 开关：kv presence_notify（默认开启，设为 false 关闭）；被临时关闭业务的群不发送
 """
 
@@ -18,7 +18,7 @@ from nonebot import get_bots, get_driver
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.log import logger
 
-from src.background import spawn
+from src.background import periodic, spawn
 from src.permission import disabled_groups, merged_whitelist
 from src.store import get_store
 
@@ -26,7 +26,6 @@ STALE_SECONDS = 120  # 心跳间隔超过它，视为发生过一次真实离线
 HEARTBEAT_SECONDS = 30
 SEND_GAP_SECONDS = 0.8  # 群间发送间隔，降低风控概率
 _driver = get_driver()
-_heartbeat_task: asyncio.Task | None = None
 _announced_offline = False  # 本进程内是否已发过下线公告
 
 
@@ -68,20 +67,17 @@ async def _touch() -> None:
     await get_store().set_kv("presence_last_seen", str(int(time.time())))
 
 
-async def _heartbeat() -> None:
-    while True:
-        try:
-            await _touch()
-        except Exception:
-            logger.exception("写入心跳失败")
-        await asyncio.sleep(HEARTBEAT_SECONDS)
+@periodic("在线心跳", HEARTBEAT_SECONDS)
+async def _heartbeat(bot: Bot) -> None:
+    """只在 bot 连着时写：presence_last_seen 即「最后一次确认在线」的时间。"""
+    await _touch()
 
 
-async def _announce_online(bot: Bot) -> None:
+async def _announce_online(bot: Bot, last_seen_raw: str | None) -> None:
+    """last_seen_raw 必须在连上的瞬间读取，否则会被本次连接后的心跳覆盖，离线时长恒为几秒。"""
     global _announced_offline
     store = get_store()
     await asyncio.sleep(5)  # 等 NapCat 完成登录与群列表同步
-    last_seen_raw = await store.get_kv("presence_last_seen")
     announced = (await store.get_kv("presence_offline_announced")) == "1"
     gap = int(time.time()) - int(last_seen_raw) if (last_seen_raw or "").isdigit() else 0
     should = announced or gap > STALE_SECONDS
@@ -101,10 +97,8 @@ async def _announce_online(bot: Bot) -> None:
 
 @_driver.on_bot_connect
 async def _on_connect(bot: Bot) -> None:
-    global _heartbeat_task
-    if _heartbeat_task is None or _heartbeat_task.done():
-        _heartbeat_task = asyncio.create_task(_heartbeat())
-    spawn(_announce_online(bot), "上线播报")  # 不阻塞连接流程
+    last_seen_raw = await get_store().get_kv("presence_last_seen")
+    spawn(_announce_online(bot, last_seen_raw), "上线播报")  # 不阻塞连接流程
 
 
 @_driver.on_shutdown

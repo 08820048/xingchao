@@ -25,7 +25,6 @@ import re
 import time
 from datetime import datetime
 
-import httpx
 import zxingcpp
 from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent
@@ -33,6 +32,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from PIL import Image
 
+from src.httpclient import get_http
 from src.markdown import md_to_qq
 from src.permission import GROUP_WHITELIST
 from src.store import get_store
@@ -187,21 +187,20 @@ def _path_to_data_uri(path: str) -> str:
 async def _download_image(url: str) -> tuple[bytes, str] | None:
     """下载图片（限大小与类型），返回 (bytes, content_type)；失败返回 None。"""
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=15) as client:
-            async with client.stream("GET", url) as resp:
-                if resp.status_code >= 400:
-                    return None
-                ctype = (resp.headers.get("content-type") or "").split(";")[0].strip()
-                if not ctype.startswith("image/"):
-                    return None
-                chunks: list[bytes] = []
-                size = 0
-                async for chunk in resp.aiter_bytes():
-                    chunks.append(chunk)
-                    size += len(chunk)
-                    if size >= _MAX_IMAGE_BYTES:
-                        break
-                data = b"".join(chunks)
+        async with get_http().stream("GET", url, timeout=15) as resp:
+            if resp.status_code >= 400:
+                return None
+            ctype = (resp.headers.get("content-type") or "").split(";")[0].strip()
+            if not ctype.startswith("image/"):
+                return None
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in resp.aiter_bytes():
+                chunks.append(chunk)
+                size += len(chunk)
+                if size >= _MAX_IMAGE_BYTES:
+                    break
+            data = b"".join(chunks)
     except Exception:
         logger.debug("图片下载失败", exc_info=True)
         return None

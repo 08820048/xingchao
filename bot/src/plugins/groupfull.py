@@ -22,12 +22,13 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
-from nonebot import get_bots, get_driver, on_command, on_notice
+from nonebot import get_driver, on_command, on_notice
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, GroupIncreaseNoticeEvent, MessageEvent
 from nonebot.log import logger
 from nonebot.params import CommandArg
 
+from src.background import periodic
 from src.permission import GROUP_WHITELIST, SUPERUSER, disabled_groups, merged_whitelist
 from src.store import get_store
 
@@ -38,8 +39,6 @@ MAX_KICK_COUNT = 200
 PREVIEW_LINES = 20
 _last_check: dict[int, float] = {}  # 同一群两次检测的最小间隔，避免入群潮里反复调 API
 _running: set[int] = set()  # 正在清理的群，防止并发重复执行
-_driver = get_driver()
-_worker: asyncio.Task | None = None
 
 
 async def _cfg() -> dict[str, Any]:
@@ -244,25 +243,14 @@ async def check_group(bot: Bot, group_id: int) -> None:
     )
 
 
-async def _patrol() -> None:
-    while True:
-        await asyncio.sleep(CHECK_INTERVAL)
-        bots = [b for b in get_bots().values() if isinstance(b, Bot)]
-        if not bots:
-            continue
-        for gid in sorted(merged_whitelist() - disabled_groups()):
-            try:
-                await check_group(bots[0], gid)
-            except Exception:
-                logger.exception(f"群满员巡检异常：group={gid}")
-            await asyncio.sleep(1)
-
-
-@_driver.on_bot_connect
-async def _start_patrol(bot: Bot) -> None:
-    global _worker
-    if _worker is None or _worker.done():
-        _worker = asyncio.create_task(_patrol())
+@periodic("群满员巡检", CHECK_INTERVAL)
+async def _patrol(bot: Bot) -> None:
+    for gid in sorted(merged_whitelist() - disabled_groups()):
+        try:
+            await check_group(bot, gid)
+        except Exception:
+            logger.exception(f"群满员巡检异常：group={gid}")
+        await asyncio.sleep(1)
 
 
 increase_notice = on_notice(rule=GROUP_WHITELIST, priority=5, block=False)

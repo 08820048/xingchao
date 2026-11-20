@@ -20,13 +20,13 @@ import time
 from datetime import datetime
 from urllib.parse import urlparse
 
-import httpx
 from nonebot import on_message
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
 from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
 
+from src.httpclient import get_http
 from src.markdown import md_to_qq
 from src.permission import GROUP_WHITELIST
 from src.store import get_store
@@ -170,21 +170,20 @@ async def _fetch_page_info(url: str) -> dict[str, str] | None:
         return None
     headers = {"User-Agent": _USER_AGENT, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"}
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=10, headers=headers) as client:
-            async with client.stream("GET", url) as resp:
-                if resp.status_code >= 400:
-                    return None
-                ctype = resp.headers.get("content-type", "").lower()
-                if "html" not in ctype and "xhtml" not in ctype:
-                    return None
-                chunks: list[bytes] = []
-                size = 0
-                async for chunk in resp.aiter_bytes():
-                    chunks.append(chunk)
-                    size += len(chunk)
-                    if size >= _MAX_BYTES:
-                        break
-                page = b"".join(chunks).decode(resp.encoding or "utf-8", errors="ignore")
+        async with get_http().stream("GET", url, headers=headers, timeout=10) as resp:
+            if resp.status_code >= 400:
+                return None
+            ctype = resp.headers.get("content-type", "").lower()
+            if "html" not in ctype and "xhtml" not in ctype:
+                return None
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in resp.aiter_bytes():
+                chunks.append(chunk)
+                size += len(chunk)
+                if size >= _MAX_BYTES:
+                    break
+            page = b"".join(chunks).decode(resp.encoding or "utf-8", errors="ignore")
     except Exception:
         logger.debug(f"链接解读：抓取失败 {url}", exc_info=True)
         return None
