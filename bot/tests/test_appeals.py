@@ -109,7 +109,8 @@ async def test_remind_once_after_threshold(store, monkeypatch):
     assert await appeals.remind_tick(bot, now) == 0  # 刚提交，不催
     later = now + timedelta(hours=appeals.REMIND_HOURS + 1)
     assert await appeals.remind_tick(bot, later) == 1
-    assert f"#{pid}" in bot.calls[0][1]["message"]
+    sent = [kw for name, kw in bot.calls if name == "send_private_msg"]
+    assert len(sent) == 1 and f"#{pid}" in sent[0]["message"]
     assert await appeals.remind_tick(bot, later) == 0  # 只催一次
 
 

@@ -19,6 +19,7 @@ from nonebot import get_driver, on_command
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.log import logger
 
+from src.background import spawn
 from src.permission import BASIC, disabled_groups, merged_whitelist
 from src.store import get_store
 
@@ -103,7 +104,7 @@ async def _announce(bot: Bot) -> None:
 
 @_driver.on_bot_connect
 async def _on_connect(bot: Bot) -> None:
-    asyncio.create_task(_announce(bot))
+    spawn(_announce(bot), "更新公告")
 
 
 changelog_cmd = on_command("更新日志", aliases={"changelog", "更新"}, rule=BASIC, priority=5, block=True)

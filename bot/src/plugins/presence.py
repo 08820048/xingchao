@@ -18,6 +18,7 @@ from nonebot import get_bots, get_driver
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.log import logger
 
+from src.background import spawn
 from src.permission import disabled_groups, merged_whitelist
 from src.store import get_store
 
@@ -103,7 +104,7 @@ async def _on_connect(bot: Bot) -> None:
     global _heartbeat_task
     if _heartbeat_task is None or _heartbeat_task.done():
         _heartbeat_task = asyncio.create_task(_heartbeat())
-    asyncio.create_task(_announce_online(bot))  # 不阻塞连接流程
+    spawn(_announce_online(bot), "上线播报")  # 不阻塞连接流程
 
 
 @_driver.on_shutdown

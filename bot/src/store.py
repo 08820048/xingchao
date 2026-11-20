@@ -146,12 +146,21 @@ class Store:
         self._path = db_path
         self._conn: Optional[aiosqlite.Connection] = None
         self._lock = asyncio.Lock()
+        # kv 是读多写少的配置表（模块开关、面板设置），每条群消息会被十几个插件反复读。
+        # 所有写入都经过 set_kv，因此用写穿透缓存：读命中内存，写同时更新库和缓存。
+        # None 也缓存（表示「没有这个键」），避免对未配置项反复查库。
+        self._kv_cache: dict[str, Optional[str]] = {}
 
     async def _ensure(self) -> aiosqlite.Connection:
         async with self._lock:
             if self._conn is None:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 conn = await aiosqlite.connect(self._path)
+                # WAL：读写互不阻塞，commit 不再每次整库 fsync；NORMAL 在 WAL 下断电只丢最后
+                # 几个事务、不会损坏库，对统计/配置足够。备份用的是 sqlite3 backup API，WAL 下依然一致。
+                await conn.execute("PRAGMA journal_mode=WAL")
+                await conn.execute("PRAGMA synchronous=NORMAL")
+                await conn.execute("PRAGMA busy_timeout=5000")
                 await conn.executescript(_SCHEMA)
                 async with conn.execute("PRAGMA table_info(punishments)") as cur:
                     cols = {r[1] for r in await cur.fetchall()}
@@ -172,10 +181,14 @@ class Store:
             return self._conn
 
     async def get_kv(self, key: str) -> Optional[str]:
+        if key in self._kv_cache:
+            return self._kv_cache[key]
         conn = await self._ensure()
         async with conn.execute("SELECT value FROM kv WHERE key = ?", (key,)) as cur:
             row = await cur.fetchone()
-        return row[0] if row else None
+        value = row[0] if row else None
+        self._kv_cache[key] = value
+        return value
 
     async def set_kv(self, key: str, value: str) -> None:
         conn = await self._ensure()
@@ -185,6 +198,7 @@ class Store:
             (key, value),
         )
         await conn.commit()
+        self._kv_cache[key] = value
 
     async def add_bot_event(
         self, event: str, detail: str = "", duration_seconds: int = 0,
@@ -244,17 +258,14 @@ class Store:
             "detail": r[3] or "", "duration_seconds": int(r[4] or 0),
         }
 
-    async def incr_msg_stat(self, group_id: int, day: str) -> None:
+    async def incr_msg_stats(self, group_id: int, day: str, user_id: int) -> None:
+        """群级 + 用户级发言计数，一次事务一次提交（每条群消息都会调用，是最热的写路径）。"""
         conn = await self._ensure()
         await conn.execute(
             "INSERT INTO msg_stat (group_id, day, count) VALUES (?, ?, 1) "
             "ON CONFLICT(group_id, day) DO UPDATE SET count = count + 1",
             (group_id, day),
         )
-        await conn.commit()
-
-    async def incr_user_msg_stat(self, group_id: int, day: str, user_id: int) -> None:
-        conn = await self._ensure()
         await conn.execute(
             "INSERT INTO msg_stat_user (group_id, day, user_id, count) VALUES (?, ?, ?, 1) "
             "ON CONFLICT(group_id, day, user_id) DO UPDATE SET count = count + 1",
@@ -1020,6 +1031,7 @@ class Store:
         if self._conn is not None:
             await self._conn.close()
             self._conn = None
+        self._kv_cache.clear()
 
 
 _store: Optional[Store] = None

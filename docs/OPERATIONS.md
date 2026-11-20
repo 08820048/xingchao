@@ -106,6 +106,7 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 ```
 
 - `xingchao.db` 是唯一状态存储（统计、开关、运行时白名单），建议定期备份
+- 数据库是 WAL 模式，`xingchao.db-wal` / `xingchao.db-shm` 与主库是一体的，要一起拷；运行中直接 tar 可能拷到写了一半的状态，最稳妥是先 `docker compose stop xingchao-bot` 再打包，或者直接用 `data/backups/` 里的在线备份
 - QQ 登录会话在 `napcat/qq/`，备份它可免重新扫码（泄露等同于交出账号，注意保管）
 
 ---
@@ -337,7 +338,7 @@ npx wrangler pages deploy dist --project-name=xingchao --branch=main
 - 每天本地时间 03:30，机器人会对 `data/xingchao.db` 做在线备份（不锁库）并 gzip，
   存到 `data/backups/xingchao-YYYYMMDD-HHMMSS.db.gz`，默认保留最近 7 份；启动时若最近一份超过 24 小时也会补做
 - 超管发 `/备份` 可立即备份并查看现有备份；kv `backup_enabled=false` 关闭，`backup_keep=N` 调整份数
-- 恢复：`docker compose stop bot` → 解压需要的备份覆盖 `data/xingchao.db`（`gunzip -c xxx.db.gz > data/xingchao.db`）→ `docker compose start bot`
+- 恢复：`docker compose stop bot` → 删掉残留的 `data/xingchao.db-wal`、`data/xingchao.db-shm`（数据库开了 WAL 模式，旧的 WAL 文件会被叠加到恢复后的库上）→ 解压需要的备份覆盖 `data/xingchao.db`（`gunzip -c xxx.db.gz > data/xingchao.db`）→ `docker compose start bot`
 - 备份与数据库在同一块盘上，**不能防整机故障**：建议再定期把 `data/backups/` 同步到另一台机器或对象存储
 
 ## 13. 敏感词升级处罚的踢人防线

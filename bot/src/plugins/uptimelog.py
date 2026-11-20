@@ -18,6 +18,7 @@ from nonebot import get_driver, on_notice
 from nonebot.adapters.onebot.v11 import Bot, NoticeEvent
 from nonebot.log import logger
 
+from src.background import spawn
 from src.config import get_config
 from src.store import get_store
 
@@ -86,7 +87,7 @@ async def _on_connect(bot: Bot) -> None:
         except Exception:
             logger.exception("记录上线事件失败")
 
-    asyncio.create_task(_record_when_online())
+    spawn(_record_when_online(), "记录上线事件")
 
 
 offline_notice = on_notice(priority=0, block=False)

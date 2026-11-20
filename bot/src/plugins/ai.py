@@ -30,6 +30,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src.background import spawn
 from src.aitools import build_tools
 from src.cmdutil import norm_action
 from src.config import get_config
@@ -694,7 +695,7 @@ def _note_engaged(event: MessageEvent) -> None:
             from src.plugins import memory, proactive
 
             proactive.note_engaged(event.group_id, event.user_id)
-            asyncio.get_event_loop().create_task(memory.note_interaction(event.group_id, event.user_id))
+            spawn(memory.note_interaction(event.group_id, event.user_id), "记录互动")
         except Exception:
             logger.debug("开启接话窗口失败", exc_info=True)
 

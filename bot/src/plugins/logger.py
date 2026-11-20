@@ -48,7 +48,6 @@ async def log_group_message(event: GroupMessageEvent) -> None:
     # 可选统计（只计数，不存内容）：群级 + 用户级
     try:
         store = get_store()
-        await store.incr_msg_stat(event.group_id, day)
-        await store.incr_user_msg_stat(event.group_id, day, event.user_id)
+        await store.incr_msg_stats(event.group_id, day, event.user_id)
     except Exception:
         logger.exception(f"更新 msg_stat 失败：group={event.group_id} day={day}")

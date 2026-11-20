@@ -22,6 +22,21 @@ from nonebot.adapters.onebot.v11 import Bot
 from nonebot.log import logger
 
 _tasks: dict[str, asyncio.Task] = {}
+_detached: set[asyncio.Task] = set()
+
+
+def spawn(coro: Awaitable[object], name: str) -> asyncio.Task:
+    """后台跑一次性协程（不阻塞当前处理流程）：保留任务引用防止被回收，异常记日志而不是被静默吞掉。"""
+    task = asyncio.get_running_loop().create_task(coro, name=name)  # type: ignore[arg-type]
+    _detached.add(task)
+
+    def _done(t: asyncio.Task) -> None:
+        _detached.discard(t)
+        if not t.cancelled() and (exc := t.exception()) is not None:
+            logger.opt(exception=exc).error(f"后台任务「{name}」异常")
+
+    task.add_done_callback(_done)
+    return task
 
 
 def first_bot() -> Bot | None:

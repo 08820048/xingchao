@@ -128,7 +128,7 @@ xingchao/
   
 | 组件 | 要求 |  
 |------|------|  
-| Python | 3.11+ |  
+| Python | 3.12+ |  
 | NoneBot2 | `nonebot2[fastapi]>=2.3` |  
 | 适配器 | `nonebot-adapter-onebot>=2.4`，只启用 V11 |  
 | 驱动 | FastAPI + websockets/httpx（NoneBot 默认即可） |  
