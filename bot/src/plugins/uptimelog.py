@@ -110,9 +110,9 @@ async def _on_offline(event: NoticeEvent) -> None:
     detail = "：".join(part for part in detail_parts if part)[:300]
     duration = 0
     try:
-        last_online = await store.last_bot_event("online")
-        if last_online:
-            started = _parse_ts(last_online["ts"])
+        last_any = await store.last_bot_event()
+        if last_any and last_any["event"] == "online":
+            started = _parse_ts(last_any["ts"])
             if started is not None:
                 duration = max(0, int(time.time() - started))
         await _record("offline", detail, duration)
