@@ -60,6 +60,8 @@ class FakeBot:
 
 async def test_library_tags_once_and_picks_by_mood(store, monkeypatch):
     monkeypatch.setattr(st, "get_store", lambda: store)
+    st._invalidate()
+    st._recent.clear()
     st._urls.clear()
     st._last_refresh = 0.0
     st._tag_day = ("", 0)
@@ -79,13 +81,14 @@ async def test_library_tags_once_and_picks_by_mood(store, monkeypatch):
     assert "无语" in menu and "开心" in menu and len(ids) == 2
     sid = await st.pick_by_mood("有点无语")
     assert sid == st.sticker_id("https://a/1.png")
-    msg = st.sticker_message(sid)
+    msg = await st.sticker_message(sid)
     assert msg[0].type == "image" and msg[0].data["sub_type"] == 1 and msg[0].data["file"] == "https://a/1.png"
     assert await st.pick_by_mood("完全没匹配的心情") in (st.sticker_id("https://a/1.png"), st.sticker_id("https://a/2.png"))
 
 
 async def test_library_empty_or_api_failure(store, monkeypatch):
     monkeypatch.setattr(st, "get_store", lambda: store)
+    st._invalidate()
     st._urls.clear()
 
     class Boom:

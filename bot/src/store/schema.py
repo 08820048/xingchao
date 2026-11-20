@@ -127,6 +127,22 @@ CREATE TABLE IF NOT EXISTS bot_events (
     duration_seconds INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_bot_events_ts ON bot_events (ts);
+CREATE TABLE IF NOT EXISTS stickers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sha TEXT NOT NULL UNIQUE,
+    file TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    text TEXT DEFAULT '',
+    meaning TEXT DEFAULT '',
+    usage TEXT DEFAULT '',
+    tags TEXT DEFAULT '',
+    group_id INTEGER NOT NULL DEFAULT 0,
+    saved_by INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'cmd',
+    uses INTEGER NOT NULL DEFAULT 0,
+    last_used TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 

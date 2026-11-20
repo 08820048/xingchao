@@ -359,8 +359,9 @@ def build_prompt(
         )
     if sticker_menu:
         prompt += (
-            "\n【你收藏的表情包（想发表情包时 action 填 sticker、sticker 填编号；只在气氛合适、"
-            "表情包比文字更自然时才发，别频繁用）】\n"
+            "\n【你的表情包（不少是群友存的；格式：编号.「图上文字」意思·适合的场合。"
+            "想发表情包时 action 填 sticker、sticker 填编号；只在气氛合适、表情包比文字更自然、"
+            "而且这张的意思和场合真的对得上时才发，别频繁用）】\n"
             f"{sticker_menu}\n"
         )
     return prompt
@@ -406,7 +407,7 @@ async def decide_and_act(
         from src.plugins import stickers
 
         if await stickers.ensure_library(bot):
-            sticker_menu, sticker_ids = await stickers.catalog()
+            sticker_menu, sticker_ids = await stickers.catalog(group_id, transcript[-800:])
     except Exception:
         logger.debug("加载表情包库失败", exc_info=True)
     prompt = build_prompt(
@@ -458,7 +459,7 @@ async def decide_and_act(
     if decision["action"] == "sticker":
         from src.plugins import stickers
 
-        msg = stickers.sticker_message(decision["sticker_id"])
+        msg = await stickers.sticker_message(decision["sticker_id"])
         if msg is None:
             return "skip"
         try:
@@ -468,6 +469,7 @@ async def decide_and_act(
         except Exception:
             logger.exception("发送表情包失败")
             return "skip"
+        await stickers.note_used(group_id, decision["sticker_id"])
         _mark_sent(group_id)
         return "sticker"
     if decision["action"] == "react":

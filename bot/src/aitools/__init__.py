@@ -74,6 +74,7 @@ TOOL_ORDER: tuple[str, ...] = (
     "delete_essence_message",
     "list_essence_messages",
     "send_sticker",
+    "save_sticker",
     "run_capability_check",
     "get_my_memory",
     "forget_my_memory",

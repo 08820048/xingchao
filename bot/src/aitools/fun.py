@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from nonebot.adapters.onebot.v11 import GroupMessageEvent
+
 from src.aitools.registry import tool
 
 
@@ -105,7 +107,7 @@ async def _t_generate_image(bot, event, args) -> str:
 
 @tool(
     "send_sticker",
-    "发一张表情包到当前会话（从机器人收藏的表情包库里按心情挑；聊天气氛合适、想用表情包回应时使用，如 无语/开心/狗头/委屈/吃瓜/加油）",
+    "发一张表情包到当前会话（从表情包库里按心情挑，库里多是群友存的；聊天气氛合适、想用表情包回应时使用，如 无语/开心/狗头/委屈/吃瓜/加油）",
     {"type": "object", "properties": {"mood": {"type": "string", "description": "想表达的心情或梗，如 无语、开心、狗头"}}, "required": ["mood"]},
     "all",
 )
@@ -114,10 +116,45 @@ async def _t_send_sticker(bot, event, args) -> str:
 
     count = await stickers.ensure_library(bot)
     if not count:
-        return "表情包库是空的（机器人账号里还没有收藏表情，或还没来得及打标签）。"
-    sid = await stickers.pick_by_mood(str(args.get("mood", "")))
-    msg = stickers.sticker_message(sid) if sid else None
+        return "表情包库是空的（群友还没存过表情包；回复一张表情包说「存表情」就能存）。"
+    group_id = getattr(event, "group_id", 0) or 0
+    sid = await stickers.pick_by_mood(str(args.get("mood", "")), group_id)
+    msg = await stickers.sticker_message(sid) if sid else None
     if msg is None:
         return "没找到合适的表情包。"
     await bot.send(event, msg)
+    await stickers.note_used(group_id, sid)
     return "已发送一张表情包；文字回复保持简短自然，不要描述这张图。"
+
+
+@tool(
+    "save_sticker",
+    "把群友指定的表情包/图片存进表情包库（对方回复一张图说“存一下/把这个存起来/偷了”等时使用；"
+    "存的是被回复的那条消息里的图，或这条消息自己带的图）。结果以工具返回为准，没存成不要说存好了",
+    {"type": "object", "properties": {}, "required": []},
+    "all",
+)
+async def _t_save_sticker(bot, event, args) -> str:
+    from src.plugins import stickers, stickersave
+    from src.store import get_store
+
+    if not isinstance(event, GroupMessageEvent):
+        return "只能在群里存表情包。"
+    if not await stickersave.collect_enabled():
+        return "存表情功能已被管理员关闭。"
+    seg = await stickersave._target_image(bot, event)
+    if seg is None:
+        return "没找到要存的图：请对方回复那张表情包再说。"
+    if await get_store().count_stickers_saved(
+        since=stickersave._today_start(), saved_by=event.user_id
+    ) >= stickersave.DAILY_PER_USER:
+        return f"对方今天已经存了 {stickersave.DAILY_PER_USER} 张，达到上限，明天再存。"
+    data = await stickersave._image_bytes(seg)
+    if not data:
+        return "图片拿不到了（可能过期），请对方重新发一下再存。"
+    code, row = await stickers.save_image(data, group_id=event.group_id, saved_by=event.user_id, source="cmd")
+    if code == "ok" and row:
+        return f"已存好：{stickers.describe(row)}。用一句话简短告诉对方存好了。"
+    label = stickers.describe(row) if row else ""
+    return "没有存：" + stickersave.RESULT_TEXT.get(code, stickersave.RESULT_TEXT["failed"]).format(label=label)
+

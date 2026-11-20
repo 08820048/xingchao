@@ -9,6 +9,7 @@
 - memory     AI 长期记忆
 - moderation 处罚、申诉、敏感词统计
 - content    博客索引、群知识库
+- stickers   群友存下的表情包
 """
 
 from __future__ import annotations
@@ -26,12 +27,14 @@ from src.store.moderation import ModerationMixin
 from src.store.schedules import SchedulesMixin
 from src.store.schema import _MIGRATIONS, _SCHEMA
 from src.store.stats import StatsMixin
+from src.store.stickers import StickersMixin
 
 __all__ = ["Store", "StoreBase", "get_store", "_MIGRATIONS", "_SCHEMA"]
 
 
 class Store(
-    StatsMixin, EventsMixin, SchedulesMixin, MemoryMixin, ModerationMixin, ContentMixin, StoreBase
+    StatsMixin, EventsMixin, SchedulesMixin, MemoryMixin, ModerationMixin, ContentMixin,
+    StickersMixin, StoreBase,
 ):
     """全部领域能力的组合；实际状态（连接、锁、kv 缓存）都在 StoreBase。"""
 

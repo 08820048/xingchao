@@ -340,6 +340,8 @@ npx wrangler pages deploy dist --project-name=xingchao --branch=main
 - 超管发 `/备份` 可立即备份并查看现有备份；kv `backup_enabled=false` 关闭，`backup_keep=N` 调整份数
 - 恢复：`docker compose stop bot` → 删掉残留的 `data/xingchao.db-wal`、`data/xingchao.db-shm`（数据库开了 WAL 模式，旧的 WAL 文件会被叠加到恢复后的库上）→ 解压需要的备份覆盖 `data/xingchao.db`（`gunzip -c xxx.db.gz > data/xingchao.db`）→ `docker compose start bot`
 - 备份与数据库在同一块盘上，**不能防整机故障**：建议再定期把 `data/backups/` 同步到另一台机器或对象存储
+- 自动备份只包含数据库。群友存的表情包图片在 `data/stickers/`（库里只记元数据），迁移或异地备份时要一起拷；
+  只恢复数据库不恢复这个目录，表情包记录还在但发不出来（会在日志里提示文件丢失）
 
 ## 13. 敏感词升级处罚的踢人防线
 
