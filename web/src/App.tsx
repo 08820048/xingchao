@@ -1,27 +1,31 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { Activity, BookOpen, BookMarked, ClipboardList, Gavel, LogOut, Megaphone, MessageSquareText, Newspaper, ShieldAlert, Clock3, Sparkles, UserCog, UserPlus, Users, Wrench, ShieldCheck } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
-import { RepliesTab } from "@/pages/replies";
 import { Login } from "@/pages/login";
 import { type Status, Dashboard } from "@/pages/dashboard";
-import { JoinTab } from "@/pages/join";
-import { LogsTab } from "@/pages/logs";
-import { TasksTab } from "@/pages/tasks";
-import { BlogTab } from "@/pages/blog";
-import { SensitiveTab } from "@/pages/sensitive";
-import { StatsTab } from "@/pages/stats";
-import { PunishmentsTab } from "@/pages/punishments";
-import { AiTab } from "@/pages/ai";
-import { FeedsTab } from "@/pages/feeds";
-import { AdsTab } from "@/pages/ads";
-import { KnowledgeTab } from "@/pages/knowledge";
-import { WorklogTab } from "@/pages/worklog";
-import { TopicsTab } from "@/pages/topics";
-import { GroupsTab, SuperusersTab } from "@/pages/groups";
 import { ThemeToggle } from "@/components/theme";
 import { Toast } from "@/components/toast";
+import { PageBoundary } from "@/components/page-boundary";
 import { api, post, setGroupNames } from "@/lib/api";
+
+// 除登录页和仪表盘（首屏）外，各页面按需加载，打开面板时不必下载全部页面的代码
+const RepliesTab = lazy(() => import("@/pages/replies").then((m) => ({ default: m.RepliesTab })));
+const JoinTab = lazy(() => import("@/pages/join").then((m) => ({ default: m.JoinTab })));
+const LogsTab = lazy(() => import("@/pages/logs").then((m) => ({ default: m.LogsTab })));
+const TasksTab = lazy(() => import("@/pages/tasks").then((m) => ({ default: m.TasksTab })));
+const BlogTab = lazy(() => import("@/pages/blog").then((m) => ({ default: m.BlogTab })));
+const SensitiveTab = lazy(() => import("@/pages/sensitive").then((m) => ({ default: m.SensitiveTab })));
+const StatsTab = lazy(() => import("@/pages/stats").then((m) => ({ default: m.StatsTab })));
+const PunishmentsTab = lazy(() => import("@/pages/punishments").then((m) => ({ default: m.PunishmentsTab })));
+const AiTab = lazy(() => import("@/pages/ai").then((m) => ({ default: m.AiTab })));
+const FeedsTab = lazy(() => import("@/pages/feeds").then((m) => ({ default: m.FeedsTab })));
+const AdsTab = lazy(() => import("@/pages/ads").then((m) => ({ default: m.AdsTab })));
+const KnowledgeTab = lazy(() => import("@/pages/knowledge").then((m) => ({ default: m.KnowledgeTab })));
+const WorklogTab = lazy(() => import("@/pages/worklog").then((m) => ({ default: m.WorklogTab })));
+const TopicsTab = lazy(() => import("@/pages/topics").then((m) => ({ default: m.TopicsTab })));
+const GroupsTab = lazy(() => import("@/pages/groups").then((m) => ({ default: m.GroupsTab })));
+const SuperusersTab = lazy(() => import("@/pages/groups").then((m) => ({ default: m.SuperusersTab })));
 
 const NAV = [
   { id: "dashboard", label: "仪表盘", icon: Activity },
@@ -138,6 +142,8 @@ function PanelApp() {
           </div>
         </header>
         <div className="p-4 sm:p-6">
+          <PageBoundary key={tab}>
+          <Suspense fallback={<Spinner className="mx-auto mt-16" />}>
           {tab === "dashboard" && <Dashboard status={status} toast={toast} />}
           {tab === "stats" && <StatsTab />}
           {tab === "logs" && <LogsTab />}
@@ -155,6 +161,8 @@ function PanelApp() {
           {tab === "knowledge" && <KnowledgeTab toast={toast} />}
           {tab === "worklog" && <WorklogTab toast={toast} />}
           {tab === "topics" && <TopicsTab toast={toast} />}
+          </Suspense>
+          </PageBoundary>
         </div>
       </SidebarInset>
       {toastState && <Toast text={toastState.t} ok={toastState.ok} />}
