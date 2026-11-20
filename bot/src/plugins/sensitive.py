@@ -43,6 +43,7 @@ from nonebot.rule import Rule
 from opencc import OpenCC
 from pypinyin import lazy_pinyin
 
+from src import llm
 from src.permission import GROUP_WHITELIST, SUPERUSER
 from src.store import get_store
 
@@ -412,13 +413,12 @@ async def _ai_review(group_id: int, text: str, hit: str) -> tuple[str, str]:
     cached = _review_cache.get(cache_key)
     if cached and now - cached[0] < _REVIEW_CACHE_TTL:
         return cached[1], cached[2]
-    from src.plugins import ai as ai_plugin
 
-    if not await ai_plugin.is_ai_enabled():
+    if not await llm.is_ai_enabled():
         return "unknown", "AI 未开启或未配置"
     try:
         raw = await asyncio.wait_for(
-            ai_plugin.generate_text(
+            llm.generate_text(
                 _REVIEW_PROMPT.replace("[[WORD]]", hit).replace("[[TEXT]]", text[:300]),
                 max_tokens=300,
                 temperature=0.1,

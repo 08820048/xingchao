@@ -1,5 +1,6 @@
 """人格设定：机器人不该把自己当"群管助手"标签。"""
 
+from src import llm
 from src.plugins import ai as ai_plugin
 from src.plugins import persona
 
@@ -34,7 +35,7 @@ def test_capability_prompt_tells_model_tools_are_not_identity():
 
 
 def test_default_system_prompt_is_person_first():
-    prompt = ai_plugin.DEFAULTS["ai_system_prompt"]
+    prompt = llm.DEFAULTS["ai_system_prompt"]
     assert "群管助手" in prompt          # 明确点名：你不是这个
     assert "你的身份是你的性格" in prompt
     assert "不列条目汇报" in prompt
@@ -66,5 +67,5 @@ async def test_bearing_survives_custom_persona(store):
 
 def test_ai_system_prompt_is_reversible(store):
     """面板「恢复默认」依赖 DEFAULTS 里的提示词可读。"""
-    default = ai_plugin.DEFAULTS["ai_system_prompt"]
+    default = llm.DEFAULTS["ai_system_prompt"]
     assert isinstance(default, str) and len(default) > 100

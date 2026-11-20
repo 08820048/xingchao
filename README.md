@@ -170,6 +170,7 @@ xingchao/
 │       ├── permission.py   # 白名单（env + 运行时）/ 超管规则
 │       ├── store/          # SQLite：base（连接/WAL/kv 缓存）、schema（建表+版本化迁移）、按领域分的 mixin
 │       ├── aitools/        # AI 工具注册表：@tool 定义与执行器写在一起，按 group/admin/schedule/knowledge/fun 分模块
+│       ├── llm.py          # LLM 接入层：提供商/凭据、客户端、generate_text / generate_vision（各插件调模型都走这里）
 │       ├── httpclient.py   # 共享 HTTP 连接池
 │       ├── background.py   # periodic 周期任务 / spawn 后台任务
 │       ├── textindex.py    # 中文/英文检索分词（博客知识库与群聊回忆共用）

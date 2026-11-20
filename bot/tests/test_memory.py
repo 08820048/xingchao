@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
-from src.plugins import ai as ai_plugin
+from src import llm
 from src.plugins import awareness as aw
 from src.plugins import memory as mem
 from src.plugins import persona
@@ -86,7 +86,7 @@ def _stub_llm(monkeypatch, reply):
         gen.prompt = prompt
         return reply
 
-    monkeypatch.setattr(ai_plugin, "generate_text", gen)
+    monkeypatch.setattr(llm, "generate_text", gen)
     return gen
 
 

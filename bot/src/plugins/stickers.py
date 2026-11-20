@@ -20,6 +20,7 @@ from typing import Any
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 from nonebot.log import logger
 
+from src import llm
 from src.store import get_store
 
 REFRESH_SECONDS = 6 * 3600
@@ -74,11 +75,10 @@ def _clean_tag(raw: str | None) -> str | None:
 
 
 async def _tag_one(url: str) -> str | None:
-    from src.plugins import ai as ai_plugin
     from src.plugins.visionguard import _download_as_data_uri
 
     ref = await _download_as_data_uri(url) or url
-    return _clean_tag(await ai_plugin.generate_vision(ref, TAG_PROMPT, max_tokens=300))
+    return _clean_tag(await llm.generate_vision(ref, TAG_PROMPT, max_tokens=300))
 
 
 async def ensure_library(bot, *, force: bool = False) -> int:

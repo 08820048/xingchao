@@ -3,6 +3,7 @@
 import pytest
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
+from src import llm
 from src.plugins import ai, privatectx
 
 
@@ -22,6 +23,7 @@ def test_extract_private_text():
 @pytest.fixture
 def hist(store, monkeypatch):
     monkeypatch.setattr(ai, "get_store", lambda: store)
+    monkeypatch.setattr(llm, "get_store", lambda: store)
     ai._ctx.clear()
     yield
     ai._ctx.clear()

@@ -32,6 +32,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from PIL import Image
 
+from src import llm
 from src.httpclient import get_http
 from src.markdown import md_to_qq
 from src.permission import GROUP_WHITELIST
@@ -411,9 +412,8 @@ async def handle_vision(bot: Bot, event: GroupMessageEvent, matcher: Matcher) ->
 
     ai_on = False
     if vision_on:
-        from src.plugins import ai as ai_plugin
 
-        ai_on = await ai_plugin.is_ai_enabled()
+        ai_on = await llm.is_ai_enabled()
     if not qr_on and not ai_on:
         return
 
@@ -444,7 +444,7 @@ async def handle_vision(bot: Bot, event: GroupMessageEvent, matcher: Matcher) ->
     ref = await _image_ref(images[0])
     if not ref:
         return
-    raw = await ai_plugin.generate_vision(ref, VISION_PROMPT)
+    raw = await llm.generate_vision(ref, VISION_PROMPT)
     if not raw:
         return
     await _bump_usage(event.group_id)

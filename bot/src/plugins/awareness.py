@@ -35,6 +35,7 @@ from nonebot.adapters.onebot.v11 import (
 )
 from nonebot.log import logger
 
+from src import llm
 from src.permission import GROUP_WHITELIST, merged_whitelist
 from src.store import get_store
 
@@ -221,21 +222,19 @@ def _cache_put(key: str, value: str) -> None:
 
 
 async def _vision_describe(seg, prompt: str) -> str | None:
-    from src.plugins import ai as ai_plugin
     from src.plugins.visionguard import _image_ref
 
     ref = await _image_ref(seg)
     if not ref:
         return None
-    raw = await ai_plugin.generate_vision(ref, prompt)
+    raw = await llm.generate_vision(ref, prompt)
     return " ".join(raw.split())[:200] if raw else None
 
 
 async def _vision_available() -> bool:
     try:
-        from src.plugins import ai as ai_plugin
 
-        return await ai_plugin.is_ai_enabled() and await ai_plugin.get_client("vision") is not None
+        return await llm.is_ai_enabled() and await llm.get_client("vision") is not None
     except Exception:
         return False
 

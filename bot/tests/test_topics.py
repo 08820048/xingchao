@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src import llm
 from src.plugins import topics
 
 
@@ -122,6 +123,8 @@ async def test_chat_returns_refusal_without_calling_model(store, monkeypatch):
     from src.plugins import ai as ai_plugin
 
     monkeypatch.setattr(ai_plugin, "get_store", lambda: store)
+
+    monkeypatch.setattr(llm, "get_store", lambda: store)
     monkeypatch.setattr(topics, "get_store", lambda: store)
 
     called: list[dict] = []
@@ -138,12 +141,12 @@ async def test_chat_returns_refusal_without_calling_model(store, monkeypatch):
     async def fake_client(kind: str = "text"):
         return FakeClient()
 
-    monkeypatch.setattr(ai_plugin, "get_client", fake_client)
+    monkeypatch.setattr(llm, "get_client", fake_client)
 
     async def fake_cfg(raw: bool = False):
-        return dict(ai_plugin.DEFAULTS)
+        return dict(llm.DEFAULTS)
 
-    monkeypatch.setattr(ai_plugin, "ai_config", fake_cfg)
+    monkeypatch.setattr(llm, "ai_config", fake_cfg)
 
     event = SimpleNamespace(
         user_id=10001, group_id=5, message_id=1, reply=None,
@@ -160,6 +163,8 @@ async def test_prompt_baseline_is_injected_into_messages(store, monkeypatch):
     from src.plugins import ai as ai_plugin
 
     monkeypatch.setattr(ai_plugin, "get_store", lambda: store)
+
+    monkeypatch.setattr(llm, "get_store", lambda: store)
     monkeypatch.setattr(topics, "get_store", lambda: store)
 
     captured: dict = {}
@@ -177,7 +182,7 @@ async def test_prompt_baseline_is_injected_into_messages(store, monkeypatch):
         return FakeClient()
 
     async def fake_cfg(raw: bool = False):
-        return dict(ai_plugin.DEFAULTS)
+        return dict(llm.DEFAULTS)
 
     async def fake_quota(*a, **kw):
         return True, ""
@@ -185,8 +190,8 @@ async def test_prompt_baseline_is_injected_into_messages(store, monkeypatch):
     async def fake_scene(*a, **kw):
         return "场景"
 
-    monkeypatch.setattr(ai_plugin, "get_client", fake_client)
-    monkeypatch.setattr(ai_plugin, "ai_config", fake_cfg)
+    monkeypatch.setattr(llm, "get_client", fake_client)
+    monkeypatch.setattr(llm, "ai_config", fake_cfg)
     monkeypatch.setattr(ai_plugin, "_check_quota", fake_quota)
     monkeypatch.setattr(ai_plugin, "_build_scene", fake_scene)
 

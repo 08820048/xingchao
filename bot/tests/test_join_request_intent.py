@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src import llm
 from src.plugins import request as rq
 
 
@@ -30,7 +31,6 @@ class _Completions:
 
 
 def _patch_ai(monkeypatch, payload):
-    from src.plugins import ai as ai_plugin
 
     comp = _Completions(payload)
 
@@ -43,8 +43,8 @@ def _patch_ai(monkeypatch, payload):
     async def fake_cfg(raw=False):
         return {"ai_model": "m"}
 
-    monkeypatch.setattr(ai_plugin, "get_client", fake_client)
-    monkeypatch.setattr(ai_plugin, "ai_config", fake_cfg)
+    monkeypatch.setattr(llm, "get_client", fake_client)
+    monkeypatch.setattr(llm, "ai_config", fake_cfg)
     return comp
 
 
@@ -138,12 +138,11 @@ async def _run(monkeypatch, store, comment, ai_payload=None, ai_down=False):
         str(555): {"join_mode": "ai", "join_keywords": "github", "join_intent_keywords": "找人做,做个网站"}
     }))
     if ai_down:
-        from src.plugins import ai as ai_plugin
 
         async def no_client(kind="text"):
             return None
 
-        monkeypatch.setattr(ai_plugin, "get_client", no_client)
+        monkeypatch.setattr(llm, "get_client", no_client)
     elif ai_payload is not None:
         _patch_ai(monkeypatch, ai_payload)
 

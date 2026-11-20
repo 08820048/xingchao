@@ -26,6 +26,7 @@ from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
 
+from src import llm
 from src.httpclient import get_http
 from src.markdown import md_to_qq
 from src.permission import GROUP_WHITELIST
@@ -236,9 +237,8 @@ async def handle_link_preview(bot: Bot, event: GroupMessageEvent, matcher: Match
     if not await link_preview_enabled():
         return
 
-    from src.plugins import ai as ai_plugin
 
-    if not await ai_plugin.is_ai_enabled():
+    if not await llm.is_ai_enabled():
         return
 
     text = event.message.extract_plain_text()
@@ -267,7 +267,7 @@ async def handle_link_preview(bot: Bot, event: GroupMessageEvent, matcher: Match
     if info is None:
         return
 
-    summary = await ai_plugin.generate_text(
+    summary = await llm.generate_text(
         _build_prompt(url, info),
         system="你是网页摘要助手，回答简洁准确，只输出一句话。",
         temperature=0.3,

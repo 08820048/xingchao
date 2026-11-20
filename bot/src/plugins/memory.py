@@ -28,6 +28,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.rule import Rule
 
+from src import llm
 from src.background import periodic
 from src.permission import disabled_groups, merged_whitelist
 from src.store import get_store
@@ -173,7 +174,6 @@ def _daily_used(gid: int) -> int:
 
 async def consolidate_group(gid: int, *, force: bool = False) -> str:
     """整理一个群的记忆；返回结果说明（updated / skipped:原因）。"""
-    from src.plugins import ai as ai_plugin
     from src.plugins import awareness
 
     cfg = await config()
@@ -211,7 +211,7 @@ async def consolidate_group(gid: int, *, force: bool = False) -> str:
     gm = await store.get_memory("group", gid)
     old_group = gm["facts"] if gm else []
 
-    raw = await ai_plugin.generate_text(
+    raw = await llm.generate_text(
         build_consolidation_prompt("\n".join(lines), members, old_users, old_group),
         system="你是严谨的记忆整理助手，只输出 JSON，宁缺毋滥，尊重隐私。",
         temperature=0.2,
@@ -233,9 +233,8 @@ async def consolidate_group(gid: int, *, force: bool = False) -> str:
 
 @periodic("长期记忆整理", SCAN_SECONDS, wait_bot=False)
 async def _scan(_bot) -> None:
-    from src.plugins import ai as ai_plugin
 
-    if await ai_plugin.is_ai_enabled() and await memory_enabled():
+    if await llm.is_ai_enabled() and await memory_enabled():
         for gid in sorted(merged_whitelist() - disabled_groups()):
             result = await consolidate_group(gid)
             if result == "updated":

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src import llm
 from src.aitools.registry import _ai, _j, tool
 from src.config import get_config
 from src.store import get_store
@@ -462,7 +463,7 @@ async def _t_superuser_del(bot, event, args) -> str:
 )
 async def _t_ai_toggle(bot, event, args) -> str:
     enable = bool(args.get("enabled", True))
-    if not (await _ai().is_configured()):
+    if not (await llm.is_configured()):
         return "AI 未配置 API 地址或密钥，请先在 Web 管理面板「AI」页填写。"
     await get_store().set_kv("ai_enabled", "true" if enable else "false")
     return f"AI 问答已{'开启' if enable else '关闭'}。"
@@ -475,10 +476,10 @@ async def _t_ai_toggle(bot, event, args) -> str:
     "superuser",
 )
 async def _t_ai_status(bot, event, args) -> str:
-    cfg = await _ai().ai_config()
+    cfg = await llm.ai_config()
     return _j({
-        "开启": await _ai().is_ai_enabled(), "已配置API": await _ai().is_configured(),
-        "模型": cfg["ai_model"], "视觉模型": await _ai()._vision_model(),
+        "开启": await llm.is_ai_enabled(), "已配置API": await llm.is_configured(),
+        "模型": cfg["ai_model"], "视觉模型": await llm._vision_model(),
         "上下文轮数": cfg["ai_ctx_rounds"],
         "今日限额": {"每群": cfg["ai_limit_group"], "每人": cfg["ai_limit_user"]},
         "今日用量": await _ai()._usage_payload(),

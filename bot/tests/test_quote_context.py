@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src import llm
 from src.plugins import ai as ai_plugin
 
 
@@ -99,7 +100,7 @@ async def captured(monkeypatch, store):
         return FakeClient()
 
     async def fake_cfg(raw: bool = False):
-        return dict(ai_plugin.DEFAULTS)
+        return dict(llm.DEFAULTS)
 
     async def fake_quota(*a, **kw):
         return True, ""
@@ -107,8 +108,8 @@ async def captured(monkeypatch, store):
     async def fake_scene(*a, **kw):
         return "场景"
 
-    monkeypatch.setattr(ai_plugin, "get_client", fake_client)
-    monkeypatch.setattr(ai_plugin, "ai_config", fake_cfg)
+    monkeypatch.setattr(llm, "get_client", fake_client)
+    monkeypatch.setattr(llm, "ai_config", fake_cfg)
     monkeypatch.setattr(ai_plugin, "_check_quota", fake_quota)
     monkeypatch.setattr(ai_plugin, "_build_scene", fake_scene)
     return box

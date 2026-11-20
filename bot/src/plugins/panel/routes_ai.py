@@ -7,6 +7,7 @@ import re
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from nonebot.log import logger
+from src import llm
 from src.httpclient import get_http
 from src.permission import (
     merged_whitelist,
@@ -26,29 +27,29 @@ def register(app) -> None:
             return _unauthorized()
         from src.plugins import ai as ai_plugin
 
-        cfg = await ai_plugin.ai_config(raw=True)
-        base_url, api_key = await ai_plugin._ai_creds()
-        ds = await ai_plugin.deepseek_settings()
+        cfg = await llm.ai_config(raw=True)
+        base_url, api_key = await llm._ai_creds()
+        ds = await llm.deepseek_settings()
         return JSONResponse(
             {
                 "ok": True,
                 "data": {
-                    "configured": await ai_plugin.is_configured(),
+                    "configured": await llm.is_configured(),
                     "provider": await get_store().get_kv("ai_provider") or "default",
-                    "active_provider": await ai_plugin.active_provider(),
+                    "active_provider": await llm.active_provider(),
                     "deepseek": {
-                        "api_key_masked": ai_plugin.mask_key(ds["api_key"]),
+                        "api_key_masked": llm.mask_key(ds["api_key"]),
                         "model": ds["model"],
                         "base_url": ds["base_url"],
                     },
                     "base_url": base_url,
-                    "api_key_masked": ai_plugin.mask_key(api_key),
-                    "enabled": await ai_plugin.is_ai_enabled(),
+                    "api_key_masked": llm.mask_key(api_key),
+                    "enabled": await llm.is_ai_enabled(),
                     "model": cfg["ai_model"],
                     "vision_model": cfg["ai_vision_model"],
                     "system_prompt": cfg["ai_system_prompt"],
-                    "default_system_prompt": ai_plugin.DEFAULTS["ai_system_prompt"],
-                    "is_default_prompt": cfg["ai_system_prompt"] == ai_plugin.DEFAULTS["ai_system_prompt"],
+                    "default_system_prompt": llm.DEFAULTS["ai_system_prompt"],
+                    "is_default_prompt": cfg["ai_system_prompt"] == llm.DEFAULTS["ai_system_prompt"],
                     "ctx_rounds": cfg["ai_ctx_rounds"],
                     "limit_group": cfg["ai_limit_group"],
                     "limit_user": cfg["ai_limit_user"],
@@ -61,14 +62,13 @@ def register(app) -> None:
     async def panel_ai_post(request: Request) -> JSONResponse:
         if not _authorized(request):
             return _unauthorized()
-        from src.plugins import ai as ai_plugin
 
         body = await request.json()
         store = get_store()
         updates: dict[str, str] = {}
         if body.get("action") == "reset_prompt":
             # 一键恢复默认人格提示词（改过旧版“群管机器人”文案的部署用它重置）
-            updates["ai_system_prompt"] = ai_plugin.DEFAULTS["ai_system_prompt"]
+            updates["ai_system_prompt"] = llm.DEFAULTS["ai_system_prompt"]
         # 连接凭据（可选更新；api_key 留空 = 保持不变）
         if "base_url" in body:
             base = str(body["base_url"]).strip()
@@ -87,7 +87,7 @@ def register(app) -> None:
             if body["provider"] not in ("default", "deepseek"):
                 return JSONResponse({"ok": False, "error": "provider 应为 default 或 deepseek"}, status_code=400)
             if body["provider"] == "deepseek" and not (
-                (await ai_plugin.deepseek_settings())["api_key"] or str(body.get("deepseek_api_key", "")).strip()
+                (await llm.deepseek_settings())["api_key"] or str(body.get("deepseek_api_key", "")).strip()
             ):
                 return JSONResponse({"ok": False, "error": "请先填写 DeepSeek API Key"}, status_code=400)
             updates["ai_provider"] = body["provider"]
@@ -398,11 +398,10 @@ def register(app) -> None:
     async def panel_search_get(request: Request) -> JSONResponse:
         if not _authorized(request):
             return _unauthorized()
-        from src.plugins import ai as ai_plugin
         from src.plugins import webtools
 
         chain = await webtools.search_chain()
-        cfg = await ai_plugin.ai_config()
+        cfg = await llm.ai_config()
         return JSONResponse({
             "ok": True,
             "data": {
@@ -413,7 +412,7 @@ def register(app) -> None:
                 "cache_ttl": int(await webtools._kv("search_cache_ttl")),
                 "need_content": bool(await webtools._kv("search_need_content")),
                 "native_search": bool(cfg["ai_native_search"]),
-                "native_ready": await ai_plugin.native_search_ready(cfg),
+                "native_ready": await llm.native_search_ready(cfg),
             },
         })
 
@@ -486,7 +485,6 @@ def register(app) -> None:
         """
         if not _authorized(request):
             return _unauthorized()
-        from src.plugins import ai as ai_plugin
 
         body: dict = {}
         try:
@@ -495,11 +493,11 @@ def register(app) -> None:
         except Exception:
             body = {}
         if body.get("provider") == "deepseek":
-            ds = await ai_plugin.deepseek_settings()
+            ds = await llm.deepseek_settings()
             base, key = ds["base_url"], ds["api_key"]
             body = {"api_key": body.get("api_key")}  # base_url 固定为 DeepSeek 官方地址
         else:
-            base, key = await ai_plugin._ai_creds()
+            base, key = await llm._ai_creds()
         base = str(body.get("base_url") or base or "").strip().rstrip("/")
         key = str(body.get("api_key") or key or "").strip()
         if not (base and key):

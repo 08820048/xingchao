@@ -2,6 +2,7 @@ import time
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
+from src import llm
 from src.plugins import awareness as aw
 from src.plugins import essence
 from src.plugins import proactive as pa
@@ -64,7 +65,6 @@ def test_parse_decision_nominate():
 
 
 async def test_decide_and_act_nominate_notifies_superusers_only(monkeypatch, store):
-    from src.plugins import ai as ai_plugin
     from src.plugins import appeals, stickers
 
     monkeypatch.setattr(pa, "get_store", lambda: store)
@@ -84,8 +84,8 @@ async def test_decide_and_act_nominate_notifies_superusers_only(monkeypatch, sto
 
     monkeypatch.setattr(stickers, "ensure_library", no_lib)
     monkeypatch.setattr(aw, "config", cfg)
-    monkeypatch.setattr(ai_plugin, "ai_config", ai_cfg)
-    monkeypatch.setattr(ai_plugin, "generate_text", gen)
+    monkeypatch.setattr(llm, "ai_config", ai_cfg)
+    monkeypatch.setattr(llm, "generate_text", gen)
     monkeypatch.setattr(appeals, "_superuser_ids", lambda: {100})
     essence._nominated.clear()
     essence._nominate_daily.clear()

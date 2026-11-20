@@ -346,7 +346,7 @@ async def _record_bytes(bot: Bot, seg: MessageSegment) -> bytes | None:
 
 async def transcribe(bot: Bot, seg: MessageSegment) -> str | None:
     """语音段 → 文字；失败返回 None。"""
-    from src.plugins.ai import get_client
+    from src.llm import get_client
 
     client = await get_client("audio")
     if client is None:
@@ -422,7 +422,8 @@ async def handle_voice(bot: Bot, event: MessageEvent, matcher: Matcher) -> None:
         return
     from nonebot import get_driver
 
-    from src.plugins.ai import chat, is_ai_enabled
+    from src.plugins.ai import chat
+    from src.llm import is_ai_enabled
 
     if not await is_ai_enabled():
         return

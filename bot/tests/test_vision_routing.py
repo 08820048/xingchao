@@ -3,24 +3,26 @@
 import pytest
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
+from src import llm
 from src.plugins import ai, awareness as aw
 
 
 @pytest.fixture
 async def kv(store, monkeypatch):
     monkeypatch.setattr(ai, "get_store", lambda: store)
+    monkeypatch.setattr(llm, "get_store", lambda: store)
     return store
 
 
 async def test_vision_via_deepseek_needs_provider_and_model(kv):
     await kv.set_kv("ai_vision_model", "deepseek-flash")
-    assert not await ai._vision_via_deepseek()  # 提供商仍是默认
+    assert not await llm._vision_via_deepseek()  # 提供商仍是默认
     await kv.set_kv("ai_provider", "deepseek")
-    assert not await ai._vision_via_deepseek()  # 选了 deepseek 但没填密钥 → 回落默认
+    assert not await llm._vision_via_deepseek()  # 选了 deepseek 但没填密钥 → 回落默认
     await kv.set_kv("ai_deepseek_api_key", "sk-x")
-    assert await ai._vision_via_deepseek()
+    assert await llm._vision_via_deepseek()
     await kv.set_kv("ai_vision_model", "glm-4v-flash")
-    assert not await ai._vision_via_deepseek()  # 非 deepseek 模型仍走默认提供商
+    assert not await llm._vision_via_deepseek()  # 非 deepseek 模型仍走默认提供商
 
 
 async def test_get_client_vision_uses_deepseek_credentials(kv, monkeypatch):
@@ -33,13 +35,13 @@ async def test_get_client_vision_uses_deepseek_credentials(kv, monkeypatch):
             created.append((api_key, base_url))
 
     monkeypatch.setattr(openai, "AsyncOpenAI", FakeClient)
-    ai._clients.clear()
+    llm._clients.clear()
     await kv.set_kv("ai_provider", "deepseek")
     await kv.set_kv("ai_deepseek_api_key", "sk-ds")
     await kv.set_kv("ai_vision_model", "deepseek-flash")
-    assert await ai.get_client("vision") is not None
-    assert created == [("sk-ds", ai.DEEPSEEK_BASE_URL)]
-    ai._clients.clear()
+    assert await llm.get_client("vision") is not None
+    assert created == [("sk-ds", llm.DEEPSEEK_BASE_URL)]
+    llm._clients.clear()
 
 
 async def test_direct_images_ignore_awareness_switch(monkeypatch):

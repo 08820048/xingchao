@@ -19,6 +19,7 @@ from nonebot.exception import MatcherException
 from nonebot.log import logger
 from nonebot.matcher import Matcher
 
+from src import llm
 from src.config import get_config
 from src.permission import GROUP_WHITELIST
 
@@ -61,9 +62,8 @@ async def handle_mention(bot: Bot, event: GroupMessageEvent, matcher: Matcher) -
         return
 
     # AI 已启用时由 ai 插件接管对话（priority 11）
-    from src.plugins import ai as ai_plugin
 
-    if await ai_plugin.is_ai_enabled():
+    if await llm.is_ai_enabled():
         return
 
     # 冷却：同群默认 8 秒内不重复回应

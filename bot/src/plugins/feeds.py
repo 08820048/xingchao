@@ -160,7 +160,7 @@ def parse_numbered_lines(text: str, expected: int) -> list[str] | None:
 async def ai_lines(instruction: str, texts: list[str]) -> list[str] | None:
     """让 AI 逐条改写；任何失败返回 None，调用方回退到原文。"""
     try:
-        from src.plugins.ai import generate_text
+        from src.llm import generate_text
 
         numbered = "\n".join(f"{i}. {t}" for i, t in enumerate(texts, 1))
         out = await generate_text(

@@ -34,6 +34,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src import llm
 from src.permission import GROUP_WHITELIST, SUPERUSER
 from src.store import get_store
 
@@ -137,12 +138,11 @@ def _rule_verdict(comment: str, keywords: str, intent_keywords: str = "") -> tup
 
 async def _ai_verdict(bot: Bot, question: str, comment: str) -> str | None:
     """AI 判断；返回 'approve' / 'reject' / 'manual'，失败返回 None。"""
-    from src.plugins import ai as ai_plugin
 
-    client = await ai_plugin.get_client()
+    client = await llm.get_client()
     if client is None:
         return None
-    cfg = await ai_plugin.ai_config()
+    cfg = await llm.ai_config()
     system = (
         "你是 QQ 群加群审批助手。这个群的加群验证问题是：「" + question + "」。\n"
         "申请人会在申请时填写一段回答。请判断能不能放他进来，只输出一个 JSON 对象"

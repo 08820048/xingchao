@@ -18,6 +18,7 @@ from typing import Any
 from nonebot import get_driver, on_message
 from nonebot.adapters.onebot.v11 import Bot, Message, PrivateMessageEvent
 from nonebot.log import logger
+from src import llm
 
 TAG = "【指令/通知回复】"
 MAX_CHARS = 600
@@ -62,7 +63,7 @@ def extract_private_text(api: str, data: dict[str, Any]) -> tuple[int, str] | No
 async def _remember(user_id: int, role: str, content: str) -> None:
     from src.plugins import ai
 
-    rounds = await ai._kv("ai_ctx_rounds")
+    rounds = await llm._kv("ai_ctx_rounds")
     ai._append_history(-int(user_id), role, content, int(rounds))
 
 

@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from src import llm
 from src.plugins import ai as ai_plugin
 from src.plugins import webtools
 
@@ -214,48 +215,48 @@ def test_provider_status_marks_missing_keys(monkeypatch):
 # ---------------------------------------------------------------- 原生搜索
 
 def _cfg(**over):
-    base = dict(ai_plugin.DEFAULTS)
+    base = dict(llm.DEFAULTS)
     base.update(over)
     return base
 
 
 async def test_native_search_needs_deepseek_model_and_endpoint(monkeypatch):
-    monkeypatch.setattr(ai_plugin, "_native_search_supported", True)
+    monkeypatch.setattr(llm, "_native_search_supported", True)
 
     async def creds():
         return "https://api.deepseek.com", "sk-x"
 
-    monkeypatch.setattr(ai_plugin, "_ai_creds", creds)
-    assert await ai_plugin.native_search_ready(_cfg(ai_model="deepseek-flash")) is True
+    monkeypatch.setattr(llm, "_ai_creds", creds)
+    assert await llm.native_search_ready(_cfg(ai_model="deepseek-flash")) is True
     # 关掉开关就不声明
-    assert await ai_plugin.native_search_ready(_cfg(ai_model="deepseek-flash", ai_native_search=False)) is False
+    assert await llm.native_search_ready(_cfg(ai_model="deepseek-flash", ai_native_search=False)) is False
     # 非 deepseek 模型
-    assert await ai_plugin.native_search_ready(_cfg(ai_model="glm-4-flash")) is False
+    assert await llm.native_search_ready(_cfg(ai_model="glm-4-flash")) is False
 
     async def other_base():
         return "https://api.b.ai/v1", "sk-x"
 
-    monkeypatch.setattr(ai_plugin, "_ai_creds", other_base)
-    assert await ai_plugin.native_search_ready(_cfg(ai_model="deepseek-flash")) is False  # 中转站不支持
+    monkeypatch.setattr(llm, "_ai_creds", other_base)
+    assert await llm.native_search_ready(_cfg(ai_model="deepseek-flash")) is False  # 中转站不支持
 
 
 async def test_native_search_served_then_disabled_after_failure(monkeypatch):
-    monkeypatch.setattr(ai_plugin, "_native_search_supported", True)
+    monkeypatch.setattr(llm, "_native_search_supported", True)
 
     async def creds():
         return "https://api.deepseek.com", "sk-x"
 
-    monkeypatch.setattr(ai_plugin, "_ai_creds", creds)
-    assert await ai_plugin.native_search_ready(_cfg(ai_model="deepseek-flash")) is True
-    ai_plugin._native_search_supported = False  # 模拟被服务端拒绝一次
-    assert await ai_plugin.native_search_ready(_cfg(ai_model="deepseek-flash")) is False
-    monkeypatch.setattr(ai_plugin, "_native_search_supported", True)
+    monkeypatch.setattr(llm, "_ai_creds", creds)
+    assert await llm.native_search_ready(_cfg(ai_model="deepseek-flash")) is True
+    llm._native_search_supported = False  # 模拟被服务端拒绝一次
+    assert await llm.native_search_ready(_cfg(ai_model="deepseek-flash")) is False
+    monkeypatch.setattr(llm, "_native_search_supported", True)
 
 
 def test_drop_native_tool_keeps_function_tools():
     tools = [{"type": "deepseek_web_search"}, {"type": "function", "function": {"name": "f"}}]
-    assert ai_plugin._drop_native_tool(tools) == [{"type": "function", "function": {"name": "f"}}]
-    assert ai_plugin._drop_native_tool([{"type": "deepseek_web_search"}]) is None
+    assert llm._drop_native_tool(tools) == [{"type": "function", "function": {"name": "f"}}]
+    assert llm._drop_native_tool([{"type": "deepseek_web_search"}]) is None
 
 
 def test_capability_prompt_warns_about_fake_search_results():

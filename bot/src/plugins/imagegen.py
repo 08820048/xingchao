@@ -20,6 +20,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src import llm
 from src.permission import BASIC
 from src.store import get_store
 
@@ -87,9 +88,8 @@ async def generate(user_id: int, prompt: str) -> tuple[MessageSegment | None, st
         return None, tip
     if await _prompt_blocked(prompt):
         return None, "这个主题我不画哦。"
-    from src.plugins import ai
 
-    client = await ai.get_client()
+    client = await llm.get_client()
     if client is None:
         return None, "AI 还没配置好，暂时不能画图。"
     try:

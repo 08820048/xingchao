@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
-from src.plugins import ai as ai_plugin
+from src import llm
 from src.plugins import awareness as aw
 from src.plugins import proactive as pa
 
@@ -150,8 +150,8 @@ def _stub_ai(monkeypatch, reply):
     async def cfg():
         return {"ai_system_prompt": "你是星潮"}
 
-    monkeypatch.setattr(ai_plugin, "generate_text", gen)
-    monkeypatch.setattr(ai_plugin, "ai_config", cfg)
+    monkeypatch.setattr(llm, "generate_text", gen)
+    monkeypatch.setattr(llm, "ai_config", cfg)
     return gen
 
 

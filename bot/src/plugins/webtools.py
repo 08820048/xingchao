@@ -32,6 +32,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src import llm
 from src.httpclient import get_http
 from src.config import get_config
 from src.permission import BASIC
@@ -128,12 +129,11 @@ async def deepseek_creds() -> tuple[str, str]:
     优先「DeepSeek 提供商」单独填的密钥，其次默认提供商指向 deepseek 时的密钥。
     """
     try:
-        from src.plugins import ai as ai_plugin
 
-        ds = await ai_plugin.deepseek_settings()
+        ds = await llm.deepseek_settings()
         if ds["api_key"]:
             return "https://api.deepseek.com", ds["api_key"]
-        base, key = await ai_plugin._ai_creds()
+        base, key = await llm._ai_creds()
         if key and "deepseek.com" in (base or ""):
             return "https://api.deepseek.com", key
     except Exception:

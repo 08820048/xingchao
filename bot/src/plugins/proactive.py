@@ -42,6 +42,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg
 
+from src import llm
 from src.markdown import md_to_qq
 from src.permission import GROUP_WHITELIST, SUPERUSER, merged_whitelist
 from src.store import get_store
@@ -385,13 +386,12 @@ async def decide_and_act(
     knowledge: str = "", burst: int = 5, kb_answer: str = "",
 ) -> str:
     """调用一次决策并执行动作，返回 skip/react/reply。"""
-    from src.plugins import ai as ai_plugin
     from src.plugins import awareness
 
     transcript, ids = await awareness.indexed_context(group_id)
     if not transcript:
         return "skip"
-    cfg = await ai_plugin.ai_config()
+    cfg = await llm.ai_config()
     persona_text, mem_text = "", ""
     try:
         from src.plugins import memory, persona
@@ -422,7 +422,7 @@ async def decide_and_act(
         logger.debug("注入反馈失败", exc_info=True)
     if mem_text:
         prompt = mem_text + "\n\n" + prompt
-    raw = await ai_plugin.generate_text(
+    raw = await llm.generate_text(
         prompt,
         system="\n".join(filter(None, [
             str(cfg["ai_system_prompt"]), persona_text,
@@ -517,10 +517,9 @@ async def handle_proactive(bot: Bot, event: GroupMessageEvent, matcher: Matcher)
     if not await proactive_enabled():
         return
 
-    from src.plugins import ai as ai_plugin
     from src.plugins import awareness
 
-    if not await ai_plugin.is_ai_enabled() or not (await awareness.config())["awareness_enabled"]:
+    if not await llm.is_ai_enabled() or not (await awareness.config())["awareness_enabled"]:
         return
 
     gid, uid = event.group_id, event.user_id
