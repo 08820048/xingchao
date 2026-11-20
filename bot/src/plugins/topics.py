@@ -116,7 +116,7 @@ def classify(text: str) -> tuple[str, str] | None:
 
     给测试与「不想读 kv」的场景用；线上走 classify_async。
     """
-    from src.plugins.sensitive import find_hit, split_word_lists
+    from src.wordmatch import find_hit, split_word_lists
 
     text = (text or "").strip()
     if len(text) < 2:
@@ -133,7 +133,7 @@ def classify(text: str) -> tuple[str, str] | None:
 
 async def classify_async(text: str) -> tuple[str, str] | None:
     """按 kv 配置（分类开关 + 词表）判定；返回 (category, 命中词) 或 None。"""
-    from src.plugins.sensitive import find_hit, split_word_lists
+    from src.wordmatch import find_hit, split_word_lists
 
     text = (text or "").strip()
     if len(text) < 2:

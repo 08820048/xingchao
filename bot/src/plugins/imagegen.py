@@ -68,9 +68,10 @@ def _consume(user_id: int, now: float | None = None) -> None:
 async def _prompt_blocked(prompt: str) -> bool:
     try:
         from src.plugins import sensitive
+        from src.wordmatch import find_hit
 
         words = await sensitive.get_words()
-        return bool(words) and sensitive.find_hit(prompt, words, [], "normal") is not None
+        return bool(words) and find_hit(prompt, words, [], "normal") is not None
     except Exception:
         logger.debug("绘图提示词敏感词检查失败，放行交给提供商审核", exc_info=True)
         return False

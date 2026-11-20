@@ -1,4 +1,5 @@
-from src.plugins.sensitive import clean_words, find_hit, split_word_lists, suggest_for_word
+from src.plugins.sensitive import suggest_for_word
+from src.wordmatch import clean_words, find_hit, split_word_lists
 
 
 def test_split_word_lists_separates_exempt_phrases():
