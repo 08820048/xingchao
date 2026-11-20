@@ -1,7 +1,7 @@
-"""群管功能（仅超管）：/禁言 /解除禁言 /全体禁言 /踢出 /recall + 新人进群欢迎。
+"""群管功能（仅超管）：/禁言 /解除禁言 /全体禁言 /踢出 /撤回 + 新人进群欢迎。
 
 - 目标用户通过 @提及 指定（/禁言 @某人 10）
-- /recall 可回复目标消息后发送，或直接带 message_id
+- /撤回（英文别名 /withdraw；/recall 归 /回忆）可回复目标消息后发送，或直接带 message_id
 - 机器人小号必须是群管理员，API 失败（权限不足等）时友好提示，不抛崩
 - 新人进群欢迎（白名单群），可通过 /plugin welcome on|off 开关（持久化 kv）；
   占位符 {at}/{qq}/{group}，以及 {ad}（展开成一行广告招商提示，文案见 ads.py）
@@ -35,7 +35,7 @@ mute_cmd = on_command("禁言", aliases={"mute"}, rule=SUPERUSER, priority=1, bl
 unmute_cmd = on_command("解除禁言", aliases={"unmute"}, rule=SUPERUSER, priority=1, block=True)
 banall_cmd = on_command("全体禁言", aliases={"banall"}, rule=SUPERUSER, priority=1, block=True)
 kick_cmd = on_command("踢出", aliases={"kick"}, rule=SUPERUSER, priority=1, block=True)
-recall_cmd = on_command("撤回", aliases={"recall"}, rule=SUPERUSER, priority=1, block=True)
+recall_cmd = on_command("撤回", aliases={"withdraw"}, rule=SUPERUSER, priority=1, block=True)
 welcome_cmd = on_command("欢迎语", aliases={"welcome"}, rule=SUPERUSER, priority=1, block=True)
 notice_cmd = on_command("公告", aliases={"notice"}, rule=SUPERUSER, priority=1, block=True)
 
@@ -203,7 +203,7 @@ async def handle_kick(bot: Bot, event: MessageEvent, matcher: Matcher, args: Mes
 
 @recall_cmd.handle()
 async def handle_recall(bot: Bot, event: MessageEvent, matcher: Matcher, args: Message = CommandArg()) -> None:
-    """回复目标消息后发 /recall，或 /recall <message_id>。"""
+    """回复目标消息后发 /撤回，或 /撤回 <message_id>。"""
     message_id: Optional[int] = None
     if event.reply is not None:
         message_id = event.reply.message_id
