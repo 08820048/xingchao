@@ -21,7 +21,7 @@ import re
 import time
 from typing import Any
 
-from nonebot import get_driver, on_command, on_notice, on_request
+from nonebot import on_command, on_notice, on_request
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import (
     Bot,
@@ -109,16 +109,10 @@ async def join_config(group_id: int | None = None) -> dict[str, Any]:
 # ---------------------------------------------------------------- 工具函数
 
 
-def _superuser_ids() -> set[int]:
-    return {int(u) for u in get_driver().config.superusers}
-
-
 async def _notify_superusers(bot: Bot, text: str) -> None:
-    for uid in _superuser_ids():
-        try:
-            await bot.call_api("send_private_msg", user_id=uid, message=text)
-        except Exception:
-            logger.exception(f"通知超管 {uid} 失败")
+    from src.plugins.appeals import notify_superusers
+
+    await notify_superusers(bot, text)
 
 
 def _rule_verdict(comment: str, keywords: str, intent_keywords: str = "") -> tuple[str, str]:

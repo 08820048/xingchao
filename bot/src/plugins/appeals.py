@@ -21,13 +21,13 @@ from pathlib import Path
 from nonebot import get_driver, on_command
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot, MessageEvent
-from nonebot.log import logger
 from nonebot.params import CommandArg
 
 from src.config import get_config
 from src.background import periodic
 from src.permission import SUPERUSER
 from src.store import get_store
+from src.notify import notify_targets
 
 REMIND_HOURS = 12
 REMIND_SCAN_SECONDS = 600
@@ -108,13 +108,8 @@ def _superuser_ids() -> set[int]:
 
 
 async def notify_superusers(bot: Bot, text: str, exclude: int | None = None) -> None:
-    for uid in _superuser_ids():
-        if uid == exclude:
-            continue
-        try:
-            await bot.call_api("send_private_msg", user_id=uid, message=text)
-        except Exception:
-            logger.exception(f"申诉通知超管 {uid} 失败")
+    # 统一走 src.notify：只发给好友/显式白名单，失败目标 1 小时内不重试。
+    await notify_targets(bot, _superuser_ids(), text, exclude=exclude, kind="超管通知")
 
 
 async def resolve_appeal(

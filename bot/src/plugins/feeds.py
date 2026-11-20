@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 import httpx
-from nonebot import get_driver, on_command
+from nonebot import on_command
 from nonebot.adapters import Message
 from nonebot.adapters.onebot.v11 import Bot
 from nonebot.log import logger
@@ -259,11 +259,9 @@ async def run_sub(bot, sub: dict, now: datetime | None = None) -> tuple[bool, st
 
 
 async def _notify_superusers(bot, text: str) -> None:
-    for uid in get_driver().config.superusers:
-        try:
-            await bot.call_api("send_private_msg", user_id=int(uid), message=text)
-        except Exception:
-            logger.warning(f"通知超管 {uid} 失败")
+    from src.plugins.appeals import notify_superusers
+
+    await notify_superusers(bot, text)
 
 
 async def _tick(bot) -> None:

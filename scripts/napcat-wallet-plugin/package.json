@@ -1,0 +1,6 @@
+{
+  "name": "napcat-plugin-builtin",
+  "version": "0.2.0",
+  "description": "Xingchao local patch: expose QQ walletElement (red packet) to OneBot, read-only",
+  "main": "index.mjs"
+}

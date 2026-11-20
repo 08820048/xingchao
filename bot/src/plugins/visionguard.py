@@ -388,13 +388,9 @@ async def _is_privileged(bot: Bot, event: GroupMessageEvent) -> bool:
 
 
 async def _notify_superusers(bot: Bot, text: str) -> None:
-    from src.permission import runtime_superuser_ids, superuser_ids
+    from src.plugins.appeals import notify_superusers
 
-    for uid in sorted(superuser_ids() | runtime_superuser_ids()):
-        try:
-            await bot.call_api("send_private_msg", user_id=uid, message=text)
-        except Exception:
-            logger.exception(f"图片告警通知超管 {uid} 失败")
+    await notify_superusers(bot, text)
 
 
 # ---------------------------------------------------------------- 处理

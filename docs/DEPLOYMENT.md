@@ -115,6 +115,12 @@ docker compose ps        # 两个容器均应为 Up
 docker logs xingchao-bot # 应看到「星潮 Xingchao bot 启动完成」
 ```
 
+> 🧧 **红包探测补丁**：`docker-compose.yml` 会把 `scripts/napcat-wallet-plugin/`
+> 只读挂载到 NapCat 插件目录，把 QQ 原生丢弃的 `walletElement` 转成 OneBot json 段，
+> 机器人才能识别红包并提醒（只提醒，不领取）。NapCat 启动时会自动加载；
+> 若 `docker logs xingchao-napcat` 里没有「walletElement 转换器已注册」，
+> 运行 `./scripts/register-napcat-plugins.sh` 或打开一次 WebUI「插件」页。
+
 **国内构建 pip 下载慢/超时？** `docker-compose.yml` 已默认使用国内 PyPI 镜像
 （清华 `pypi.tuna.tsinghua.edu.cn`），通常无需手动指定。如需改用其他源或官方源，
 在根目录 `.env` 设置后重建即可：
@@ -285,6 +291,7 @@ Cloudflare Dashboard → DNS → 添加一条 CNAME（开启橙色云代理）�
 | AI 调用报 `APITimeoutError` | 服务器连不上 AI 服务商（海外中转常被墙），换可直连的服务商如智谱 GLM |
 | 面板打不开 | 确认只映射在 127.0.0.1（安全设计），需走 SSH 隧道访问（见 1.7） |
 | 群里发指令无反应 | ① 群号不在 `XINGCHAO_GROUP_WHITELIST`；② Bot 未连接（看日志有无 `Bot xxx connected`） |
+| 收到红包但机器人没提醒 | 先看 `docker logs xingchao-napcat \| grep wallet` 有没有「walletElement 转换器已注册」；没有就运行 `./scripts/register-napcat-plugins.sh`，再看 bot 日志有没有「检测到疑似红包」 |
 
 ---
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from fastapi import Request, Response
@@ -144,6 +145,58 @@ def register(app) -> None:
             top = await store.get_top_users_all(day, limit)
         return JSONResponse(
             {"ok": True, "data": {"day": day, "group_id": group_id, "top": top}}
+        )
+
+    @app.get("/panel/api/uptime")
+    async def panel_uptime(request: Request, limit: int = 30) -> JSONResponse:
+        """QQ 上线/掉线事件 + 近 7 天掉线次数与平均在线时长。"""
+        if not _authorized(request):
+            return _unauthorized()
+        limit = max(1, min(limit, 200))
+        store = get_store()
+        events = await store.list_bot_events(limit=limit)
+        week = await store.list_bot_events(limit=2000, days=7)
+        offline = [e for e in week if e["event"] == "offline"]
+        durations = [e["duration_seconds"] for e in offline if e["duration_seconds"] > 0]
+        last_online = await store.last_bot_event("online")
+        last_offline = await store.last_bot_event("offline")
+        bot = common._panel_bot()
+        connected = bot is not None
+        qq_online: bool | None = None
+        if bot is not None:
+            try:
+                status = await bot.call_api("get_status")
+                if isinstance(status, dict):
+                    qq_online = bool(status.get("online"))
+            except Exception:
+                pass
+        online_seconds = 0
+        if connected and last_online:
+            try:
+                started = datetime.fromisoformat(last_online["ts"]).timestamp()
+                online_seconds = max(0, int(time.time() - started))
+            except (TypeError, ValueError):
+                pass
+        return JSONResponse(
+            {
+                "ok": True,
+                "data": {
+                    "events": events,
+                    "summary": {
+                        "connected": connected,
+                        "qq_online": qq_online,
+                        "currently_offline": (
+                            qq_online is False
+                            or (qq_online is None and bool(events and events[0]["event"] == "offline"))
+                        ),
+                        "offline_count_7d": len(offline),
+                        "avg_online_seconds": int(sum(durations) / len(durations)) if durations else 0,
+                        "online_seconds": online_seconds,
+                        "last_online": last_online,
+                        "last_offline": last_offline,
+                    },
+                },
+            }
         )
 
     @app.get("/panel/api/logfiles")

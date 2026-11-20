@@ -341,11 +341,9 @@ async def _send(matcher: Matcher, text: str) -> None:
 
 
 async def _notify_superusers(bot: Bot, text: str) -> None:
-    for uid in sorted(int(u) for u in get_driver().config.superusers):
-        try:
-            await bot.call_api("send_private_msg", user_id=uid, message=text)
-        except Exception:
-            logger.exception(f"广告通知超管 {uid} 失败")
+    from src.plugins.appeals import notify_superusers
+
+    await notify_superusers(bot, text)
 
 
 def _is_admin(event: MessageEvent) -> bool:

@@ -133,6 +133,47 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 - 扫码后短时间内反复刷新/重连可能触发安全验证，按手机 QQ 提示处理
 - 使用非官方协议存在封号风险，**只用小号**
 
+### 掉线记录
+
+bot 会监听 `bot_offline`，记录每次上线/掉线：
+
+- `data/logs/bot-uptime-YYYY-MM-DD.jsonl`：时间、事件、在线时长、下线原因
+- SQLite `bot_events` 表：面板「仪表盘 → QQ 连接记录」读取
+- 面板会显示当前状态、最近掉线、近 7 天掉线次数、平均在线时长和最近事件
+
+如果发现固定约 2 小时掉一次，优先按「同账号多端登录 / QQ 风控 / 非好友私聊」排查。
+
+### 掉线看门狗（邮件 + 自动重启）
+
+`scripts/napcat-watchdog.py` 运行在**宿主机**（不要在容器内），监听
+`docker logs xingchao-napcat` 的 `KickedOffLine`，默认：
+
+1. 用 `.env` 的 `MAIL_NOTICE` 发邮件告警；
+2. 尝试 `docker restart xingchao-napcat`（5 分钟冷却，1 小时最多 3 次）；
+3. 重启后继续看日志，把「快速登录成功 / 需要扫码」结果再发一封邮件。
+
+安装为 systemd 服务：
+
+```bash
+cp /root/xingchao/scripts/napcat-watchdog.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now napcat-watchdog
+journalctl -u napcat-watchdog -f        # 看门狗日志
+tail -f /root/xingchao/data/logs/napcat-watchdog.log
+```
+
+先做一次只检查不操作的演练：
+
+```bash
+python3 /root/xingchao/scripts/napcat-watchdog.py --once --dry-run
+```
+
+只告警不自动重启：把 service 的 `ExecStart` 加上 `--no-restart`；
+只重启不发邮件：加 `--no-email`。
+
+> 看门狗只能缩短掉线后的恢复时间，不能绕过 QQ 风控；如果重启后仍要扫码，
+> 邮件会明确提示，需要人工处理。
+
 ---
 
 ## 5. Web 管理面板
@@ -144,7 +185,7 @@ tar czf xingchao-data-$(date +%F).tar.gz -C /root/xingchao data
 
 | 页面 | 功能 |
 |---|---|
-| 仪表盘 | 运行时长、白名单群数、词条数、日志文件数；关键词/进群欢迎模块开关 |
+| 仪表盘 | 运行时长、白名单群数、词条数、日志文件数；QQ 连接记录（掉线时间/在线时长）；关键词/进群欢迎模块开关 |
 | 统计 | 按日期查看各群消息量、参与人数、发言 Top5 |
 | 日志 | 查看任意群任意日期的 jsonl 日志（尾部 N 条 + 关键字过滤） |
 | 词库 | 关键词词条可视化增删改（精确/包含匹配、冷却时间），保存即热重载 |
@@ -350,6 +391,7 @@ uv run --no-project --python 3.12 --with "nonebot2[fastapi]" --with nonebot-adap
 | 联网搜索 | 环境变量 `XINGCHAO_SEARCH_PROVIDER`=`duckduckgo`(默认)\|`brave`\|`searxng`；`XINGCHAO_SEARCH_API_KEY`（brave）；`XINGCHAO_SEARCH_URL`（searxng） | duckduckgo 靠解析页面，结构变了会搜不到结果，此时换 brave / searxng；全局每日 300 次 |
 | AI 绘图 | kv `image_model`（留空 = 不启用） | 要求默认 AI 提供商支持 OpenAI 兼容的 `images.generate`；提示词先过敏感词库；每人每天 3 张、全局每天 30 张 |
 | 入群验证 | kv `joinverify_enabled`(false) / `joinverify_action`(notify\|kick) / `joinverify_minutes`(5) | 待验证名单在内存里，重启后不再追踪重启前入群的人 |
-| 红包提醒 | kv `redpacket_notify`(默认开) | 只提醒不领取；NapCat 不上报红包时不会触发，看日志里有没有"检测到疑似红包" |
+| 红包提醒 | kv `redpacket_notify`(默认开) | 只提醒不领取。NapCat 原生不转换红包，compose 会挂载 `scripts/napcat-wallet-plugin/` 把它转成 json 段；该补丁只做只读转换，不提供领取/抢红包接口。未生效时先看 NapCat 日志有没有「walletElement 转换器已注册」，没有就运行 `./scripts/register-napcat-plugins.sh` | |
+| 超管私聊通知 | kv `notify_superusers_allowlist` | 逗号分隔 QQ 号；留空 = 只通知「是机器人好友」的超管；设置后只发这些号（不再做好友过滤）。失败目标 1 小时内自动跳过，避免反复私聊非好友 |
 | 已读标记 | kv `mark_read_enabled`(默认开) | 每 10 分钟对白名单群标记已读 |
 | 个人提醒 / 投票 | 无 | 提醒存 SQLite `reminders` 表，投票只存内存 |

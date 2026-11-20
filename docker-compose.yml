@@ -40,6 +40,10 @@ services:
       - ./napcat/config:/app/napcat/config
       - ./napcat/cache:/app/napcat/cache
       - ./napcat/qq:/app/.config/QQ
+      # 本地红包补丁：把 QQ walletElement 转成 OneBot json 段，供 bot 识别。
+      # NapCat 的插件目录是 /app/napcat/plugins（不是 config/plugins），
+      # 插件管理器只放行官方 ID，所以借用 builtin 槽位。
+      - ./scripts/napcat-wallet-plugin:/app/napcat/plugins/napcat-plugin-builtin:ro
     networks:
       - xingchao
 

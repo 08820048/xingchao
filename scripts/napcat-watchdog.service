@@ -1,0 +1,17 @@
+[Unit]
+Description=Xingchao NapCat/QQ offline watchdog
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+# 按实际项目路径修改（当前部署在 /root/xingchao）
+WorkingDirectory=/root/xingchao
+ExecStart=/usr/bin/python3 /root/xingchao/scripts/napcat-watchdog.py
+Restart=always
+RestartSec=10
+User=root
+# 不自动重启时改为：ExecStart=/usr/bin/python3 /root/xingchao/scripts/napcat-watchdog.py --no-restart
+
+[Install]
+WantedBy=multi-user.target

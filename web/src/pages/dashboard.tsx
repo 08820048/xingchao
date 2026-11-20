@@ -1,9 +1,10 @@
-import { Activity, ClipboardList, MessageSquareText, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Activity, ClipboardList, Clock3, MessageSquareText, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { post, fmtDur } from "@/lib/api";
+import { api, post, fmtDur } from "@/lib/api";
 import { VisionCard } from "@/pages/sensitive";
 import { WelcomeCard } from "@/pages/replies";
 
@@ -23,6 +24,119 @@ export type Status = {
   log_files: string[];
   today: string;
 };
+
+type UptimeEvent = {
+  id: number;
+  ts: string;
+  event: string;
+  detail: string;
+  duration_seconds: number;
+};
+
+type UptimeData = {
+  events: UptimeEvent[];
+  summary: {
+    connected: boolean;
+    qq_online: boolean | null;
+    currently_offline: boolean;
+    offline_count_7d: number;
+    avg_online_seconds: number;
+    online_seconds: number;
+    last_online: UptimeEvent | null;
+    last_offline: UptimeEvent | null;
+  };
+};
+
+const fmtTime = (ts?: string | null) => {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts;
+  return d.toLocaleString("zh-CN", { hour12: false });
+};
+
+function UptimeCard() {
+  const [data, setData] = useState<UptimeData | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      api<{ ok: boolean; data: UptimeData }>("/panel/api/uptime?limit=12")
+        .then((r) => {
+          if (alive && r.ok) setData(r.data);
+        })
+        .catch(() => {});
+    };
+    load();
+    const timer = setInterval(load, 30000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const summary = data?.summary;
+  const events = data?.events ?? [];
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Clock3 className="size-4" /> QQ 连接记录
+        </CardTitle>
+        <CardDescription>掉线时间、每次在线时长与近 7 天统计（每 30 秒刷新）</CardDescription>
+      </CardHeader>
+      <CardPanel className="grid gap-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="border-input rounded-lg border p-3">
+            <p className="text-muted-foreground text-xs">当前状态</p>
+            <p className="font-semibold">
+              {summary
+                ? summary.currently_offline
+                  ? "离线"
+                  : summary.qq_online === true
+                    ? "在线"
+                    : summary.qq_online === null && summary.connected
+                      ? "未知"
+                      : "离线"
+                : "—"}
+            </p>
+          </div>
+          <div className="border-input rounded-lg border p-3">
+            <p className="text-muted-foreground text-xs">最近掉线</p>
+            <p className="font-semibold">{fmtTime(summary?.last_offline?.ts)}</p>
+          </div>
+          <div className="border-input rounded-lg border p-3">
+            <p className="text-muted-foreground text-xs">近 7 天掉线</p>
+            <p className="font-semibold">{summary?.offline_count_7d ?? "—"} 次</p>
+          </div>
+          <div className="border-input rounded-lg border p-3">
+            <p className="text-muted-foreground text-xs">平均在线</p>
+            <p className="font-semibold">
+              {summary?.avg_online_seconds ? fmtDur(summary.avg_online_seconds) : "—"}
+            </p>
+          </div>
+        </div>
+
+        {events.length === 0 ? (
+          <p className="text-muted-foreground text-sm">还没有连接记录，等下一次上线/掉线后出现。</p>
+        ) : (
+          <div className="divide-input divide-y rounded-lg border">
+            {events.map((e) => (
+              <div key={e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                <Badge variant={e.event === "offline" ? "error" : "success"}>
+                  {e.event === "offline" ? "掉线" : e.event === "online" ? "上线" : e.event}
+                </Badge>
+                <span className="text-muted-foreground text-xs">{fmtTime(e.ts)}</span>
+                <span className="min-w-0 flex-1 truncate text-xs">{e.detail || "—"}</span>
+                {e.event === "offline" && e.duration_seconds > 0 && (
+                  <span className="text-muted-foreground text-xs">在线 {fmtDur(e.duration_seconds)}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardPanel>
+    </Card>
+  );
+}
 
 export function Dashboard({
   status,
@@ -60,6 +174,8 @@ export function Dashboard({
           );
         })}
       </div>
+
+      <UptimeCard />
 
       <Card>
         <CardHeader>

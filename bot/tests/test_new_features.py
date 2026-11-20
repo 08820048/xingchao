@@ -1,5 +1,6 @@
 """联网工具、个人提醒、入群验证、投票、绘图额度、红包识别。"""
 
+import json
 import random
 import time
 from datetime import datetime
@@ -315,6 +316,43 @@ def test_red_packet_detection():
     assert redpacket.looks_like_red_packet("x", [("json", {"data": "QQ红包"})])
     assert not redpacket.looks_like_red_packet("发个红包吧", [("text", {"text": "发个红包吧"})])
     assert not redpacket.looks_like_red_packet("红包", [("text", {"text": "红包"}), ("image", {"file": "a.jpg"})])
+
+
+def test_wallet_info_from_plugin_json():
+    raw = json.dumps(
+        {"walletElement": {"title": "恭喜发财", "summary": "1.00元", "busiType": 1}},
+        ensure_ascii=False,
+    )
+    info = redpacket.wallet_info([("json", {"data": raw})])
+    assert info["title"] == "恭喜发财"
+    assert info["summary"] == "1.00元"
+    assert redpacket._wallet_tip(info) == "（恭喜发财）"
+
+
+def test_wallet_info_reads_napcat_receiver_fields():
+    raw = json.dumps(
+        {
+            "walletElement": {
+                "sender": {"title": ""},
+                "receiver": {
+                    "title": "恭喜发财",
+                    "subTitle": "赶紧点击拆开吧",
+                    "notice": "[QQ红包]恭喜发财",
+                },
+                "redType": 2,
+            }
+        },
+        ensure_ascii=False,
+    )
+    info = redpacket.wallet_info([("json", {"data": raw})])
+    assert info["title"] == "恭喜发财"
+    assert info["subTitle"] == "赶紧点击拆开吧"
+    assert redpacket._wallet_tip(info) == "（恭喜发财）"
+
+
+def test_wallet_info_ignores_non_wallet_json():
+    assert redpacket.wallet_info([("json", {"data": '{"app":"com.tencent.multimsg"}'})]) == {}
+    assert redpacket.wallet_info([("text", {"text": "红包"})]) == {}
 
 
 async def test_ddg_challenge_page_reported_as_blocked(monkeypatch):

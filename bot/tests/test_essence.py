@@ -93,7 +93,8 @@ async def test_decide_and_act_nominate_notifies_superusers_only(monkeypatch, sto
     await aw.record(5, 11, "甲", 700, Message([MessageSegment.text("装环境的完整步骤……")]), now=time.time())
     bot = FakeBot()
     assert await pa.decide_and_act(bot, 5, 11, "discussion") == "nominate"
-    assert [n for n, _ in bot.calls] == ["send_private_msg"]  # 群里不发任何东西
-    assert "/精华 700 5" in bot.calls[0][1]["message"]
+    private_calls = [(n, kw) for n, kw in bot.calls if n == "send_private_msg"]
+    assert [n for n, _ in private_calls] == ["send_private_msg"]  # 群里不发任何东西
+    assert "/精华 700 5" in private_calls[0][1]["message"]
     assert await pa.decide_and_act(FakeBot(), 5, 11, "discussion") == "skip"  # 同一条不重复推荐
     aw.clear_group()

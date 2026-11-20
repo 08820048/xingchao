@@ -230,7 +230,11 @@
 >   私聊里机器人回复前显示"正在输入"（仅私聊，NapCat 不支持时静默忽略）；群里超过 600 字的 AI 回复改用合并转发
 >   （失败退回普通消息，不再只截断）。不提供「上传群文件」（NapCat 在独立容器，读不到 bot 容器的本地文件）。
 > - **红包提醒**（`redpacket.py`）：白名单群出现 QQ 红包时私聊通知超管，**只提醒、不领取**（NapCat 无可靠领取接口，自动领取封号风险高）。
->   部分 NapCat 版本不上报红包消息，此时不会触发；识别到时日志里会记录消息段类型，方便确认。开关 kv `redpacket_notify`。
+>   NapCat 原生会丢弃红包元素（`walletElement`），所以仓库在 `scripts/napcat-wallet-plugin/` 放了一个本地补丁，
+>   由 `docker-compose.yml` 只读挂载到 NapCat 插件目录，把红包原样转成 json 段；机器人会记录原始字段、
+>   尽量带上标题/摘要再通知。该补丁只做只读转换，**不提供领取/抢红包接口**。开关 kv `redpacket_notify`。
+>   如果日志里没有「检测到疑似红包」，先确认 NapCat 日志里有「walletElement 转换器已注册」；
+>   未加载时运行 `./scripts/register-napcat-plugins.sh` 或重启 `xingchao-napcat`。
 > - **联网搜索配置**：环境变量 `XINGCHAO_SEARCH_PROVIDER`（`duckduckgo` 默认，无需密钥 / `brave` 需 `XINGCHAO_SEARCH_API_KEY` /
 >   `searxng` 需 `XINGCHAO_SEARCH_URL`）；全局每日 300 次上限。天气用 wttr.in、汇率用 frankfurter（欧洲央行参考汇率），均无需密钥。
 > - **私聊上下文**（`privatectx.py`）：超管私聊里用的斜杠指令、机器人的指令回复、系统通知（入群申请 / 申诉 / 邀请等）
