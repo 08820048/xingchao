@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import html
-import ipaddress
 import json
 import re
 import socket
@@ -27,7 +26,7 @@ from nonebot.log import logger
 from nonebot.matcher import Matcher
 
 from src import llm
-from src.httpclient import get_http
+from src.httpclient import get_public_http, is_public_ip
 from src.markdown import md_to_qq
 from src.permission import GROUP_WHITELIST
 from src.store import get_store
@@ -103,14 +102,7 @@ async def _daily_count(group_id: int) -> int:
 # ---------------------------------------------------------------- 抓取与解析
 
 def _host_is_private(ip_str: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(ip_str)
-    except ValueError:
-        return True
-    return (
-        ip.is_private or ip.is_loopback or ip.is_link_local
-        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
-    )
+    return not is_public_ip(ip_str)
 
 
 async def _host_allowed(host: str) -> bool:
@@ -179,7 +171,8 @@ async def _fetch_page_info(url: str) -> dict[str, str] | None:
             if not await _url_allowed(url):
                 logger.debug(f"链接解读：拒绝内网/非法地址 {url}")
                 return None
-            async with get_http().stream(
+            # 提前检查是为了快速拒绝；真正兜底的是 get_public_http() 在连接时的 IP 检查（防 DNS 重绑定）
+            async with get_public_http().stream(
                 "GET", url, headers=headers, timeout=10, follow_redirects=False
             ) as resp:
                 if resp.is_redirect:

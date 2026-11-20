@@ -21,7 +21,7 @@ def fetched(monkeypatch):
         return routes.get(key, httpx.Response(404))
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True)
-    monkeypatch.setattr(linkpreview, "get_http", lambda: client)
+    monkeypatch.setattr(linkpreview, "get_public_http", lambda: client)
 
     async def host_allowed(host: str) -> bool:
         return host not in PRIVATE_HOSTS
