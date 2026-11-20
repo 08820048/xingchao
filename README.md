@@ -168,14 +168,17 @@ xingchao/
 │   └── src/
 │       ├── config.py       # pydantic 配置
 │       ├── permission.py   # 白名单（env + 运行时）/ 超管规则
-│       ├── store.py        # SQLite (kv, msg_stat, msg_stat_user)
+│       ├── store/          # SQLite：base（连接/WAL/kv 缓存）、schema（建表+版本化迁移）、按领域分的 mixin
+│       ├── aitools/        # AI 工具注册表：@tool 定义与执行器写在一起，按 group/admin/schedule/knowledge/fun 分模块
+│       ├── httpclient.py   # 共享 HTTP 连接池
+│       ├── background.py   # periodic 周期任务 / spawn 后台任务
 │       ├── textindex.py    # 中文/英文检索分词（博客知识库与群聊回忆共用）
 │       └── plugins/
 │           ├── whitelist.py  # 非白名单群忽略日志
 │           ├── logger.py     # 白名单群 jsonl 日志
 │           ├── basic.py / reply.py / admin.py / stats.py   # 基础指令 / 关键词回复 / 超管指令 / 活跃统计
 │           ├── groupadmin.py / groupextras.py / groupfull.py / groupsign.py  # 群管+欢迎 / 荣誉名片头衔 / 满员清理 / 签到
-│           ├── ai.py / mention.py / persona.py / memory.py   # AI 问答（工具注册表在 src/aitools.py）/ @响应 / 人设 / 长期记忆
+│           ├── ai.py / mention.py / persona.py / memory.py   # AI 问答（工具注册表在 src/aitools/）/ @响应 / 人设 / 长期记忆
 │           ├── awareness.py / proactive.py / feedback.py     # 群聊感知 / 主动发言 / 表情反馈
 │           ├── expressions.py / stickers.py / selfie.py / voice.py  # 表情 / 表情包 / 自拍 / 语音
 │           ├── sensitive.py / appeals.py / visionguard.py / ocr.py / urlsafety.py  # 内容安全

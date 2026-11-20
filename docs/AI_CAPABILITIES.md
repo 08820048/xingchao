@@ -20,8 +20,9 @@
 新增/修改一个斜杠指令时，必须同步完成以下四步（缺一即视为功能未完成）：
 
 - [ ] **实现指令**：在对应插件中注册 `on_command`；
-- [ ] **注册 AI 工具**：在 `bot/src/aitools.py` 中新增
-      `_t_xxx` 处理器，并在 `build_tools()` 里用 `_tool(...)` 注册
+- [ ] **注册 AI 工具**：在 `bot/src/aitools/` 下对应领域的模块（group / admin / schedule /
+      knowledge / fun）里写 `_t_xxx` 处理器，用 `@tool(name, description, params, perm)` 装饰，
+      再把工具名加进 `aitools/__init__.py` 的 `TOOL_ORDER`（漏加会在启动时报错）
       （注意标注 `perm`：`all` = 所有人 / `superuser` = 仅超管）；
 - [ ] **更新能力清单**：能力清单来自工具注册表（`tools=` 传给模型），**不需要**写进提示词，
       只需确保工具的 `description` 写清楚「用户会怎么说这件事」；
