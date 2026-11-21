@@ -9,7 +9,7 @@
     * 排序：近 N 天无发言（QQ 口径）的人优先 → 机器人统计发言数少 → 群等级低 → 最后发言更早 → 入群更早
     * 保护名单：群主/管理员、机器人自己、超管、入群不满 7 天的新人
 - 默认只「通知超管 + 给出待清理名单」，由超管发 `/清理群员 [群号] 确认` 才真正执行；
-  kv groupfull_auto_kick=true 时满员后自动执行（需机器人是群管理员）
+  kv groupfull_auto_kick=true（/模块 满员清理 开）时满员后自动执行（需机器人是群管理员）
 - 开关与参数（kv）：groupfull_enabled(默认 true) / groupfull_auto_kick(默认 false) /
   groupfull_kick_count(100) / groupfull_activity_days(30) / groupfull_protect_days(7)
 - 指令（超管）：/清理群员 [群号]  预览；/清理群员 [群号] 确认  执行

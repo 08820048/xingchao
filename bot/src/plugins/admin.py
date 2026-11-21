@@ -145,6 +145,7 @@ _PLUGIN_ALIASES = {
     "在线状态": "online", "链接安全": "urlsafe", "识别文字": "ocr", "感知": "awareness",
     "广告": "ad", "广告招商": "ad", "回忆": "recall", "知识": "kb", "台账": "worklog", "规约": "topics",
     "表情": "sticker", "存表情": "sticker", "表情包": "sticker",
+    "满员清理": "autokick", "自动清理": "autokick", "清理群员": "autokick",
 }
 
 _PLUGIN_KEYS = {
@@ -166,6 +167,7 @@ _PLUGIN_KEYS = {
     "worklog": ("worklog_enabled", "工作台账（/台账 查看机器人做了什么）"),
     "topics": ("topics_enabled", "话题规约（机器人不参与的话题）"),
     "sticker": ("sticker_collect_enabled", "存表情（群友存表情包、机器人自主收集）"),
+    "autokick": ("groupfull_auto_kick", "群满员自动清理不活跃成员（不再等 /清理群员 确认；需机器人是群管理员）"),
 }
 
 
@@ -175,7 +177,7 @@ async def handle_plugin(args: Message = CommandArg()) -> None:
     if parts:
         parts[0] = _PLUGIN_ALIASES.get(parts[0], parts[0])
     if len(parts) != 2 or parts[1] not in ("on", "off") or parts[0] not in _PLUGIN_KEYS:
-        await _send(plugin_admin, "用法：/模块 回复|链接|视觉|主动|博客|感知|识别文字|签到|在线状态|链接安全|广告|回忆|知识|台账|规约|表情 开|关")
+        await _send(plugin_admin, "用法：/模块 回复|链接|视觉|主动|博客|感知|识别文字|签到|在线状态|链接安全|广告|回忆|知识|台账|规约|表情|满员清理 开|关")
         return
     key, label = _PLUGIN_KEYS[parts[0]]
     enable = parts[1] == "on"
