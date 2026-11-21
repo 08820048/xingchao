@@ -5,7 +5,7 @@
 本脚本监听 `docker logs xingchao-napcat`，发现掉线后：
   1. 发邮件到 `.env` 的 MAIL_NOTICE.username（复用 BotMailNotice 的 SMTP 配置）
   2. 尝试 `docker restart xingchao-napcat`（默认开启，带冷却和每小时次数上限）
-  3. 重启后继续看日志：快速登录成功 / 需要扫码，把结果再发一封邮件
+  3. 重启后继续看日志：快速登录成功 / 密码登录成功 / 需要验证 / 需要扫码，把结果再发一封邮件
 
 用法：
   python3 scripts/napcat-watchdog.py                 # 前台循环（推荐 systemd）
@@ -216,7 +216,29 @@ def _restart_allowed(state: dict, now: float) -> tuple[bool, str]:
     return True, ""
 
 
-def _wait_login_result(since: float, timeout: int = 90) -> str:
+def classify_login(text: str) -> str | None:
+    """从重启后的 NapCat 日志判断登录结果；还没有结论时返回 None。
+
+    配了密码（ACCOUNT + NAPCAT_QUICK_PASSWORD[_MD5]）时，NapCat 快速登录失败会先出一次二维码，
+    再尝试「密码回退登录」，所以看到二维码不能马上判定要扫码，要等密码登录的结果。
+    """
+    if "自动快速登录成功" in text:
+        return "quick_login_ok"
+    if "密码回退登录成功" in text:
+        return "password_login_ok"
+    if "密码回退需要验证码" in text or "密码回退需要新设备验证" in text:
+        return "need_verify"
+    if "正在尝试密码回退登录" in text and "密码回退登录失败" not in text:
+        return None
+    if "请扫描下面的二维码" in text or "二维码已保存" in text:
+        return "need_qr"
+    return None
+
+
+LOGIN_TIMEOUT = 120
+
+
+def _wait_login_result(since: float, timeout: int = LOGIN_TIMEOUT) -> str:
     deadline = time.time() + timeout
     while time.time() < deadline and not _stop:
         try:
@@ -227,10 +249,9 @@ def _wait_login_result(since: float, timeout: int = 90) -> str:
             text = (out.stdout or "") + (out.stderr or "")
         except Exception:
             text = ""
-        if "自动快速登录成功" in text:
-            return "quick_login_ok"
-        if "请扫描下面的二维码" in text or "二维码已保存" in text:
-            return "need_qr"
+        result = classify_login(text)
+        if result:
+            return result
         time.sleep(3)
     return "unknown"
 
@@ -281,8 +302,10 @@ def handle_offline(reason: str, line: str, state: dict, *, no_email: bool, no_re
         result = _wait_login_result(started)
         text = {
             "quick_login_ok": "重启后自动快速登录成功，机器人应已恢复。",
+            "password_login_ok": "快速登录失效，已自动用密码重新登录，机器人应已恢复。",
+            "need_verify": "密码登录需要验证（验证码或新设备确认），请打开 NapCat WebUI 完成验证。",
             "need_qr": "重启后登录态仍失效，需要人工扫码。",
-            "unknown": "重启完成，但 90 秒内未确认登录结果，请查看 NapCat 日志。",
+            "unknown": f"重启完成，但 {LOGIN_TIMEOUT} 秒内未确认登录结果，请查看 NapCat 日志。",
         }[result]
         log(text)
         if not no_email:

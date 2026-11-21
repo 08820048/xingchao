@@ -151,7 +151,9 @@ bot 会监听 `bot_offline`，记录每次上线/掉线：
 
 1. 用 `.env` 的 `MAIL_NOTICE` 发邮件告警；
 2. 尝试 `docker restart xingchao-napcat`（5 分钟冷却，1 小时最多 3 次）；
-3. 重启后继续看日志，把「快速登录成功 / 需要扫码」结果再发一封邮件。
+3. 重启后继续看日志，把「快速登录成功 / 密码登录成功 / 需要验证 / 需要扫码」结果再发一封邮件。
+   在 `.env` 配了 `QQ_ACCOUNT` + `QQ_PASSWORD_MD5`（见 DEPLOYMENT 1.6 第 5 步）后，
+   被踢下线多数能自动恢复，不用扫码。
 
 安装为 systemd 服务：
 

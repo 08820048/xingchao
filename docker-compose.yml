@@ -31,8 +31,14 @@ services:
     environment:
       - NAPCAT_UID=${NAPCAT_UID:-1000}
       - NAPCAT_GID=${NAPCAT_GID:-1000}
-      # - ACCOUNT=${QQ_ACCOUNT:-}  # 配合密码登录会卡死，暂回退
-      # - NAPCAT_QUICK_PASSWORD=${QQ_PASSWORD:-}  # 4.18.19 密码登录卡死，暂回退二维码
+      # 掉线/重启后自动登录（都在根 .env 里填，不填就和以前一样走快速登录 / 扫码）：
+      #   QQ_ACCOUNT        小号 QQ 号：启动时先用保存的登录状态快速登录
+      #   QQ_PASSWORD_MD5   小号密码的 32 位 MD5（推荐，.env 里不留明文）：快速登录失效时用密码登录
+      #   QQ_PASSWORD       明文密码，二选一；两个都填时用 MD5
+      # 遇到滑块 / 设备锁 / 短信验证仍要人工处理。NapCat 4.18.19 密码登录曾卡死，若再卡住就把密码删掉
+      - ACCOUNT=${QQ_ACCOUNT:-}
+      - NAPCAT_QUICK_PASSWORD_MD5=${QQ_PASSWORD_MD5:-}
+      - NAPCAT_QUICK_PASSWORD=${QQ_PASSWORD:-}
     ports:
       # WebUI 只暴露给本机 / SSH 隧道，禁止 0.0.0.0
       - "127.0.0.1:6099:6099"

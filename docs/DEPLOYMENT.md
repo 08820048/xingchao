@@ -148,6 +148,10 @@ docker compose up -d
    - 消息格式：Array
 4. 登录成功后建议在 WebUI「设置」中把小号设为**自动登录/快速登录**，
    否则容器重启（如服务器重启）后需要重新扫码。
+5. （可选）掉线后自动用密码登录：在根 `.env` 填 `QQ_ACCOUNT` 和 `QQ_PASSWORD_MD5`
+   （`printf '%s' '密码' | md5sum` 生成，`chmod 600 .env`），然后 `docker compose up -d xingchao-napcat`。
+   快速登录失效时 NapCat 会改用密码登录；遇到滑块 / 设备锁 / 短信验证仍要人工处理。
+   若日志卡在登录不动（NapCat 4.18.19 出现过），删掉这两行再 `up -d` 即回到扫码。
 
 > 💡 也可以不走 WebUI：`http://127.0.0.1:8081/panel/qq-login-qr` 直接查看最新登录二维码
 >（该地址始终显示最新二维码，无需登录 WebUI）。
@@ -285,7 +289,7 @@ Cloudflare Dashboard → DNS → 添加一条 CNAME（开启橙色云代理）�
 | `git clone` 提示输用户名/404 | 仓库私有或 HTTPS 被阻断，见 1.3 换 SSH + Deploy Key |
 | 构建时 pip 下载极慢/超时 | 已默认国内 PyPI 镜像；如需换源见 1.5 |
 | NapCat 日志 `Login Error ErrCode: 3` | 二维码过期（约 2 分钟刷新）。**刷新二维码页面后立即扫码**并手机确认 |
-| NapCat 重启后要求重新扫码 | 未设快速登录；按 1.6 第 4 步设置 `autoLoginAccount` |
+| NapCat 重启后要求重新扫码 | 未设快速登录；按 1.6 第 4 步设置 `autoLoginAccount`，或按第 5 步配置密码自动登录 |
 | NapCat 反向 WS 报 `403 Forbidden` | ① Token 与 `.env` 的 `ONEBOT_ACCESS_TOKEN` 不一致；② URL 有首尾空格。核对后保存 |
 | bot 日志出现 `AI 问答未启用` | 面板「AI」页填 Base URL + Key，或改 `.env` 后重启；模型用面板「获取模型列表」选择 |
 | AI 调用报 `APITimeoutError` | 服务器连不上 AI 服务商（海外中转常被墙），换可直连的服务商如智谱 GLM |
