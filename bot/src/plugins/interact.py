@@ -188,7 +188,17 @@ async def typing_private(bot: Bot, user_id: int) -> None:
 
 # ---------------------------------------------------------------- 已读标记
 
+_read_failures = 0  # 连续失败次数；NapCat 报「设置已读失败」时退避，避免日志被刷屏
+_read_skip = 0  # 还要跳过几轮
+READ_FAIL_LIMIT = 3
+READ_BACKOFF_ROUNDS = 36  # 约 6 小时（每轮 10 分钟）
+
+
 async def mark_read_once(bot: Bot) -> int:
+    global _read_failures, _read_skip
+    if _read_skip > 0:
+        _read_skip -= 1
+        return 0
     n = 0
     for gid in sorted(merged_whitelist() - disabled_groups()):
         try:
@@ -196,7 +206,13 @@ async def mark_read_once(bot: Bot) -> int:
             n += 1
         except Exception:
             logger.debug("mark_group_msg_as_read 失败", exc_info=True)
+            _read_failures += 1
+            if _read_failures >= READ_FAIL_LIMIT:
+                logger.warning("已读标记连续失败，暂停约 6 小时（账号可能处于异常状态）")
+                _read_failures, _read_skip = 0, READ_BACKOFF_ROUNDS
             return n  # 接口不可用就别每个群都试一遍
+    if n:
+        _read_failures = 0
     return n
 
 

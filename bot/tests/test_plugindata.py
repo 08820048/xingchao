@@ -60,3 +60,23 @@ async def test_no_plugin_or_server_down(monkeypatch):
 
     monkeypatch.setattr(plugindata, "_client", lambda: Bad())
     assert "连不上" in await plugindata._t_query_points(_Bot(), _Ev(), {"query": "积分"})
+
+
+@pytest.mark.asyncio
+async def test_mark_read_backs_off(monkeypatch):
+    from src.plugins import interact
+
+    calls = []
+
+    class B:
+        async def call_api(self, api, **kw):
+            calls.append(api)
+            raise RuntimeError("设置已读失败")
+
+    monkeypatch.setattr(interact, "merged_whitelist", lambda: {1})
+    monkeypatch.setattr(interact, "disabled_groups", lambda: set())
+    monkeypatch.setattr(interact, "_read_failures", 0)
+    monkeypatch.setattr(interact, "_read_skip", 0)
+    for _ in range(10):
+        await interact.mark_read_once(B())
+    assert len(calls) == interact.READ_FAIL_LIMIT

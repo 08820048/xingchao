@@ -204,6 +204,13 @@ async def _build_scene(bot, event: MessageEvent) -> str:
                 "原文见用户消息里的引用块）"
                 "（若用户要求撤回，默认撤回这条引用消息）"
             )
+    try:
+        from src.plugins import selfinfo
+
+        if line := selfinfo.summary():
+            lines.append(line)
+    except Exception:
+        logger.debug("账号资料摘要失败", exc_info=True)
     lines.append(
         f"开发者信息：QQ {cfg.xingchao_developer_id}，博客 {cfg.xingchao_developer_blog}，"
         f"项目官网 {cfg.xingchao_developer_site}。"

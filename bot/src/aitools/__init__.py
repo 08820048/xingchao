@@ -31,6 +31,7 @@ TOOL_ORDER: tuple[str, ...] = (
     "get_github_trending",
     "get_current_time",
     "query_points",
+    "get_self_info",
     "send_voice",
     "set_voice_reply",
     "send_selfie",

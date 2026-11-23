@@ -1,4 +1,4 @@
-"""AI 工具：读取第三方插件提供的数据（目前是云签到的积分、背包、排行榜）。
+"""AI 工具：读取插件和账号侧的数据：云签到的积分/背包/排行榜，以及机器人自己的 QQ 账号资料。
 
 这些数据在云签到服务器上，不在本地数据库里，AI 要查只能按插件的接口代问一遍。
 只开放只读的查询；签到、挖矿、转账、打劫这类会改变积分的玩法仍由用户自己发指令，不开放给 AI。
@@ -73,3 +73,18 @@ async def _t_query_points(bot, event, args) -> str:
     if not text:
         return "云签到没有返回文字结果（可能是图片），请让对方直接发指令查看。"
     return text[:1500]
+
+
+@tool(
+    "get_self_info",
+    "查看你自己这个 QQ 账号的资料：会员（SVIP/年费/VIP 等级）、QQ 等级、注册年份、昵称、签名"
+    "（用户问“你是会员吗/你开会员了吗/你的QQ等级/你多少级”时使用；只说工具返回的内容，不要编造到期时间）",
+    {"type": "object", "properties": {}, "required": []},
+    "all",
+)
+async def _t_self_info(bot, event, args) -> str:
+    from src.plugins import selfinfo
+
+    if not selfinfo.current():
+        await selfinfo.refresh(bot)
+    return selfinfo.describe()

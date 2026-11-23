@@ -123,6 +123,7 @@
 | `/能力自检` | `run_capability_check` | 超管 | 「现在支持精华吗」「看看你有哪些 QQ 能力」 |
 | `/精华`（回复消息）`/取消精华` `/精华列表` | `set_essence_message` / `delete_essence_message`（超管）、`list_essence_messages`（所有人） | 见左 | 「把这条设为精华」「看看本群精华」 |
 | `/邀请列表` `/同意邀请 <序号>` `/拒绝邀请 <序号> [理由]` | `list_pending_invites` / `resolve_invite` | 超管 | 「有人加我好友吗」「通过 2 号邀请」 |
+| 机器人账号资料（`selfinfo.py`） | `get_self_info` | 所有人 | 「你是会员吗」「你 QQ 多少级」（会员状态每次对话也会自动带给 AI） |
 | 云签到插件 | `query_points` | 所有人 | 「我有多少积分」「今天签到了吗」「积分排行」（只读，不会改动积分） |
 | —（内置能力） | `send_sticker` | 所有人 | 「发个表情包」「来个无语的表情」 |
 | 回复表情包说「存表情」 | `save_sticker` | 所有人 | 回复一张图说「@星潮 把这个存起来」 |
