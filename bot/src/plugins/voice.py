@@ -5,7 +5,8 @@
 - 接收：对机器人说的语音（私聊超管 / 群里回复机器人消息）→ 调 OpenAI 兼容
   /audio/transcriptions 转文字 → 交给 AI 对话回复；`/转文字` 回复一条语音可单独识别
 - 默认语音回复：AI 的回复默认以语音发出（按群/私聊独立开关，超管 `/语音回复 开|关`）；
-  超过 300 字、含 @ 占位符或合成失败时自动退回文字
+  不适合语音的内容（太长、链接、代码、清单、大量数字或英文等，规则见 voicefit.py）、含 @ 占位符或合成失败时自动退回文字；
+  用户明确要「发语音」（/说、send_voice 工具）不受这些规则限制，只限 300 字
 - 换音色（超管）：/音色 查看当前与可选列表；/音色 <序号|名称|ID> 切换 QQ AI 语音角色并试听；
   /音色 edge <名称> 切换 edge-tts 音色（私聊 / 兜底用）；/音色 试听；/音色 重置
 - 配置（kv）：voice_ai_character（QQ AI 语音角色 ID，空=自动取第一个）、voice_ai_record（false 关闭 AI 语音）、voice_name（默认 zh-CN-XiaoxiaoNeural）、voice_asr_model（默认 whisper-1）
@@ -35,6 +36,7 @@ from src.httpclient import get_http
 from src.markdown import md_to_qq
 from src.permission import BASIC, SUPERUSER, merged_whitelist
 from src.store import get_store
+from src.voicefit import unfit_reason
 
 DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural"
 DEFAULT_ASR_MODEL = "whisper-1"
@@ -71,6 +73,10 @@ async def deliver_reply(bot: Bot, event: MessageEvent, reply: str) -> bool:
         return False
     text = md_to_qq(reply).strip()
     if not text or len(text) > MAX_TTS_CHARS:
+        return False
+    reason = unfit_reason(reply)
+    if reason:
+        logger.debug(f"回复不适合语音（{reason}），发文字")
         return False
     err = await emit_voice(bot, event, text)
     if err:

@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from src.aitools import admin, fun, group, knowledge, schedule  # noqa: F401  导入即注册
+from src.aitools import admin, fun, group, knowledge, plugindata, schedule  # noqa: F401  导入即注册
 from src.aitools.registry import _REGISTRY, ToolEntry, tool
 
 __all__ = ["TOOL_ORDER", "build_tools", "tool"]
@@ -30,6 +30,7 @@ TOOL_ORDER: tuple[str, ...] = (
     "set_group_business",
     "get_github_trending",
     "get_current_time",
+    "query_points",
     "send_voice",
     "set_voice_reply",
     "send_selfie",
