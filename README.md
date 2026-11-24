@@ -109,7 +109,7 @@ data/xingchao.db + data/replies.json + data/logs/
 - 新人进群欢迎（白名单群，`/欢迎语 开|关` 开关，持久化 kv）
 - Web 管理面板：`http://127.0.0.1:8081/panel`（公网为 `panel.xingchao.dev`）
   （compose 映射 `127.0.0.1:8081:8080`，
-  远程用 SSH 隧道 `ssh -L 8081:127.0.0.1:8081 ...`；密码见 `XINGCHAO_PANEL_PASSWORD`，
+  远程用 SSH 隧道（推荐配置见 docs/OPERATIONS.md 3.1，`autossh -M 0 -fN xc`）；密码见 `XINGCHAO_PANEL_PASSWORD`，
   未设置则随机生成并打印在 bot 日志），含状态 / 统计 / 日志 / 词库编辑 / 白名单管理
   管理面板前端为 Vite + React + [coss ui](https://coss.com/ui/)（Base UI + Tailwind v4），
   多阶段 Docker 构建自动编译；`web/dist` 缺失时回退内嵌单页

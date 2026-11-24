@@ -158,8 +158,11 @@ docker compose up -d
 
 ### 1.7 SSH 隧道（在自己电脑上执行）
 
+推荐配置 `~/.ssh/config` 别名 + 密钥登录 + `autossh` 自动重连（防空闲断线），
+完整步骤见 [OPERATIONS.md 3.1](OPERATIONS.md)。临时用一次也可以：
+
 ```bash
-ssh -N -L 6099:127.0.0.1:6099 -L 8081:127.0.0.1:8081 -i <私钥> root@服务器IP
+ssh -N -o ServerAliveInterval=30 -L 6099:127.0.0.1:6099 -L 8081:127.0.0.1:8081 root@服务器IP
 ```
 
 ### 1.8 验证

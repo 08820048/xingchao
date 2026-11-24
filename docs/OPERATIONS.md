@@ -59,18 +59,34 @@ xingchao-bot 容器（NoneBot2 业务端）
 
 ### 3.1 SSH 隧道（在自己电脑上执行）
 
-访问 NapCat WebUI 和管理面板都需要隧道：
+访问 NapCat WebUI 和管理面板都需要隧道（推荐下面的配置：免密码、不断线、断了自动重连）：
 
 ```bash
-ssh -N \
-  -L 6099:127.0.0.1:6099 \
-  -L 8081:127.0.0.1:8081 \
-  -i "<本机私钥路径>" \
-  root@191.223.213.202
+# 1) 一次性：配置别名（~/.ssh/config），含心跳防断线、密钥登录、两个端口转发
+cat >> ~/.ssh/config <<'CONF'
+Host xc
+  HostName <服务器IP>
+  User root
+  IdentityFile ~/.ssh/id_ed25519
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  ExitOnForwardFailure yes
+  LocalForward 8081 127.0.0.1:8081
+  LocalForward 6099 127.0.0.1:6099
+CONF
+chmod 600 ~/.ssh/config
+ssh-copy-id -i ~/.ssh/id_ed25519.pub xc     # 把公钥放到服务器，之后免密码
+
+# 2) 日常：后台连接并自动重连（macOS：brew install autossh）
+autossh -M 0 -fN xc          # 停止：pkill autossh
 ```
 
-- `-N` 只做端口转发，窗口保持开启即可
-- 需要加端口时再补 `-L 本地端口:127.0.0.1:服务器端口`
+- 面板：`http://127.0.0.1:8081/panel/`；NapCat WebUI：`http://127.0.0.1:6099/webui?token=<token>`
+- `ServerAliveInterval` 每 30 秒发心跳，避免空闲时被服务器断开（`Connection closed by remote host`）；
+  `autossh` 在断线（换网络、睡眠唤醒）后自动重连。没有 autossh 时用 `ssh -N xc` 也行，断了重敲
+- 需要加端口时在配置里补一行 `LocalForward 本地端口 127.0.0.1:服务器端口`
+- NapCat WebUI 能直接控制小号，**不要**经 Cloudflare Tunnel 等方式暴露到公网；
+  服务器在国内且域名未备案时，也不适合用域名对外提供面板。需要公网访问面板见 DEPLOYMENT 第 3 节
 
 ### 3.2 启停与重建
 
