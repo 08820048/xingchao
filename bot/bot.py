@@ -29,7 +29,6 @@ nonebot.load_plugins("src/plugins")
 # ─── 第三方插件（nb 商店，详见 docs/THIRD_PARTY_PLUGINS.md）───
 THIRD_PARTY_PLUGINS = (
     "nonebot_plugin_blacklist",      # 黑名单（拉黑用户/群，event_preprocessor 拦截）
-    "nonebot_plugin_cloudsignx",     # 云签到（签到/积分/挖矿小游戏）
     "nonebot_plugin_crazy_thursday", # 疯狂星期四文案
     "nonebot_plugin_githubcard",     # GitHub 链接卡片（自动识别消息里的 GitHub 链接）
     "nonebot_plugin_groupmate_waifu",# 娶群友/CP抽卡
@@ -42,7 +41,6 @@ THIRD_PARTY_PLUGINS = (
     # internet_outage：需 Cloudflare Radar token（OUTAGE_CF_TOKEN），配置后取消下行注释
     # "nonebot_plugin_internet_outage",
     "nonebot_plugin_qqdetail",           # QQ 资料查询卡片
-    "nonebot_plugin_revolver",           # /轮盘 /开枪 俄罗斯轮盘
     "nonebot_plugin_water_geoup_stats",  # /发言统计 /月发言统计
     "pokepoke_miss",                     # 戳一戳错过提醒
 )

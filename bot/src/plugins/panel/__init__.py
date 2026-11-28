@@ -20,13 +20,23 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from nonebot import get_driver
 from nonebot.log import logger
 
-from . import common, routes_admin, routes_ai, routes_content, routes_moderation, routes_overview
+from . import (
+    common,
+    routes_admin,
+    routes_ai,
+    routes_content,
+    routes_moderation,
+    routes_overview,
+    routes_points,
+)
 from .page import _PAGE
 
 
 def _register_routes() -> None:
     app = get_driver().server_app
-    for module in (routes_overview, routes_admin, routes_ai, routes_moderation, routes_content):
+    for module in (
+        routes_overview, routes_admin, routes_ai, routes_moderation, routes_content, routes_points,
+    ):
         module.register(app)
 
     # 官网部署在 Cloudflare Pages（独立仓库 xingchao_site），bot 只负责管理面板（base=/panel/）。

@@ -10,6 +10,9 @@
 - moderation 处罚、申诉、敏感词统计
 - content    博客索引、群知识库
 - stickers   群友存下的表情包
+- points     按群隔离的通用积分账本（账户 / 流水 / 每日奖励）
+- roulette   轮盘对局审计与结算（余额/流水走 points）
+- shop       按群积分商店（商品 / 兑换单 / 退款）
 """
 
 from __future__ import annotations
@@ -24,6 +27,9 @@ from src.store.content import ContentMixin
 from src.store.events import EventsMixin
 from src.store.memory import MemoryMixin
 from src.store.moderation import ModerationMixin
+from src.store.points import PointsMixin
+from src.store.roulette import RouletteMixin
+from src.store.shop import ShopMixin
 from src.store.schedules import SchedulesMixin
 from src.store.schema import _MIGRATIONS, _SCHEMA
 from src.store.stats import StatsMixin
@@ -34,7 +40,7 @@ __all__ = ["Store", "StoreBase", "get_store", "_MIGRATIONS", "_SCHEMA"]
 
 class Store(
     StatsMixin, EventsMixin, SchedulesMixin, MemoryMixin, ModerationMixin, ContentMixin,
-    StickersMixin, StoreBase,
+    StickersMixin, PointsMixin, RouletteMixin, ShopMixin, StoreBase,
 ):
     """全部领域能力的组合；实际状态（连接、锁、kv 缓存）都在 StoreBase。"""
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import aiosqlite
 from nonebot.log import logger
 
@@ -143,6 +145,88 @@ CREATE TABLE IF NOT EXISTS stickers (
     last_used TEXT,
     created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS points_accounts (
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    balance INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT,
+    updated_at TEXT,
+    PRIMARY KEY (group_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS points_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    delta INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    ref TEXT,
+    note TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_points_ledger_group
+    ON points_ledger (group_id, id);
+CREATE INDEX IF NOT EXISTS idx_points_ledger_user
+    ON points_ledger (group_id, user_id, id);
+CREATE TABLE IF NOT EXISTS points_daily (
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    amount INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (group_id, user_id, day, kind)
+);
+CREATE TABLE IF NOT EXISTS roulette_games (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    creator_id INTEGER NOT NULL,
+    victim_id INTEGER NOT NULL,
+    player_count INTEGER NOT NULL,
+    stake INTEGER NOT NULL,
+    bonus INTEGER NOT NULL,
+    deltas TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_roulette_games_group
+    ON roulette_games (group_id, id);
+CREATE TABLE IF NOT EXISTS shop_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    price INTEGER NOT NULL,
+    stock INTEGER NOT NULL DEFAULT -1,
+    per_user_limit INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    delivery TEXT NOT NULL DEFAULT 'manual',
+    delivery_data TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_shop_items_group
+    ON shop_items (group_id, enabled, id);
+CREATE TABLE IF NOT EXISTS shop_redemptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    item_id INTEGER NOT NULL,
+    item_name TEXT NOT NULL,
+    price INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    user_note TEXT DEFAULT '',
+    note TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    resolved_by TEXT DEFAULT '',
+    resolved_at TEXT,
+    resolve_note TEXT DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_shop_redemptions_group
+    ON shop_redemptions (group_id, id);
+CREATE INDEX IF NOT EXISTS idx_shop_redemptions_user
+    ON shop_redemptions (group_id, user_id, id);
+CREATE INDEX IF NOT EXISTS idx_shop_redemptions_status
+    ON shop_redemptions (group_id, status, id);
 """
 
 
@@ -167,10 +251,61 @@ async def _m1_punishment_columns(conn: aiosqlite.Connection) -> None:
     ))
 
 
+async def _table_exists(conn: aiosqlite.Connection, name: str) -> bool:
+    async with conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)
+    ) as cur:
+        return await cur.fetchone() is not None
+
+
+async def _m2_points_ledger(conn: aiosqlite.Connection) -> None:
+    """把旧的轮盘筹码/补助合并进通用积分账本，然后删掉旧表。
+
+    - roulette_points → points_accounts + points_ledger（reason=migrate）
+    - roulette_relief → points_daily（kind=relief，amount=0）
+    - roulette_games 保留，继续作为对局审计
+    """
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    if await _table_exists(conn, "roulette_points"):
+        async with conn.execute(
+            "SELECT group_id, user_id, points FROM roulette_points"
+        ) as cur:
+            rows = await cur.fetchall()
+        for group_id, user_id, points in rows:
+            cur = await conn.execute(
+                "INSERT INTO points_accounts (group_id, user_id, balance, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?) ON CONFLICT(group_id, user_id) DO NOTHING",
+                (group_id, user_id, int(points), now, now),
+            )
+            if cur.rowcount:
+                await conn.execute(
+                    "INSERT INTO points_ledger"
+                    " (group_id, user_id, delta, balance_after, reason, ref, note, created_at)"
+                    " VALUES (?, ?, ?, ?, 'migrate', 'roulette_points', '旧轮盘筹码迁移', ?)",
+                    (group_id, user_id, int(points), int(points), now),
+                )
+        await conn.execute("DROP TABLE roulette_points")
+    if await _table_exists(conn, "roulette_relief"):
+        async with conn.execute(
+            "SELECT group_id, user_id, day FROM roulette_relief"
+        ) as cur:
+            rows = await cur.fetchall()
+        for group_id, user_id, day in rows:
+            await conn.execute(
+                "INSERT INTO points_daily"
+                " (group_id, user_id, day, kind, amount, created_at)"
+                " VALUES (?, ?, ?, 'relief', 0, ?)"
+                " ON CONFLICT(group_id, user_id, day, kind) DO NOTHING",
+                (group_id, user_id, day, now),
+            )
+        await conn.execute("DROP TABLE roulette_relief")
+
+
 # 结构迁移：_SCHEMA 只放「建表」（CREATE ... IF NOT EXISTS），对已有表的改动按顺序追加到这里。
 # 第 i 个（从 1 开始）执行完后 PRAGMA user_version = i；已执行过的不会再跑。只能追加，不要改旧条目。
 _MIGRATIONS: tuple = (
     _m1_punishment_columns,
+    _m2_points_ledger,
 )
 
 

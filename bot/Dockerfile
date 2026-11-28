@@ -40,16 +40,8 @@ RUN pip install --no-cache-dir --no-deps \
         nonebot_plugin_handle \
         pokepoke_miss
 
-# 俄罗斯轮盘（revolver）补丁：原版 enabled_ban_groups 白名单为空时一律不执行禁言，
-# 中枪只会提示「当前群聊不支持禁言功能」。改为：白名单为空 = 所有群允许禁言
-# （disabled_groups 黑名单仍可单独排除某些群；如只想部分群禁言，在 .env 配 ENABLED_BAN_GROUPS=[群号,...]）
-RUN sed -i 's/if event.group_id in ENABLED_BAN_GROUPS:/if (not ENABLED_BAN_GROUPS) or (event.group_id in ENABLED_BAN_GROUPS):/' \
-        /usr/local/lib/python3.12/site-packages/nonebot_plugin_revolver/__init__.py
-
-# 俄罗斯轮盘（revolver）补丁 2：ROLLING_BAN 随机秒数时，原提示 `{ban_duration // 60}分钟`
-# 对不足 1 分钟的结果会显示「0分钟」，改为直接按秒展示
-RUN sed -i 's|你已被禁言{ban_duration // 60}分钟|你已被禁言{ban_duration}秒|' \
-        /usr/local/lib/python3.12/site-packages/nonebot_plugin_revolver/__init__.py
+# 俄罗斯轮盘已改成本地插件 src/plugins/roulette.py（按群积分结算，不再禁言），
+# 因此不再安装第三方 nonebot-plugin-revolver，也不需要再对上游源码打 sed 补丁。
 
 COPY bot/bot.py ./
 COPY bot/.env.prod ./

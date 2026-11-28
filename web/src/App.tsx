@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from "react";
-import { Activity, BookOpen, BookMarked, ClipboardList, Gavel, LogOut, Megaphone, MessageSquareText, Newspaper, ShieldAlert, Clock3, Sparkles, UserCog, UserPlus, Users, Wrench, ShieldCheck } from "lucide-react";
+import { Activity, BookOpen, BookMarked, ClipboardList, Coins, Gavel, LogOut, Megaphone, MessageSquareText, Newspaper, ShieldAlert, Clock3, Sparkles, UserCog, UserPlus, Users, Wrench, ShieldCheck } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Spinner } from "@/components/ui/spinner";
 import { Login } from "@/pages/login";
@@ -23,6 +23,7 @@ const FeedsTab = lazy(() => import("@/pages/feeds").then((m) => ({ default: m.Fe
 const AdsTab = lazy(() => import("@/pages/ads").then((m) => ({ default: m.AdsTab })));
 const KnowledgeTab = lazy(() => import("@/pages/knowledge").then((m) => ({ default: m.KnowledgeTab })));
 const WorklogTab = lazy(() => import("@/pages/worklog").then((m) => ({ default: m.WorklogTab })));
+const PointsTab = lazy(() => import("@/pages/points").then((m) => ({ default: m.PointsTab })));
 const TopicsTab = lazy(() => import("@/pages/topics").then((m) => ({ default: m.TopicsTab })));
 const GroupsTab = lazy(() => import("@/pages/groups").then((m) => ({ default: m.GroupsTab })));
 const SuperusersTab = lazy(() => import("@/pages/groups").then((m) => ({ default: m.SuperusersTab })));
@@ -44,6 +45,7 @@ const NAV = [
   { id: "ads", label: "广告", icon: Megaphone },
   { id: "knowledge", label: "知识库", icon: BookMarked },
   { id: "worklog", label: "工作台账", icon: Wrench },
+  { id: "points", label: "积分", icon: Coins },
   { id: "topics", label: "话题规约", icon: ShieldCheck },
 ] as const;
 
@@ -160,6 +162,7 @@ function PanelApp() {
           {tab === "ads" && <AdsTab toast={toast} />}
           {tab === "knowledge" && <KnowledgeTab toast={toast} />}
           {tab === "worklog" && <WorklogTab toast={toast} />}
+          {tab === "points" && <PointsTab toast={toast} />}
           {tab === "topics" && <TopicsTab toast={toast} />}
           </Suspense>
           </PageBoundary>

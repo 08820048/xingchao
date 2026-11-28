@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from src.aitools import admin, fun, group, knowledge, plugindata, schedule  # noqa: F401  导入即注册
+from src.aitools import admin, fun, group, knowledge, plugindata, points, roulette, schedule, shop  # noqa: F401  导入即注册
 from src.aitools.registry import _REGISTRY, ToolEntry, tool
 
 __all__ = ["TOOL_ORDER", "build_tools", "tool"]
@@ -30,7 +30,6 @@ TOOL_ORDER: tuple[str, ...] = (
     "set_group_business",
     "get_github_trending",
     "get_current_time",
-    "query_points",
     "get_self_info",
     "send_voice",
     "set_voice_reply",
@@ -69,6 +68,31 @@ TOOL_ORDER: tuple[str, ...] = (
     "create_poll",
     "get_poll_result",
     "end_poll",
+    "get_points",
+    "sign_in",
+    "claim_points_relief",
+    "transfer_points",
+    "get_points_leaderboard",
+    "get_points_history",
+    "get_points_rules",
+    "adjust_points",
+    "set_points_config",
+    "list_shop_items",
+    "buy_shop_item",
+    "list_my_redemptions",
+    "list_pending_redemptions",
+    "get_shop_stats",
+    "resolve_shop_redemption",
+    "add_shop_item",
+    "update_shop_item",
+    "get_roulette_status",
+    "get_roulette_rules",
+    "start_roulette",
+    "begin_roulette",
+    "join_roulette",
+    "shoot_roulette",
+    "cancel_roulette",
+    "set_roulette_config",
     "generate_image",
     "list_pending_invites",
     "resolve_invite",
